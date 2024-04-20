@@ -21,5 +21,15 @@ services:
       - POSTGRES_PASSWORD=fossil
       - POSTGRES_DB=fossil_dev
 
+  frontend:
+    build: ./frontend
+    command: npm run dev
+    volumes:
+      - ./frontend:/usr/src/app
+    ports:
+      - 3000:3000
+    environment:
+      - NODE_ENV=development
+
 volumes:
   postgres_data:

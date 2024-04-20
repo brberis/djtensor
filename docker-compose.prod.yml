@@ -31,6 +31,18 @@ services:
     depends_on:
       - web
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    command: npm run start
+    volumes:
+      - static_volume:/usr/src/app/.next/static
+    expose:
+      - 3000
+    env_file:
+      - ./.env.prod
+
 volumes:
   postgres_data:
   static_volume:
