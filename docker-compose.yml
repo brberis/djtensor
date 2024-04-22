@@ -17,9 +17,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_USER=fossil
-      - POSTGRES_PASSWORD=fossil
-      - POSTGRES_DB=fossil_dev
+      - POSTGRES_USER=backend
+      - POSTGRES_PASSWORD=backend
+      - POSTGRES_DB=backend_dev
 
   frontend:
     build: ./frontend

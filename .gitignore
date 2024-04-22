@@ -174,5 +174,5 @@ rethinkdb_data
 # MacOS system files
 .DS_Store
 
-# Fossil
+# backend
 data_sets/
