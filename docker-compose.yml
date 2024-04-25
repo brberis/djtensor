@@ -12,6 +12,9 @@ services:
       - ./.env.dev
     depends_on:
       - db
+    networks:
+      - backend
+
   db:
     image: postgres:15
     volumes:
@@ -20,16 +23,40 @@ services:
       - POSTGRES_USER=backend
       - POSTGRES_PASSWORD=backend
       - POSTGRES_DB=backend_dev
+    networks:
+      - backend
 
-  frontend:
-    build: ./frontend
-    command: npm run dev
-    volumes:
-      - ./frontend:/usr/src/app
-    ports:
-      - 3000:3000
+  jupyter:
+    build: ./jupyter
     environment:
-      - NODE_ENV=development
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=k96y%tiq26be!tqb#p
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/home/jovyan/data
+      - ./notebooks:/home/jovyan/work
+    depends_on:
+      - db
+    networks:
+      - backend
+
+  # frontend:
+  #   build: ./frontend
+  #   command: npm run dev
+  #   volumes:
+  #     - ./frontend:/usr/src/app
+  #   ports:
+  #     - 3000:3000
+  #   environment:
+  #     - NODE_ENV=development
+  #   networks:
+  #     - backend
+
 
 volumes:
   postgres_data:
+
+networks:
+  backend:
+    driver: bridge
