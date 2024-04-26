@@ -28,5 +28,11 @@ RUN pip install --no-cache-dir \
     six \
     matplotlib
 
-# Configure environment variables if necessary
-# ENV SOME_ENV_VAR some_value
+# Create a directory for the log file
+USER root
+RUN mkdir /var/log/jupyter && chown jovyan /var/log/jupyter
+USER jovyan
+
+# Set the entrypoint to start Jupyter and redirect logs
+ENTRYPOINT ["sh", "-c"]
+CMD ["jupyter notebook --ip='*' --port=8888 --no-browser --NotebookApp.token='k96y%tiq26be!tqb#p' --NotebookApp.password='' > /var/log/jupyter/jupyter.log 2>&1"]
