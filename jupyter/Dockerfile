@@ -21,8 +21,8 @@ USER jovyan
 
 # Install additional Python libraries
 RUN pip install --no-cache-dir \
-    tensorflow \
-    tensorflow-hub \
+    tensorflow==2.15.0 \
+    tensorflow-hub==0.16.1 \
     seaborn \
     scikit-learn \
     six \
