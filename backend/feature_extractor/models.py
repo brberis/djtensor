@@ -1,0 +1,42 @@
+from django.db import models
+from datasets.models import Dataset
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .tasks import train_model
+
+# model to store tensorflow trainings
+class TFModel(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    epochs = models.IntegerField(default=20)
+    batch_size = models.IntegerField(default=16)
+    validation_split = models.FloatField(default=0.2)
+    data_augmentation = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+    
+class TrainingSession(models.Model):
+    name = models.CharField(max_length=100)
+    notes = models.TextField(blank=True, null=True)
+    dataset = models.ForeignKey(Dataset, related_name='training_sessions', on_delete=models.CASCADE)
+    model = models.ForeignKey(TFModel, related_name='training_sessions', on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+class Epoch(models.Model):
+    training_session = models.ForeignKey(TrainingSession, related_name='epochs', on_delete=models.CASCADE)
+    number = models.IntegerField()
+    accuracy = models.FloatField()
+    loss = models.FloatField()
+    val_accuracy = models.FloatField()
+    val_loss = models.FloatField()
+
+
+@receiver(post_save, sender=TrainingSession)
+def train_model_on_save(sender, instance, **kwargs):
+    train_model.delay(instance.id)
+
+    
+

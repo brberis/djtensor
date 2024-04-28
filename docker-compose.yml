@@ -3,15 +3,20 @@ version: '3.8'
 services:
   web:
     build: ./backend
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      /bin/bash -c "python manage.py shell -c \"from django.contrib.auth.models import User; User.objects.filter(username='testuser').exists() or User.objects.create_superuser('testuser', 'testuser@example.com', 'testpassword')\" &&
+                    python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend/:/usr/src/app/
     ports:
       - 8000:8000
     env_file:
       - ./.env.dev
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
       - db
+      - redis
     networks:
       - backend
 
@@ -23,6 +28,26 @@ services:
       - POSTGRES_USER=backend
       - POSTGRES_PASSWORD=backend
       - POSTGRES_DB=backend_dev
+    networks:
+      - backend
+
+  redis:
+    image: redis
+    ports:
+      - 6379:6379
+    networks:
+      - backend
+
+  celery_worker:
+    build: ./backend
+    command: celery -A celery_app worker --loglevel=info
+    env_file:
+      - ./.env.dev
+    depends_on:
+      - db    
+      - redis
+    volumes:
+      - ./backend/:/usr/src/app/
     networks:
       - backend
 
