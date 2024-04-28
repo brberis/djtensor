@@ -1,4 +1,7 @@
 from celery_app import app
+from django.conf import settings
+from urllib.parse import urljoin
+from django.http import HttpRequest
 from celery import shared_task
 import matplotlib.pylab as plt
 import numpy as np
@@ -140,9 +143,17 @@ def train_model(training_session_id):
     BATCH_SIZE = model_batch_size 
 
     # Import dataset
+    file_name = session_instance.dataset.name.replace(' ', '_').lower()
+    logger.info(f"Dataset NAME: {file_name}")
+
+    base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
+    tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
+    tar_path = "http://web:8000/media/archive/test_dataset.tar.gz"
+    logger.info(f"Dataset PATH: {tar_path}")
+
     data_dir = tf.keras.utils.get_file(
-    'shark_teeth',
-    'https://fossil.barberis.com/shark_teeth2.tar.gz',
+    file_name,
+    tar_path,
     untar=True)
 
 
