@@ -9,6 +9,14 @@ WORKDIR /usr/src/app
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
+# install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libhdf5-dev \ 
+    pkg-config \ 
+    netcat \    
+    build-essential   
+
 # install dependencies
 RUN pip install --upgrade pip
 COPY ./requirements.txt .
@@ -25,5 +33,3 @@ COPY . /usr/src/app
 # run entrypoint.sh
 ENTRYPOINT ["/usr/src/app/entrypoint.sh"]
 
-# imstall netcat
-RUN apt-get update && apt-get install -y netcat
