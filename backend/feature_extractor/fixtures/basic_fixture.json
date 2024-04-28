@@ -1,0 +1,16 @@
+[
+{
+    "model": "feature_extractor.tfmodel",
+    "pk": 1,
+    "fields": {
+        "name": "Test Model",
+        "description": "",
+        "epochs": 2,
+        "batch_size": 1,
+        "validation_split": 0.2,
+        "data_augmentation": false,
+        "created_at": "2024-04-28T16:41:19.406Z",
+        "updated_at": "2024-04-28T16:41:19.406Z"
+    }
+}
+]

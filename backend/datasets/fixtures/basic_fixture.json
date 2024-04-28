@@ -1,0 +1,176 @@
+[
+{
+    "model": "datasets.dataset",
+    "pk": 1,
+    "fields": {
+        "name": "Test Dataset",
+        "description": "",
+        "resolution": "224x224",
+        "created_at": "2024-04-28T16:36:27.756Z",
+        "updated_at": "2024-04-28T16:36:50.031Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 1,
+    "fields": {
+        "dataset": 1,
+        "name": "Carcharhinus Leucas",
+        "created_at": "2024-04-28T16:39:24.085Z",
+        "updated_at": "2024-04-28T16:39:24.085Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "name": "Isurus Hastalis",
+        "created_at": "2024-04-28T16:40:45.783Z",
+        "updated_at": "2024-04-28T16:40:45.783Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 1,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF64381B_lngual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T16:39:27.492Z",
+        "updated_at": "2024-04-28T16:39:27.492Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF67418A_lingual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T16:39:35.416Z",
+        "updated_at": "2024-04-28T16:39:35.416Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 3,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF80358A_lingual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T16:40:00.644Z",
+        "updated_at": "2024-04-28T16:40:00.644Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 4,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF-TRO7128_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T16:40:48.634Z",
+        "updated_at": "2024-04-28T16:40:48.634Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 5,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF-TRO9049_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T16:40:56.286Z",
+        "updated_at": "2024-04-28T16:40:56.286Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 6,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF-TRO7664_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T17:42:44.268Z",
+        "updated_at": "2024-04-28T17:42:44.268Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 7,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF-TRO15707_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T17:43:02.834Z",
+        "updated_at": "2024-04-28T17:43:02.834Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 8,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF234836AA_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T17:43:11.950Z",
+        "updated_at": "2024-04-28T17:43:11.950Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 9,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF234836GGG_lingual_copy.png",
+        "label": 2,
+        "created_at": "2024-04-28T17:43:20.472Z",
+        "updated_at": "2024-04-28T17:43:20.472Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 10,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF81096A_lingual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T17:43:52.525Z",
+        "updated_at": "2024-04-28T17:43:52.525Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 11,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF80901A_lingual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T17:44:02.430Z",
+        "updated_at": "2024-04-28T17:44:02.430Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 12,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF64381B_lngual_copy_SWZ822N.png",
+        "label": 1,
+        "created_at": "2024-04-28T17:44:20.809Z",
+        "updated_at": "2024-04-28T17:44:20.809Z"
+    }
+},
+{
+    "model": "datasets.image",
+    "pk": 13,
+    "fields": {
+        "dataset": 1,
+        "image": "datasets/VP_UF179335_lingual_copy.png",
+        "label": 1,
+        "created_at": "2024-04-28T17:44:33.966Z",
+        "updated_at": "2024-04-28T17:44:33.966Z"
+    }
+}
+]

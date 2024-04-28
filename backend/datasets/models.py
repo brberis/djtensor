@@ -1,5 +1,5 @@
 from django.db import models
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from .tasks import create_dataset_archive
 
@@ -9,7 +9,7 @@ RESOLUTIONS = [
 ]
 
 class Dataset(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224x224')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -40,4 +40,8 @@ class Image(models.Model):
 
 @receiver(post_save, sender=Image)
 def create_dataset_archive_on_save(sender, instance, **kwargs):
-    create_dataset_archive.delay(instance.id)
+    create_dataset_archive.delay(instance.dataset.id)
+
+@receiver(post_delete, sender=Image)
+def create_dataset_archive_on_delete(sender, instance, **kwargs):
+    create_dataset_archive.delay(instance.dataset.id)
