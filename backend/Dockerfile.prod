@@ -20,6 +20,7 @@ ENV PYTHONUNBUFFERED 1
 RUN apt-get update && apt-get install -y \
     gcc \
     libhdf5-dev \ 
+    libhdf5-103 \
     pkg-config \ 
     netcat \    
     build-essential   

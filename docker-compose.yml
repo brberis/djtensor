@@ -53,30 +53,37 @@ services:
     networks:
       - backend
 
-  jupyter:
-    build: ./jupyter
-    environment:
-      - JUPYTER_ENABLE_LAB=yes
-      - JUPYTER_TOKEN=k96y%tiq26be!tqb#p
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./data:/home/jovyan/data
-      - ./notebooks:/home/jovyan/work
-    depends_on:
-      - db
-    networks:
-      - backend
+  # jupyter:
+  #   build: ./jupyter
+  #   environment:
+  #     - JUPYTER_ENABLE_LAB=yes
+  #     - JUPYTER_TOKEN=k96y%tiq26be!tqb#p
+  #   ports:
+  #     - "8888:8888"
+  #   volumes:
+  #     - ./data:/home/jovyan/data
+  #     - ./notebooks:/home/jovyan/work
+  #   depends_on:
+  #     - db
+  #   networks:
+  #     - backend
 
   frontend:
     build: ./frontend
     command: npm run dev
     volumes:
       - ./frontend:/usr/src/app
+      - /frontend/node_modules
     ports:
       - 3000:3000
+    restart: always
     environment:
       - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000 
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+      - DJANGO_API_BASE_URL=http://web:8000
+
     networks:
       - backend
 

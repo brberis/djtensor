@@ -1,6 +1,7 @@
 Django==4.2.3
 gunicorn==21.2.0
 psycopg2-binary==2.9.6
+djangorestframework
 celery
 redis
 matplotlib
@@ -10,3 +11,4 @@ Pillow
 tensorflow==2.15.0
 tensorflow-hub==0.16.1
 tf_keras==2.15.1
+flower
