@@ -27,22 +27,8 @@ export default async function handler(req, res) {
       }
       break;
 
-    case 'DELETE':
-      try {
-        const { id } = req.query;  // Assuming the ID to delete is passed as a query parameter
-        if (!id) {
-          return res.status(400).json({ message: 'Missing ID for deletion' });
-        }
-        await axios.delete(`${baseUrl}/api/feature_extractor/trainingsession/${id}`);
-        res.status(204).end();  // No content to send back
-      } catch (error) {
-        console.error('Failed to delete training session:', error);
-        res.status(500).json({ message: 'Failed to delete training session' });
-      }
-      break;
-
     default:
-      res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
+      res.setHeader('Allow', ['GET', 'POST']);
       res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 }

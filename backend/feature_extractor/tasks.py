@@ -152,15 +152,22 @@ def train_model(training_session_id):
         logger.info(f"Dataset NAME: {file_name}")
 
         base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
+        logger.info(f"Dataset NAME: " + base_media_url)
         tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
-        tar_path = "http://web:8000/media/archive/test_dataset.tar.gz"
         logger.info(f"Dataset PATH: {tar_path}")
+
+        ## Testing Data
+        # data_dir = tf.keras.utils.get_file(
+        # 'flower_photos',
+        # 'https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz',
+        # untar=True)
 
         data_dir = tf.keras.utils.get_file(
         file_name,
         tar_path,
         untar=True)
 
+        logger.info(f"Dataset data_dir: {data_dir}")
 
 
         ##############################################

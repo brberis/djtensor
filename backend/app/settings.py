@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",  
+    'django_filters',
     "datasets",
     "feature_extractor",
     "upload",
@@ -97,6 +98,8 @@ DATABASES = {
     }
 }
 
+DATA_UPLOAD_MAX_NUMBER_FIELDS = None
+DATA_UPLOAD_MAX_NUMBER_FILES = None
 
 # Password validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
@@ -138,7 +141,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "mediafiles"
 
-BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://localhost:8000/')
+BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://web:8000/')
 
 
 CSRF_TRUSTED_ORIGINS = ["http://localhost:1337"]

@@ -9,24 +9,27 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def create_dataset_archive(dataset_id):
-    from .models import Dataset
+    from .models import Dataset, Label, Image
 
     dataset = Dataset.objects.get(pk=dataset_id)
+    labels = Label.objects.filter(images__dataset=dataset).distinct()
     file_name = dataset.name.replace(' ', '_').lower()
 
     # Use a single base_dir directly under 'archive'
     base_dir = settings.MEDIA_ROOT / 'archive' / file_name
     os.makedirs(base_dir, exist_ok=True)
-    logger.info(f"PATH: {base_dir}")
+    logger.info(f"PATH BASE DIR: {base_dir}")
 
-    for label in dataset.labels.all():
+    for label in labels:
         label_dir = base_dir / label.name.replace(' ', '_').lower()
         logger.info(f"LABEL PATH: {label_dir}")
         os.makedirs(label_dir, exist_ok=True)
 
-        for image in label.images.all():
+        # Filter images by both label and dataset
+        for image in Image.objects.filter(label=label, dataset=dataset):
             original_path = settings.MEDIA_ROOT / image.image.name
             target_path = label_dir / os.path.basename(image.image.name)
+            logger.info(f"TARGET PATH: {target_path}")
             if not os.path.exists(target_path):
                 os.link(original_path, target_path)
 

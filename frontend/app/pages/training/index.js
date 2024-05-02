@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddSession from '../../components/addTrainingSession';
 import { getStatusColor } from '../../utils';
@@ -8,6 +9,7 @@ export default function Training() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddSession, setIsOpenAddSession] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -36,9 +38,9 @@ export default function Training() {
 
   const handleSessionClick = (session) => {
     console.log('Attempting to handle click for:', session);
-    if (session.status === 'completed') {
+    if (session.status === 'Completed') {
       console.log('Session is completed and clickable');
-      // Here you can add your logic for what happens when a completed session is clicked
+      router.push(`/training/${session.id}`); 
     }
   };
 
@@ -77,7 +79,7 @@ export default function Training() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {sessions.map((session) => (
-                      <tr key={session.id} onClick={() => handleSessionClick(session)} className={session.status === 'completed' ? 'cursor-pointer hover:bg-gray-50' : ''}>
+                      <tr key={session.id} onClick={() => handleSessionClick(session)} className={session.status === 'Completed' ? 'cursor-pointer hover:bg-gray-50' : ''}>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{session.name}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{new Date(session.created_at).toLocaleString()}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{session.model.name}</td>
