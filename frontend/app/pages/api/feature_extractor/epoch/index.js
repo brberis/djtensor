@@ -1,12 +1,18 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
+  const { training_session } = req.query;
+
   if (req.method === 'GET') {
     try {
       // Use the environment variable to get the base URL
       const baseUrl = process.env.DJANGO_API_BASE_URL;
 
-      const response = await axios.get(`${baseUrl}/api/feature_extractor/epoch/`);
+      const response = await axios.get(`${baseUrl}/api/feature_extractor/epoch/`, {
+        params: {
+          training_session,
+        }
+      });
       const data = response.data;
 
       res.status(200).json(data);

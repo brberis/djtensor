@@ -176,3 +176,5 @@ rethinkdb_data
 
 # backend
 data_sets/
+mediaFiles/archive/
+mediaFiles/datasets/
