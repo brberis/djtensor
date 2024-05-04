@@ -20,7 +20,7 @@ export default function DatasetDetail() {
       try {
         const [datasetData, labelsData, imagesData] = await Promise.all([
           fetch(`/api/datasets/dataset/${id}`).then(res => res.json()),
-          fetch(`/api/datasets/label/?dataset=${id}`).then(res => res.json()),
+          fetch(`/api/datasets/label/`).then(res => res.json()),
           fetch(`/api/datasets/image/?dataset=${id}`).then(res => res.json())
         ]);
 

@@ -5,7 +5,7 @@ import Link from "next/link";
 export default function Header(props) {
   const { sectionTitle, action, actions, incomingAction, breadcrumbs, smallScreenHeader, isLocal} = props;
   const [ariaCurrent, setAriaCurrent] = useState(null);
-  const [defaultBgColor, setDefaultBgColor] = useState('stone');
+  const [defaultBgColor, setDefaultBgColor] = useState('sky');
   const [sidebarWidth, setSidebarWidth] = useState(300); // Initial sidebar width
   const [isSmallScreen, setIsSmallScreen] = useState(false); 
 
@@ -76,7 +76,7 @@ export default function Header(props) {
               <button
                 type="button"
                 onClick={() => actionHandler(true)}
-                className="ml-3 inline-flex items-center rounded-md border border-transparent bg-stone-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-stone-700 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:ring-offset-2"
+                className="ml-3 inline-flex items-center rounded-md border border-transparent bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2"
               >
                 {action}
               </button>

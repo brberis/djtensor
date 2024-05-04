@@ -14,6 +14,7 @@
     "model": "datasets.label",
     "pk": 1,
     "fields": {
+        "dataset": 1,
         "name": "Carcharhinus Leucas",
         "created_at": "2024-04-28T16:39:24.085Z",
         "updated_at": "2024-04-28T16:39:24.085Z"
@@ -23,7 +24,48 @@
     "model": "datasets.label",
     "pk": 2,
     "fields": {
+        "dataset": 1,
         "name": "Isurus Hastalis",
+        "created_at": "2024-04-28T16:40:45.783Z",
+        "updated_at": "2024-04-28T16:40:45.783Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "name": "Carcharodon Carcharias",
+        "created_at": "2024-04-28T16:40:45.783Z",
+        "updated_at": "2024-04-28T16:40:45.783Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "name": "Hemipristis Serra",
+        "created_at": "2024-04-28T16:40:45.783Z",
+        "updated_at": "2024-04-28T16:40:45.783Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "name": "Otodus Megalodon",
+        "created_at": "2024-04-28T16:40:45.783Z",
+        "updated_at": "2024-04-28T16:40:45.783Z"
+    }
+},
+{
+    "model": "datasets.label",
+    "pk": 2,
+    "fields": {
+        "dataset": 1,
+        "name": "Galeocerdo Cuvier",
         "created_at": "2024-04-28T16:40:45.783Z",
         "updated_at": "2024-04-28T16:40:45.783Z"
     }

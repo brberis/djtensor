@@ -198,7 +198,7 @@ export default function AddDataset({ isOpen, onClose }) {
                                   type="button"
                                   onClick={handleClose}
                                   className
-                                  ="relative w-full px-10 flex justify-center py-2 px-4 border border-gray-800 text-sm font-medium rounded-md text-gray-800 bg-white hover:bg-gray-100 focus:outline-none focus:border-gray-700 focus:shadow-outline-stone active:bg-gray-200"
+                                  ="relative w-full px-10 flex justify-center py-2 px-4 border border-gray-800 text-sm font-medium rounded-md text-gray-800 bg-white hover:bg-gray-100 focus:outline-none focus:border-gray-700 focus:shadow-outline-sky active:bg-gray-200"
                                   >
                                     Close
                               </button>
@@ -206,7 +206,7 @@ export default function AddDataset({ isOpen, onClose }) {
                             <button
                               type="submit"
                               className
-                              ="relative w-full px-10 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-stone-600 hover:bg-stone-500 focus:outline-none focus:border-stone-700 focus:shadow-outline-stone active:bg-stone-800"
+                              ="relative w-full px-10 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-sky-600 hover:bg-sky-500 focus:outline-none focus:border-sky-700 focus:shadow-outline-sky active:bg-sky-800"
                               >
                                 Create
                               </button>

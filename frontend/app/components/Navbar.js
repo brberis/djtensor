@@ -1,79 +1,47 @@
-import { Fragment, useEffect, useState } from 'react'
-import { useRouter } from 'next/router';
-import { Disclosure, Menu, Transition } from '@headlessui/react'
-import { Bars3Icon, BellIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { Fragment, useEffect, useState } from 'react';
 import Link from "next/link";
-import { UserIcon } from '@heroicons/react/20/solid'
-import Router from 'next/router';
-import Image from 'next/image';
-// import avatar from '/public/avatar.jpg'
-import Spinner from "../components/Spinner";
+import { useRouter } from 'next/router';
+import { Disclosure } from '@headlessui/react';
 
 const navigation = [
-  { name: 'Training', href: '/', current: false },
-  { name: 'Test', href: '/test', current: false },
-  { name: 'Performace', href: '/performance', current: false },
-  { name: 'Datasets', href: '/datasets', current: false }
-]
+  { name: 'Training', href: '/' },
+  { name: 'Test', href: '/test' },
+  { name: 'Performance', href: '/performance' },
+  { name: 'Datasets', href: '/datasets' }
+];
 
 function classNames(...classes) {
-  return classes.filter(Boolean).join(' ')
+  return classes.filter(Boolean).join(' ');
 }
 
 function Navbar() {
+  const router = useRouter();
 
+  // Function to determine if the link is the current page
+  const isActive = (href) => {
+    return router.pathname === href;
+  };
 
   return (
-    <Disclosure as="nav" className={`relative bg-gray-700 z-40 mb-10` } >
-      {({ open }) => (
-        <>
-          <div className={`mx-auto max-w-7xl px-2 sm:px-6 lg:px-8`}>
-            <div className="relative flex h-16 items-center justify-between">
-              <div className="absolute inset-y-0 left-0 flex items-center sm:hidden">
-                {/* Mobile menu button*/}
-                <Disclosure.Button className="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white">
-                  <span className="sr-only">Open main menu</span>
-                  {open ? (
-                    <XMarkIcon className="block h-6 w-6" aria-hidden="true" />
-                  ) : (
-                    <Bars3Icon className="block h-6 w-6" aria-hidden="true" />
-                  )}
-                </Disclosure.Button>
-              </div>
-              <div className="flex flex-1 items-center justify-center sm:items-stretch sm:justify-start">
-                <div className="flex flex-shrink-0 items-center">
-                  <Link href={'/'}>
-
-                  </Link>
-                </div>
-                <div className="hidden sm:ml-6 sm:block mt-6 pb-4 pl-10">
-                  <div className="flex space-x-4">
-                      {navigation.map((item) => (
-                        <Link href={item.href}
-                            key={item.name}
-                            className={classNames(
-                              item.current ? 'bg-gray-900 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white',
-                              'px-3 py-2 rounded-md text-sm font-medium'
-                            )}
-                            aria-current={item.current ? 'page' : undefined}
-                          >
-                            {item.name}
-                        </Link>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+    <Disclosure as="nav" className="relative z-40 ml-10 mb-10 mt-6 pt-6 overflow-hidden border-b-2 border-gray-300">
+      <ul className="flex flex-wrap text-sm font-medium text-center text-gray-500 dark:text-gray-400">
+        {navigation.map((item) => (
+          <li key={item.name} className="mr-0 w-40">
+            <Link 
+              href={item.href}
+              aria-current={isActive(item.href) ? 'page' : undefined}
+              className={classNames(
+                isActive(item.href) ? 'bg-sky-300 text-black' : 'bg-sky-200 text-black hover:bg-blue-200',
+                'px-8 py-2 border-2 border-sky-500 rounded-t-3xl text-lg font-medium flex items-center justify-center' 
+              )}
+            >
+              {item.name}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </Disclosure>
-  )
+  );
 }
 
-
-
 export default Navbar;
-
-
-
