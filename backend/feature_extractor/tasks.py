@@ -162,10 +162,17 @@ def train_model(training_session_id):
         # 'https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz',
         # untar=True)
 
+        ## Testing Data
         data_dir = tf.keras.utils.get_file(
-        file_name,
-        tar_path,
+        'flower_photos',
+        'https://fossil.barberis.com/flower_photos.tar.gz',
         untar=True)
+
+
+        # data_dir = tf.keras.utils.get_file(
+        # file_name,
+        # tar_path,
+        # untar=True)
 
         logger.info(f"Dataset data_dir: {data_dir}")
 

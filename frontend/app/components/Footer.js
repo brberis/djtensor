@@ -2,7 +2,7 @@
   export default function Footer() {
 
     return (
-      <footer className="bg-gray-800 pb-10 mt-60" aria-labelledby="footer-heading">
+      <footer className="bg-sky-800 pb-10 mt-60" aria-labelledby="footer-heading">
 
         <div className="mx-auto max-w-7xl py-12 px-4 sm:px-6 lg:py-16 lg:px-8">
 

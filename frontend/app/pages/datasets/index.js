@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
-import AddDataset from '@/components/addDataset';
+import AddDataset from '../../components/addDataset';
 
 export default function Training() {
   const [datasets, setDatasets] = useState([]);
