@@ -12,6 +12,10 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/feature_extractor/", include('feature_extractor.urls')),  
     path("api/datasets/", include('datasets.urls')),  
+    path('data/api/', include([
+        path('datasets/', include('datasets.urls')),
+        path('feature_extractor/', include('feature_extractor.urls')),
+    ])),
 ]
 
 # Handling static files during development
