@@ -12,6 +12,8 @@ class DatasetViewSet(viewsets.ModelViewSet):
 class LabelViewSet(viewsets.ModelViewSet):
     queryset = Label.objects.all()
     serializer_class = LabelSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['datasets__id'] 
 
 class ImageViewSet(viewsets.ModelViewSet):
     queryset = Image.objects.all()

@@ -2,11 +2,12 @@ import axios from 'axios';
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
+    const { datasets__id } = req.query;
+
     try {
-      // Use the environment variable to get the base URL
       const baseUrl = process.env.DJANGO_API_BASE_URL;
 
-      const response = await axios.get(`${baseUrl}/api/datasets/label/`);
+      const response = await axios.get(`${baseUrl}/api/datasets/label/`, { params: { datasets__id } });
       const data = response.data;
 
       res.status(200).json(data);

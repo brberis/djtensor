@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def create_dataset_archive(dataset_id):
-    from .models import Dataset
+    from .models import Dataset, Image
 
     dataset = Dataset.objects.get(pk=dataset_id)
     file_name = dataset.name.replace(' ', '_').lower()
@@ -24,11 +24,17 @@ def create_dataset_archive(dataset_id):
         logger.info(f"LABEL PATH: {label_dir}")
         os.makedirs(label_dir, exist_ok=True)
 
-        for image in label.images.all():
+        # Fetch images that are both associated with the current label and the dataset
+        images = Image.objects.filter(label=label, dataset=dataset)  
+
+        for image in images:
             original_path = settings.MEDIA_ROOT / image.image.name
             target_path = label_dir / os.path.basename(image.image.name)
             if not os.path.exists(target_path):
                 os.link(original_path, target_path)
+                logger.info(f"Linked image {original_path} to {target_path}")
+            else:
+                logger.info(f"Image already exists at {target_path}")
 
     # Creating tar.gz file directly in 'archive'
     tar_path = settings.MEDIA_ROOT / 'archive' / f'{file_name}.tar.gz'

@@ -1,34 +1,34 @@
 import { Fragment, useState, useEffect, useRef } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import Spinner from './Spinner';
-import { PaperClipIcon, XCircleIcon } from '@heroicons/react/20/solid'
+import { XCircleIcon } from '@heroicons/react/20/solid'
 
 
 export default function AddDataset({ isOpen, onClose }) {
   const [open, setOpen] = useState(isOpen);
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState([]);
-  const [datasets, setDatasets] = useState([]);
+  const [labels, setLabels] = useState([]);
 
   useEffect(() => {
-    const fetchDatasets = async () => {
+    async function fetchData() {
+      setIsLoading(true);
       try {
-        const response = await fetch('/api/datasets/dataset/');
-        const data = await response.json();
-        setDatasets(data); 
-        setIsLoading(false);
+        const [labelsData] = await Promise.all([
+          fetch(`/api/datasets/label/`).then(res => res.json()),
+        ]);
+        setLabels(labelsData);
+        console.log('labelsData', labelsData)
       } catch (error) {
         console.error('Failed to fetch data:', error);
+      } finally {
         setIsLoading(false);
       }
-    };
+    }
 
-    fetchDatasets();
+    fetchData();
   }, []);
 
-  console.log(models);
-  console.log(datasets);
 
   const handleClose = (result) => {
     setOpen(false);
@@ -39,11 +39,13 @@ export default function AddDataset({ isOpen, onClose }) {
 
 
   const formHandler = async (e) => {
+    
     e.preventDefault();
 
     const formData = new FormData(e.target);
     const newDataset = {
       name: formData.get('name'), 
+      labels: formData.getAll('labels'),
       description: formData.get('description'),
       resolution: formData.get('resolution'),
     }
@@ -66,6 +68,8 @@ export default function AddDataset({ isOpen, onClose }) {
     } catch (error) {
       console.error('Failed to create dataset:', error);
       setAlert('Failed to create dataset');
+      setIsLoading(false);
+
     }
   }
 
@@ -126,97 +130,98 @@ export default function AddDataset({ isOpen, onClose }) {
                       </div>
 
                     }
-                    <form  onSubmit={formHandler}>
+                    <form onSubmit={formHandler}>
+                      <div className="grid grid-cols-8 sm:grid-cols-3 gap-6 mt-6">
+                        {/* Existing fields remain unchanged */}
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="name" className="block text-sm font-medium leading-5 text-gray-700">
+                            Name
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <input
+                              id="name"
+                              name="name"
+                              type="text"
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
+                          </div>
+                        </div>
 
-                      
-                        <div className="grid grid-cols-8 sm:grid-cols-3 gap-6 mt-6">
-                          <div className="col-span-6 sm:col-span-6">
-                            <label
-                              htmlFor="name"
-                              className="block text-sm font-medium leading-5 text-gray-700"
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="resolution" className="block text-sm font-medium leading-5 text-gray-700">
+                            Resolution
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <select
+                              id="resolution"
+                              name="resolution"
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                             >
-                              Name
-                            </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                              <input
-                                id="name"
-                                name="name"
-                                type="text"
-                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                required
-                              />    
-                              </div>
-                            </div>
-                            <div className="col-span-6 sm:col-span-6">
-                              <label
-                                htmlFor="model"
-                                className="block text-sm font-medium leading-5 text-gray-700"
-                              >
-                                Resolution
-                              </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                                <select
-                                  id="resolution"
-                                  name="resolution"
-                                  required
-                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                  >
-                                  <option value="" disabled>Select a model...</option>
-                                  <option  value="224x224">
-                                    224x224
-                                  </option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="col-span-full">
-                              <label
-                                htmlFor="notes"
-                                className="block text-sm font-medium leading-5 text-gray-700"
-                              >
-                                Description
-                              </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                                <textarea
-                                  id="description"
-                                  name="description"
-                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                  />
-                              </div>
-                            </div>
+                              <option disabled>Select resolutions...</option>
+                              <option value="224x224">224x224</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="labels" className="block text-sm font-medium leading-5 text-gray-700">
+                            Select the labels
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <select
+                              id="labels"
+                              name="labels"
+                              multiple
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            >
+                              {labels.map((label) => (  
+                                <option key={label.id} value={label.id}>{label.name}</option>
+                              ))
+                              }
+                            </select>
+                          </div>
+                        </div>
+                        <div className="col-span-full">
+                          <label htmlFor="notes" className="block text-sm font-medium leading-5 text-gray-700">
+                            Description
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <textarea
+                              id="description"
+                              name="description"
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
+                          </div>
+                        </div>
                       </div>
 
-
-                      <div className={`flex gap-4 justify-end`} >
-
-                    
-          
+                      {/* Button Section Unchanged */}
+                      <div className={`flex gap-4 justify-end`}>
                         <div className="col-span-6 sm:col-span-3 mt-7">
                           <span className="w-full inline-flex rounded-md shadow-sm">
                             <div className='flex gap-4'>
                               <button
-                                  type="button"
-                                  onClick={handleClose}
-                                  className
-                                  ="relative w-full px-10 flex justify-center py-2 px-4 border border-gray-800 text-sm font-medium rounded-md text-gray-800 bg-white hover:bg-gray-100 focus:outline-none focus:border-gray-700 focus:shadow-outline-sky active:bg-gray-200"
-                                  >
-                                    Close
+                                type="button"
+                                onClick={handleClose}
+                                className="relative w-full px-10 flex justify-center py-2 px-4 border border-gray-800 text-sm font-medium rounded-md text-gray-800 bg-white hover:bg-gray-100 focus:outline-none focus:border-gray-700 focus:shadow-outline-sky active:bg-gray-200"
+                              >
+                                Close
                               </button>
-                   
-                            <button
-                              type="submit"
-                              className
-                              ="relative w-full px-10 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-sky-600 hover:bg-sky-500 focus:outline-none focus:border-sky-700 focus:shadow-outline-sky active:bg-sky-800"
+                              <button
+                                type="submit"
+                                className="relative w-full px-10 flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-sky-600 hover:bg-sky-500 focus:outline-none focus:border-sky-700 focus:shadow-outline-sky active:bg-sky-800"
                               >
                                 Create
                               </button>
                             </div>
                           </span>
                         </div>
-
                       </div>
-
                     </form>
+
+
                   </div>
                 </div>
                 </div>

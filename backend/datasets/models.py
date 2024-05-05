@@ -11,6 +11,7 @@ RESOLUTIONS = [
 class Dataset(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
+    labels = models.ManyToManyField('Label', related_name='datasets')
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224x224')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -19,7 +20,6 @@ class Dataset(models.Model):
         return self.name
     
 class Label(models.Model):
-    dataset = models.ForeignKey(Dataset, related_name='labels', on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
