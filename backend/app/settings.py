@@ -144,7 +144,7 @@ MEDIA_ROOT = BASE_DIR / "mediafiles"
 BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://backend:8000/')
 
 
-CSRF_TRUSTED_ORIGINS = ["http://localhost:1337"]
+CSRF_TRUSTED_ORIGINS = ["http://fossil.barberis.com"]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
