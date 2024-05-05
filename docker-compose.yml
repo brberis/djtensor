@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  web:
+  backend:
     build: ./backend
     command: >
       /bin/bash -c "python manage.py shell -c \"from django.contrib.auth.models import User; User.objects.filter(username='testuser').exists() or User.objects.create_superuser('testuser', 'testuser@example.com', 'testpassword')\" &&
@@ -82,7 +82,7 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=1000 
       - NEXT_PUBLIC_API_URL=http://localhost:3000
-      - DJANGO_API_BASE_URL=http://web:8000
+      - DJANGO_API_BASE_URL=http://backend:8000
 
     networks:
       - backend

@@ -141,7 +141,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "mediafiles"
 
-BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://web:8000/')
+BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://backend:8000/')
 
 
 CSRF_TRUSTED_ORIGINS = ["http://localhost:1337"]

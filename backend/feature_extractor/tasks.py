@@ -163,16 +163,16 @@ def train_model(training_session_id):
         # untar=True)
 
         ## Testing Data
-        data_dir = tf.keras.utils.get_file(
-        'flower_photos',
-        'https://fossil.barberis.com/flower_photos.tar.gz',
-        untar=True)
-
-
         # data_dir = tf.keras.utils.get_file(
-        # file_name,
-        # tar_path,
+        # 'flower_photos',
+        # 'https://fossil.barberis.com/flower_photos.tar.gz',
         # untar=True)
+
+
+        data_dir = tf.keras.utils.get_file(
+        file_name,
+        tar_path,
+        untar=True)
 
         logger.info(f"Dataset data_dir: {data_dir}")
 

@@ -2,6 +2,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import axios from 'axios';
+import Spinner from '../../components/Spinner';
 
 export default function DatasetDetail() {
   const [dataset, setDataset] = useState(null);
@@ -20,7 +21,7 @@ export default function DatasetDetail() {
       try {
         const [datasetData, labelsData, imagesData] = await Promise.all([
           fetch(`/api/datasets/dataset/${id}`).then(res => res.json()),
-          fetch(`/api/datasets/label/`).then(res => res.json()),
+          fetch(`/api/datasets/label/?datasets__id=${id}`).then(res => res.json()),
           fetch(`/api/datasets/image/?dataset=${id}`).then(res => res.json())
         ]);
 
@@ -64,7 +65,7 @@ export default function DatasetDetail() {
   
 
   if (isLoading) {
-    return <p>Loading...</p>;
+    return <Spinner />;
   }
 
   if (!dataset || dataset.message) {

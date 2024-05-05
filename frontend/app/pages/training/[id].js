@@ -2,6 +2,7 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import { Line } from 'react-chartjs-2';
+import Spinner from '../../components/Spinner';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -141,7 +142,7 @@ const accuracyOptions = {
 
 
   if (isLoading) {
-    return <p>Loading...</p>;
+    return  <Spinner />;
   }
 
   if (!session) {
