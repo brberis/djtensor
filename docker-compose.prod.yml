@@ -1,23 +1,29 @@
-version: '3.8'
+#version: '3.8'
 
 services:
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    command: gunicorn app.wsgi:application --bind 0.0.0.0:8000
+    command: /bin/sh -c "sleep 5 && gunicorn app.wsgi:application --bind 0.0.0.0:8000"
     volumes:
-      - static_volume:/home/app/backend/staticfiles
-      - media_volume:/home/app/backend/mediafiles
+      - static_volume:/usr/src/app/staticfiles
+      - media_volume:/usr/src/app/mediafiles
     expose:
       - 8000
     env_file:
       - ./.env.prod
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - NVIDIA_VISIBLE_DEVICES=all
     depends_on:
       - db
       - redis
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - capabilities: ["gpu"]
 
   redis:
     image: redis
@@ -29,12 +35,14 @@ services:
     build: ./backend
     command: celery -A celery_app worker --loglevel=info
     env_file:
-      - ./.env.dev
+      - ./.env.prod
     depends_on:
       - db    
       - redis
     volumes:
       - ./backend/:/usr/src/app/
+      - static_volume:/usr/src/app/staticfiles  
+      - media_volume:/usr/src/app/mediafiles 
 
   db:
     image: postgres:15
@@ -59,10 +67,11 @@ services:
   nginx:
     build: ./nginx
     volumes:
-      - static_volume:/home/app/backend/staticfiles
-      - media_volume:/home/app/backend/mediafiles
+      - static_volume:/usr/src/app/staticfiles
+      - media_volume:/usr/src/app/mediafiles
     ports:
-      - 1337:80
+      - "80:80"
+      - "443:443"
     depends_on:
       - backend
 

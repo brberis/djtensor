@@ -5,11 +5,12 @@ django-filter
 djangorestframework
 celery
 redis
+async-timeout
 matplotlib
 numpy
 pandas
 Pillow
-tensorflow==2.15.0
-tensorflow-hub==0.16.1
-tf_keras==2.15.1
-flower
+# tensorflow==2.15.0
+tensorflow-hub
+tf_keras
+# flower
