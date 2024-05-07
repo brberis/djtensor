@@ -3,7 +3,7 @@
 ###########
 
 # pull official base image
-FROM python:3.11.4-slim-buster as builder
+FROM tensorflow/tensorflow:latest-gpu as builder
 
 # set work directory
 WORKDIR /usr/src/app
@@ -11,25 +11,43 @@ WORKDIR /usr/src/app
 # set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
+ENV DEBIAN_FRONTEND=noninteractive
 
 # # install system dependencies
 # RUN apt-get update && \
 #     apt-get install -y --no-install-recommends gcc
+RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 
-# install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libhdf5-dev \ 
-    pkg-config \ 
-    netcat \    
-    build-essential   
+# Install system dependencies including wget
+# RUN apt-get update && apt-get install -y \
+#     gcc \
+#     libhdf5-dev \
+#     pkg-config \
+#     netcat \
+#     build-essential \
+#     software-properties-common \
+#     wget  # Include wget in the installation
 
+# Add the deadsnakes PPA for newer Python versions
+# RUN add-apt-repository ppa:deadsnakes/ppa \
+#     && apt-get update \
+#     && apt-get install -y python3.11 python3.11-venv python3.11-dev
 
-# lint
-RUN pip install --upgrade pip
-RUN pip install flake8==6.0.0
-COPY . /usr/src/app/
-RUN flake8 --ignore=E501,F401 . || exit 0
+# # Download and install pip using get-pip.py script
+# RUN wget https://bootstrap.pypa.io/get-pip.py \
+#     && python3.11 get-pip.py \
+#     && rm get-pip.py
+
+# # Verify pip installation
+# RUN python3.11 -m pip --version
+
+# # Upgrade pip
+# RUN python3.11 -m pip install --upgrade pip
+
+# # lint
+# RUN pip install flake8==6.0.0
+# COPY . /usr/src/app/
+# RUN flake8 --ignore=E501,F401 . || exit 0
 
 # install python dependencies
 COPY ./requirements.txt .
@@ -41,33 +59,65 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requir
 #########
 
 # pull official base image
-FROM python:3.11.4-slim-buster
+FROM tensorflow/tensorflow:latest-gpu
+WORKDIR /usr/src/app
 
 # create directory for the app user
-RUN mkdir -p /home/ 
+# RUN mkdir -p /home/ 
 
 # create the app user
-RUN addgroup --system app && adduser --system --group app
+# RUN addgroup --system app && adduser --system --group app
 
 # create the appropriate directories
-ENV HOME=/home/app
-ENV APP_HOME=/home/app/backend
-RUN mkdir $APP_HOME
-RUN mkdir $APP_HOME/staticfiles
-RUN mkdir $APP_HOME/mediafiles
-WORKDIR $APP_HOME
+# ENV HOME=/home/
+ENV APP_HOME=/usr/src/app
+ENV DEBIAN_FRONTEND=noninteractive 
+
+# RUN mkdir $APP_HOME
+# RUN mkdir $APP_HOME/staticfiles
+# RUN mkdir $APP_HOME/mediafiles
+
+#ensure
+# # Set ownership and permissions
+# RUN mkdir -p /home/backend/staticfiles /home/backend/mediafiles
+
+# # Set ownership and permissions
+# RUN chown -R app:app /home/backend && \
+#     chmod -R 777 /home/backend/mediafiles
+
+
+
+# WORKDIR $APP_HOME
 
 # install dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libhdf5-dev \ 
-    pkg-config \ 
-    netcat \    
-    build-essential  
-    
+# RUN apt-get update && apt-get install -y \
+#     gcc \
+#     libhdf5-dev \ 
+#     pkg-config \ 
+#     netcat \    
+#     build-essential \ 
+#     software-properties-common \
+#     wget  # Include wget in the installation
+
+# Add the deadsnakes PPA for newer Python versions
+# RUN add-apt-repository ppa:deadsnakes/ppa \
+#     && apt-get update \
+#     && apt-get install -y python3.11 python3.11-venv python3.11-dev 
+
+# # Download and install pip using get-pip.py script
+# RUN wget https://bootstrap.pypa.io/get-pip.py \
+#     && python3.11 get-pip.py \
+#     && rm get-pip.py
+
+# Verify pip installation
+# RUN python3.11 -m pip --version
+
+# Upgrade pip
+# RUN python3.11 -m pip install --upgrade pip
+# RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
 COPY --from=builder /usr/src/app/wheels /wheels
 COPY --from=builder /usr/src/app/requirements.txt .
-RUN pip install --upgrade pip
 RUN pip install --no-cache /wheels/*
 
 # copy entrypoint.prod.sh
@@ -79,10 +129,10 @@ RUN chmod +x  $APP_HOME/entrypoint.prod.sh
 COPY . $APP_HOME
 
 # chown all the files to the app user
-RUN chown -R app:app $APP_HOME
+# RUN chown -R app:app $APP_HOME
 
 # change to the app user
-USER app
+# USER app
 
 # run entrypoint.prod.sh
-ENTRYPOINT ["/home/app/backend/entrypoint.prod.sh"]
+# ENTRYPOINT ["/home/backend/entrypoint.prod.sh"]

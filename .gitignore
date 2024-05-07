@@ -175,6 +175,7 @@ rethinkdb_data
 .DS_Store
 
 # backend
-data_sets/
-mediaFiles/archive/
-mediaFiles/datasets/
+backend/data_sets/
+backend/mediafiles/
+backend/mediafiles/
+backend/mediafiles/
