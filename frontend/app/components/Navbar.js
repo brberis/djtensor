@@ -5,7 +5,7 @@ import { Disclosure } from '@headlessui/react';
 
 const navigation = [
   { name: 'Training', href: '/' },
-  { name: 'Test', href: '/test' },
+  { name: 'Testing', href: '/testing' },
   { name: 'Performance', href: '/performance' },
   { name: 'Datasets', href: '/datasets' }
 ];

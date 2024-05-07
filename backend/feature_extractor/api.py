@@ -1,6 +1,6 @@
 from rest_framework import viewsets
-from .models import TFModel, TrainingSession, Epoch
-from .serializers import TFModelSerializer, TrainingSessionSerializer, EpochSerializer
+from .models import TFModel, TrainingSession, Epoch, Test
+from .serializers import TFModelSerializer, TrainingSessionSerializer, EpochSerializer, TestSerializer
 
 class TFModelViewSet(viewsets.ModelViewSet):
     queryset = TFModel.objects.all()
@@ -14,4 +14,7 @@ class EpochViewSet(viewsets.ModelViewSet):
     queryset = Epoch.objects.all()
     serializer_class = EpochSerializer
 
+class TestViewSet(viewsets.ModelViewSet):
+    queryset = Test.objects.all()
+    serializer_class = TestSerializer
 

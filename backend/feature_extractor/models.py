@@ -2,11 +2,12 @@ from django.db import models
 from datasets.models import Dataset
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .tasks import train_model
+from .tasks import train_model, test_images
 
-SESSION_STATUS = [
+STATUS = [
     ('Pending', 'Pending'),
     ('Training', 'Training'),
+    ('Testing', 'Testing'),
     ('Completed', 'Completed'),
     ('Failed', 'Failed')
 ]
@@ -30,7 +31,8 @@ class TrainingSession(models.Model):
     notes = models.TextField(blank=True, null=True)
     dataset = models.ForeignKey(Dataset, related_name='training_sessions', on_delete=models.CASCADE)
     model = models.ForeignKey(TFModel, related_name='training_sessions', on_delete=models.CASCADE)
-    status = models.CharField(max_length=30, choices=SESSION_STATUS, default='Pending')
+    status = models.CharField(max_length=30, choices=STATUS, default='Pending')
+    model_path = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -42,6 +44,15 @@ class Epoch(models.Model):
     val_accuracy = models.FloatField()
     val_loss = models.FloatField()
 
+class Test(models.Model):
+    name = models.CharField(max_length=100)
+    notes = models.TextField(blank=True, null=True)
+    dataset = models.ForeignKey(Dataset, related_name='tests', on_delete=models.CASCADE)
+    training_session = models.ForeignKey(TrainingSession, related_name='tests', on_delete=models.CASCADE)
+    status = models.CharField(max_length=30, choices=STATUS, default='Pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 
 @receiver(post_save, sender=TrainingSession)
 def train_model_on_save(sender, instance, created, **kwargs):
@@ -49,4 +60,7 @@ def train_model_on_save(sender, instance, created, **kwargs):
         train_model.delay(instance.id)
 
     
-
+@receiver(post_save, sender=Test)
+def test_images_on_save(sender, instance, created, **kwargs):
+    if created:
+        test_images.delay(instance.id)

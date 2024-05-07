@@ -4,19 +4,19 @@ import Spinner from './Spinner';
 import { PaperClipIcon, XCircleIcon } from '@heroicons/react/20/solid'
 
 
-export default function AddSession({ isOpen, onClose }) {
+export default function AddTest({ isOpen, onClose }) {
   const [open, setOpen] = useState(isOpen);
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState([]);
+  const [trainingSession, setTrainingSession] = useState([]);
   const [datasets, setDatasets] = useState([]);
 
   useEffect(() => {
     const fetchModels = async () => {
       try {
-        const response = await fetch('/api/feature_extractor/tfmodel/');
+        const response = await fetch('/api/feature_extractor/trainingsession/');
         const data = await response.json();
-        setModels(data); 
+        setTrainingSession(data); 
         setIsLoading(false);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -43,7 +43,7 @@ export default function AddSession({ isOpen, onClose }) {
     fetchDatasets();
   }, []);
 
-  console.log(models);
+  console.log(trainingSession);
   console.log(datasets);
 
   const handleClose = (result) => {
@@ -58,22 +58,22 @@ export default function AddSession({ isOpen, onClose }) {
     e.preventDefault();
 
     const formData = new FormData(e.target);
-    const newTraining = {
+    const newTest = {
       name: formData.get('name'), 
       notes: formData.get('notes'),
-      dataset_id: formData.get('dataset'),
-      model_id: formData.get('model')
+      dataset: formData.get('dataset'),
+      training_session: formData.get('trainingsession'),
     }
-    console.log('newTraining', newTraining);
+    console.log('newTraining', newTest);
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/feature_extractor/trainingsession/', {
+      const response = await fetch('/api/feature_extractor/tests/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newTraining),
+        body: JSON.stringify(newTest),
       });
       if (response.ok) {
         handleClose(true);
@@ -82,8 +82,8 @@ export default function AddSession({ isOpen, onClose }) {
         setAlert(data.detail);
       }
     } catch (error) {
-      console.error('Failed to create session:', error);
-      setAlert('Failed to create session');
+      console.error('Failed to create a test:', error);
+      setAlert('Failed to create test');
     }
   }
 
@@ -127,7 +127,7 @@ export default function AddSession({ isOpen, onClose }) {
                   </svg>
                 </button>
                 <Dialog.Title as="h3" className="text-lg text-center font-medium leading-6 text-gray-900">
-                    New Training Session
+                    New Test
                 </Dialog.Title>
                 <div className="mt-3 text-left sm:mt-5">
                   <div className="mt-2">
@@ -169,19 +169,19 @@ export default function AddSession({ isOpen, onClose }) {
                             <label
                               htmlFor="model"
                               >
-                              Model
+                              Training Session
                             </label>
                             <div className="mt-1 rounded-md shadow-sm">
                               <select
-                                id="model"
-                                name="model"
+                                id="trainingsession"
+                                name="trainingsession"
                                 required
                                 className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                                 >
-                                <option value="" disabled>Select a model...</option>
-                                {models?.map((model) => (
-                                  <option key={model.id} value={model.id}>
-                                    {model.name}
+                                <option value="" disabled>Select a training...</option>
+                                {trainingSession?.map((training) => (
+                                  <option key={training.id} value={training.id}>
+                                    {training.name}
                                   </option>
                                 ))}                                  
                               </select>
@@ -193,7 +193,7 @@ export default function AddSession({ isOpen, onClose }) {
                                 htmlFor="model"
                                 className="block text-sm font-medium leading-5 text-gray-700"
                               >
-                                Dataset for Training
+                                Dataset to Test
                               </label>
                               <div className="mt-1 rounded-md shadow-sm">
                                 <select

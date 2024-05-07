@@ -7,6 +7,8 @@ import matplotlib.pylab as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+
 
 import logging
 
@@ -146,6 +148,7 @@ def train_model(training_session_id):
         print(f"Input size {IMAGE_SIZE}")
 
         BATCH_SIZE = model_batch_size 
+        logger.info(f"Batch size: {BATCH_SIZE}")
 
         # Import dataset
         file_name = session_instance.dataset.name.replace(' ', '_').lower()
@@ -324,23 +327,22 @@ def train_model(training_session_id):
                 val_loss=hist['val_loss'][epoch - 1]
             )
 
-        ##################################
-        # Prediction and Save the model  #
-        ##################################
+        ###################
+        # Save the model  #
+        ###################
 
-        x, y = next(iter(val_ds))
-        image = x[0, :, :, :]
-        true_index = np.argmax(y[0])
-        plt.imshow(image)
-        plt.axis('off')
-        plt.show()
+        # x, y = next(iter(val_ds))
+        # image = x[0, :, :, :]
+        # true_index = np.argmax(y[0])
+        # plt.imshow(image)
+        # plt.axis('off')
+        # plt.show()
 
-        # Expand the validation image to (1, 224, 224, 3) before predicting the label
-        prediction_scores = model.predict(np.expand_dims(image, axis=0))
-        predicted_index = np.argmax(prediction_scores)
-        logger.info("True label: " + class_names[true_index])
-        logger.info("Predicted label: " + class_names[predicted_index])
-
+        # save the model
+        model_file_name = session_instance.name.replace(' ', '_').lower()
+        model_path = settings.MEDIA_ROOT / 'models' / f'{model_file_name}.h5'
+        model.save(model_path)
+        session_instance.model_path = model_path
         session_instance.status = 'Completed'
 
     except Exception as e:
@@ -349,3 +351,44 @@ def train_model(training_session_id):
         session_instance.status = 'Failed'
 
     session_instance.save()
+
+
+# Predict the label of an image
+
+@shared_task
+def test_images(test_id):
+    from .models import Test
+
+    test_instance = Test.objects.get(id=test_id)
+    test_instance.status = 'Testing'
+    test_instance.save()
+    model_file = test_instance.training_session.model_path
+    logger.info(f"MODEL FILE: {model_file}")
+    # Load the model
+    model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer':hub.KerasLayer})
+    class_names = tuple(test_instance.dataset.labels.all().values_list('name', flat=True))
+
+    try:
+        for image in test_instance.dataset.images.all():
+            print(image.image.path) 
+            # print image true label
+            print(image.label.name) 
+           
+            img = load_img(image.image.path, target_size=(224, 224))  
+            img = img_to_array(img)
+            img = img / 255.0
+            img = np.expand_dims(img, axis=0)
+
+            prediction_scores = model.predict(img)
+            logger.info("Prediction scores: " + str(prediction_scores)) 
+            predicted_index = np.argmax(prediction_scores)
+            logger.info("True label: " + image.label.name)
+            logger.info("Predicted label: " + class_names[predicted_index])
+
+        test_instance.status = 'Completed'
+    except Exception as e:
+        # If an error occurs, log it and update the status to 'Failed'
+        print(f"Error during testing: {e}")
+        test_instance.status = 'Failed'
+
+    test_instance.save()

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import TFModel, TrainingSession, Epoch
+from .models import TFModel, TrainingSession, Epoch, Test
 from datasets.models import Dataset
 from datasets.serializers import DatasetSerializer  
 class TFModelSerializer(serializers.ModelSerializer):
@@ -24,10 +24,15 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainingSession
-        fields = ['id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at']
 
 class EpochSerializer(serializers.ModelSerializer):
     class Meta:
         model = Epoch
         fields = '__all__'
         
+
+class TestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Test
+        fields = '__all__'
