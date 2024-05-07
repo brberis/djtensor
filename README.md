@@ -53,3 +53,8 @@ To stop all services, you can run:
 ```docker-compose down```
 
 
+## Contributors
+
+- **Dêvi Hall** - [GitHub](https://github.com/devihall)
+- **Cristobal Barberis** - [GitHub](https://github.com/brberis)
+
