@@ -2,7 +2,6 @@ import { useRouter } from 'next/router';
 import { useEffect, useState, useRef } from 'react';
 import Layout from '../../components/Layout';
 import Spinner from '../../components/Spinner';
-import * as tfvis from '@tensorflow/tfjs-vis';
 
 export default function TestDetail() {
   const [test, setTest] = useState(null);
@@ -11,7 +10,7 @@ export default function TestDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [dataset, setDataset] = useState(null); 
   const [trainingSession, setTrainingSession] = useState(null);
-  const visRef = useRef(null);
+  // const visRef = useRef(null);
   const router = useRouter();
   const { id } = router.query;
 

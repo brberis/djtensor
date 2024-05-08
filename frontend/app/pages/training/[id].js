@@ -2,7 +2,6 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import Spinner from '../../components/Spinner';
-import * as tfvis from '@tensorflow/tfjs-vis';
 
 export default function TrainingDetail() {
   const [session, setSession] = useState(null);
