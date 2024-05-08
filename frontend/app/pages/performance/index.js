@@ -98,7 +98,7 @@ export default function TrainingDetail() {
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Training Date</dt>
                   <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                    {new Date(session.created_at).toLocaleDateString("en-US", {
+                    {new Date(session[0].created_at).toLocaleDateString("en-US", {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
@@ -111,31 +111,31 @@ export default function TrainingDetail() {
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Status</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.status}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].status}</dd>
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Model Name</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.name}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].model?.name}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Dataset Name</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset?.name}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].dataset?.name}</dd>
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Resolution</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset?.resolution}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].dataset?.resolution}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Epochs</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.epochs}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].model?.epochs}</dd>
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Validation Split</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.validation_split}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].model?.validation_split}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Batch Size</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.batch_size}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session[0].model?.batch_size}</dd>
                 </div>
               </dl>
             </div>
