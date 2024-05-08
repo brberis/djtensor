@@ -53,6 +53,11 @@ class Test(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+class TestResult(models.Model):
+    test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
+    image = models.ForeignKey('datasets.Image', related_name='test_results', on_delete=models.CASCADE)
+    prediction = models.ForeignKey('datasets.Label', related_name='test_results', on_delete=models.CASCADE)
+    confidence = models.FloatField()
 
 @receiver(post_save, sender=TrainingSession)
 def train_model_on_save(sender, instance, created, **kwargs):

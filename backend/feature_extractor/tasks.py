@@ -357,38 +357,47 @@ def train_model(training_session_id):
 
 @shared_task
 def test_images(test_id):
-    from .models import Test
-
-    test_instance = Test.objects.get(id=test_id)
-    test_instance.status = 'Testing'
-    test_instance.save()
-    model_file = test_instance.training_session.model_path
-    logger.info(f"MODEL FILE: {model_file}")
-    # Load the model
-    model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer':hub.KerasLayer})
-    class_names = tuple(test_instance.dataset.labels.all().values_list('name', flat=True))
+    from .models import Test, TestResult
 
     try:
+        test_instance = Test.objects.get(id=test_id)
+        test_instance.status = 'Testing'
+        test_instance.save()
+
+        model_file = test_instance.training_session.model_path
+        logger.info(f"MODEL FILE: {model_file}")
+
+        # Load the model
+        model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer': hub.KerasLayer})
+        class_names = tuple(test_instance.dataset.labels.all().values_list('name', flat=True))
+
         for image in test_instance.dataset.images.all():
-            print(image.image.path) 
-            # print image true label
-            print(image.label.name) 
-           
-            img = load_img(image.image.path, target_size=(224, 224))  
+            logger.info(f"Testing image: {image.image.path}")
+
+            img = load_img(image.image.path, target_size=(224, 224))
             img = img_to_array(img)
             img = img / 255.0
             img = np.expand_dims(img, axis=0)
 
             prediction_scores = model.predict(img)
-            logger.info("Prediction scores: " + str(prediction_scores)) 
             predicted_index = np.argmax(prediction_scores)
-            logger.info("True label: " + image.label.name)
-            logger.info("Predicted label: " + class_names[predicted_index])
+            predicted_label = class_names[predicted_index]
+            confidence = prediction_scores[0][predicted_index]
+
+            # Log prediction details
+            logger.info(f"True label: {image.label.name}, Predicted label: {predicted_label}, Confidence: {confidence}")
+
+            # Save test results
+            TestResult.objects.create(
+                test=test_instance,
+                image=image,
+                prediction=image.dataset.labels.get(name=predicted_label),
+                confidence=float(confidence)
+            )
 
         test_instance.status = 'Completed'
     except Exception as e:
-        # If an error occurs, log it and update the status to 'Failed'
-        print(f"Error during testing: {e}")
+        logger.error(f"Error during testing: {e}")
         test_instance.status = 'Failed'
-
-    test_instance.save()
+    finally:
+        test_instance.save()

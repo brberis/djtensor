@@ -38,10 +38,6 @@ class Image(models.Model):
         return self.image.url
 
 
-@receiver(post_save, sender=Image)
-def create_dataset_archive_on_save(sender, instance, **kwargs):
-    create_dataset_archive.delay(instance.dataset.id)
-
 @receiver(post_delete, sender=Image)
 def create_dataset_archive_on_delete(sender, instance, **kwargs):
     create_dataset_archive.delay(instance.dataset.id)

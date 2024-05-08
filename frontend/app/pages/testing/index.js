@@ -5,7 +5,7 @@ import AddTest from '../../components/addTest';
 import { getStatusColor } from '../../utils';
 
 export default function Training() {
-  const [tests, settests] = useState([]);
+  const [tests, setTests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddTest, setIsOpenAddTest] = useState(false);
   const [refresh, setRefresh] = useState(false);
@@ -18,7 +18,7 @@ export default function Training() {
         const data = await response.json();
         console.log('Tests:', data);
         if (Array.isArray(data)) {
-          settests(data);
+          setTests(data);
         } else {
           throw new Error('Data is not an array');
         }
@@ -26,7 +26,7 @@ export default function Training() {
       } catch (error) {
         console.error('Failed to fetch tests:', error);
         setIsLoading(false);
-        settests([]);
+        setTests([]);
       }
     };
 
@@ -41,7 +41,7 @@ export default function Training() {
     console.log('Attempting to handle click for:', test);
     if (test.status === 'Completed') {
       console.log('Test is completed and clickable');
-      router.push(`/training/${test.id}`); 
+      router.push(`/testing/${test.id}`); 
     }
   };
 
