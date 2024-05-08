@@ -4,17 +4,18 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const baseUrl = process.env.DJANGO_API_BASE_URL;  
 
-  const url = `${baseUrl}/api/feature_extractor/tests/${id}`;
+  const url = `${baseUrl}/api/feature_extractor/testresult/`;
 
   switch (req.method) {
     case 'GET':
       try {
-        const response = await axios.get(url);
+        const { test__id } = req.query;
+        const response = await axios.get(url, { params: { test__id } } );
         const data = response.data;
         res.status(200).json(data);
       } catch (error) {
-        console.error('Failed to fetch training test:', error);
-        res.status(500).json({ message: 'Failed to fetch test' });
+        console.error('Failed to fetch training test result:', error);
+        res.status(500).json({ message: 'Failed to fetch test result' });
       }
       break;
 

@@ -8,19 +8,17 @@ export default function TrainingDetail() {
   const [session, setSession] = useState(null);
   const [epochs, setEpochs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
-  const { id } = router.query;
 
   useEffect(() => {
     const fetchSession = async () => {
-      if (!id) return;
       setIsLoading(true);
       try {
-        const sessionResponse = await fetch(`/api/feature_extractor/trainingsession/${id}`);
+        const sessionResponse = await fetch(`/api/feature_extractor/performance/`);
         const sessionData = await sessionResponse.json();
         setSession(sessionData);
+        console.log('Session:', sessionData);
   
-        const epochsResponse = await fetch(`/api/feature_extractor/epoch/?training_session=${id}`);
+        const epochsResponse = await fetch(`/api/feature_extractor/epoch/?training_session=${sessionData.id}`);
         const epochsData = await epochsResponse.json();
         setEpochs(epochsData);
       } catch (error) {
@@ -31,7 +29,7 @@ export default function TrainingDetail() {
     };
   
     fetchSession();
-  }, [id]);
+  }, []);
 
   useEffect(() => {
     if (epochs.length > 0 && document.getElementById('loss-container') && document.getElementById('accuracy-container')) {
@@ -84,9 +82,9 @@ export default function TrainingDetail() {
       <div className="px-40 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">
-            <h1 className="text-lg font-semibold leading-6 text-gray-900">Training Session Detail</h1>
+            <h1 className="text-lg font-semibold leading-6 text-gray-900">Last Training Session Detail</h1>
             <p className="mt-2 text-sm text-gray-700">
-              Detailed information about the training session including dataset and model used.
+              Detailed information about the last training session including dataset and model used.
             </p>
           </div>
         </div>
@@ -118,27 +116,27 @@ export default function TrainingDetail() {
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Model Name</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model.name}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.name}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Dataset Name</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset.name}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset?.name}</dd>
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Resolution</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset.resolution}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.dataset?.resolution}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Epochs</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model.epochs}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.epochs}</dd>
                 </div>
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Validation Split</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model.validation_split}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.validation_split}</dd>
                 </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Batch Size</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model.batch_size}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.model?.batch_size}</dd>
                 </div>
               </dl>
             </div>

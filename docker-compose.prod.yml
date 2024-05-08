@@ -1,26 +1,29 @@
-
+#version: '3.8'
 
 services:
   backend:
-    build: ./backend
-    command: >
-      /bin/bash -c "python manage.py migrate --noinput &&
-                    python manage.py shell -c \"from django.contrib.auth.models import User; User.objects.filter(username='testuser').exists() or User.objects.create_superuser('testuser', 'testuser@example.com', 'testpassword')\" &&
-                    python manage.py loaddata basic_fixture &&
-                    python manage.py runserver 0.0.0.0:8000"
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    command: /bin/sh -c "sleep 5 && gunicorn app.wsgi:application --bind 0.0.0.0:8000"
     volumes:
-      - ./backend/:/usr/src/app/
-    ports:
-      - 8000:8000
+      - static_volume:/usr/src/app/staticfiles
+      - media_volume:/usr/src/app/mediafiles
+    expose:
+      - 8000
     env_file:
-      - ./.env.dev
+      - ./.env
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - NVIDIA_VISIBLE_DEVICES=all
     depends_on:
       - db
       - redis
-    networks:
-      - backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - capabilities: ["gpu"]
 
   db:
     image: postgres:15
@@ -30,66 +33,53 @@ services:
       - POSTGRES_USER=backend
       - POSTGRES_PASSWORD=backend
       - POSTGRES_DB=backend_dev
-    networks:
-      - backend
-
+      
   redis:
     image: redis
     ports:
       - 6379:6379
-    networks:
-      - backend
 
   celery_worker:
     build: ./backend
     command: celery -A celery_app worker --loglevel=info
     env_file:
-      - ./.env.dev
+      - ./.env.prod
     depends_on:
       - db    
       - redis
     volumes:
       - ./backend/:/usr/src/app/
-    networks:
-      - backend
-
-  # jupyter:
-  #   build: ./jupyter
-  #   environment:
-  #     - JUPYTER_ENABLE_LAB=yes
-  #     - JUPYTER_TOKEN=k96y%tiq26be!tqb#p
-  #   ports:
-  #     - "8888:8888"
-  #   volumes:
-  #     - ./data:/home/jovyan/data
-  #     - ./notebooks:/home/jovyan/work
-  #   depends_on:
-  #     - db
-  #   networks:
-  #     - backend
+      - static_volume:/usr/src/app/staticfiles  
+      - media_volume:/usr/src/app/mediafiles 
 
   frontend:
     build: ./frontend
-    command: npm run dev
+    command: npm run start
     volumes:
-      - ./frontend:/usr/src/app
-      - /frontend/node_modules
-    ports:
-      - 3000:3000
-    restart: always
-    environment:
-      - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true
-      - CHOKIDAR_INTERVAL=1000 
-      - NEXT_PUBLIC_API_URL=http://45.74.92.15:3000
-      - DJANGO_API_BASE_URL=http://45.74.92.15:8000
+      - static_volume:/usr/src/app/.next/static
+    expose:
+      - 3000
+    env_file:
+      - ./.env.prod
+    
 
-    networks:
+
+  nginx:
+    build: ./nginx
+    volumes:
+      - static_volume:/usr/src/app/staticfiles
+      - media_volume:/usr/src/app/mediafiles
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
       - backend
 
 
 volumes:
   postgres_data:
+  static_volume:
+  media_volume:
 
 networks:
   backend:
