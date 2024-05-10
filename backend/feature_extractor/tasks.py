@@ -358,6 +358,103 @@ def train_model(training_session_id):
 @shared_task
 def test_images(test_id):
     from .models import Test, TestResult
+    logger.info(f"Testing images for test id: {test_id}")
+    IMAGE_SIZE = (224, 224)
+    BATCH_SIZE = 1
+
+    try:
+        test_instance = Test.objects.get(id=test_id)
+        test_instance.status = 'Testing'
+        test_instance.save()
+
+        model_file = test_instance.training_session.model_path
+        logger.info(f"MODEL FILE: {model_file}")
+
+        file_name =  test_instance.dataset.name.replace(' ', '_').lower()
+ 
+        logger.info(f"Testing Dataset Name: {file_name}")
+
+        base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
+        logger.info(f"Testing Dataset NAME: " + base_media_url)
+        tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
+        logger.info(f"Testing Dataset PATH: {tar_path}")
+
+        data_dir = tf.keras.utils.get_file(
+        file_name,
+        tar_path,
+        untar=True)
+
+        logger.info(f"Dataset data_dir: {data_dir}")
+
+
+        ##################
+        # Build Testing  #
+        ##################
+
+        normalization_layer = tf.keras.layers.Rescaling(1. / 255)
+        
+        @tf.function
+        def normalization(images, labels):
+            return normalization_layer(images), labels
+
+        logger.info("Building and compiling model...")
+
+        def build_dataset():
+            return tf.keras.preprocessing.image_dataset_from_directory(
+                data_dir,
+                label_mode="categorical",
+                image_size=IMAGE_SIZE,
+                batch_size=1)
+        
+        test_ds = build_dataset()
+        class_names = tuple(test_ds.class_names)
+
+        test_ds = test_ds.unbatch().batch(BATCH_SIZE)
+        test_ds = test_ds.map(normalization) 
+
+
+   
+        # Expand the validation image to (1, 224, 224, 3) before predicting the label
+        model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer': hub.KerasLayer})
+        softmax = tf.keras.layers.Softmax()
+
+        for x, y in test_ds:
+            image = x[0]
+            true_index = np.argmax(y[0])
+            logits = model.predict(np.expand_dims(image, axis=0))
+            probabilities = softmax(logits).numpy()
+            predicted_index = np.argmax(probabilities)
+            predicted_label = class_names[predicted_index]
+            true_label = class_names[true_index]
+            confidence = probabilities[0][predicted_index]
+
+            print(f"Predicted probabilities: {probabilities[0]}")
+            print(f"Predicted label: {predicted_label}, Confidence: {confidence:.2%}")
+            print(f"True label: {true_label}")
+
+
+            # Save test results
+            TestResult.objects.create(
+                test=test_instance, 
+                true_label=true_label, 
+                prediction=predicted_label,
+                confidence=float(confidence)
+            )
+
+
+        test_instance.status = 'Completed'
+    except Exception as e:
+        logger.error(f"Error during testing: {e}")
+        test_instance.status = 'Failed'
+    finally:
+        test_instance.save()
+
+
+
+@shared_task
+def test_images_from_db(test_id):
+    from .models import Test, TestResult
+    logger.info(f"Testing images for test id: {test_id}")
 
     try:
         test_instance = Test.objects.get(id=test_id)
@@ -383,6 +480,7 @@ def test_images(test_id):
             predicted_index = np.argmax(prediction_scores)
             predicted_label = class_names[predicted_index]
             confidence = prediction_scores[0][predicted_index]
+            logger.info(f"Predicted scores: {np.array2string(prediction_scores)}")
 
             # Log prediction details
             logger.info(f"True label: {image.label.name}, Predicted label: {predicted_label}, Confidence: {confidence}")

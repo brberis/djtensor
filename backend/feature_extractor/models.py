@@ -55,8 +55,9 @@ class Test(models.Model):
 
 class TestResult(models.Model):
     test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
-    image = models.ForeignKey('datasets.Image', related_name='test_results', on_delete=models.CASCADE)
-    prediction = models.ForeignKey('datasets.Label', related_name='test_results', on_delete=models.CASCADE)
+    true_label = models.CharField(max_length=100, blank=True, null=True)
+    prediction = models.CharField(max_length=100, blank=True, null=True)
+    # image = models.ForeignKey('datasets.Image', related_name='test_results', on_delete=models.CASCADE)
     confidence = models.FloatField()
 
 @receiver(post_save, sender=TrainingSession)
