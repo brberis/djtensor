@@ -161,6 +161,7 @@ export default function AddDataset({ isOpen, onClose }) {
                             >
                               <option disabled>Select resolutions...</option>
                               <option value="224x224">224x224</option>
+                              <option value="380x380">380x380</option>
                             </select>
                           </div>
                         </div>
