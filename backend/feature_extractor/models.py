@@ -53,9 +53,9 @@ PRE_MODEL = [
     ('resnet_v2_50', 'resnet_v2_50'),
     ('resnet_v2_101', 'resnet_v2_101'),
     ('resnet_v2_152', 'resnet_v2_152'),
-    ('nasnet_mobile', 'nasnet_mobile')
+    ('nasnet_mobile', 'nasnet_mobile'),
     ('nasnet_large', 'nasnet_large'),
-    ('pnasnet_large', 'pnasnet_large'),,
+    ('pnasnet_large', 'pnasnet_large'),
     ('mobilenet_v2_100_224', 'mobilenet_v2_100_224'),
     ('mobilenet_v2_130_224', 'mobilenet_v2_130_224'),
     ('mobilenet_v2_140_224', 'mobilenet_v2_140_224'),
@@ -63,13 +63,8 @@ PRE_MODEL = [
     ('mobilenet_v3_small_075_224', 'mobilenet_v3_small_075_224'),
     ('mobilenet_v3_large_100_224', 'mobilenet_v3_large_100_224'),
     ('mobilenet_v3_large_075_224', 'mobilenet_v3_large_075_224') 
-
 ]
     
-    
-     
-
-]
 # model to store tensorflow trainings
 class TFModel(models.Model):
     name = models.CharField(max_length=100)
@@ -116,8 +111,8 @@ class TestResult(models.Model):
     test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
     true_label = models.CharField(max_length=100, blank=True, null=True)
     prediction = models.CharField(max_length=100, blank=True, null=True)
-    # image = models.ForeignKey('datasets.Image', related_name='test_results', on_delete=models.CASCADE)
     confidence = models.FloatField()
+
 
 @receiver(post_save, sender=TrainingSession)
 def train_model_on_save(sender, instance, created, **kwargs):
@@ -128,4 +123,4 @@ def train_model_on_save(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Test)
 def test_images_on_save(sender, instance, created, **kwargs):
     if created:
-        test_images.delay(instance.id)
+        test_images.delay(instance.id, )
