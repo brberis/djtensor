@@ -65,7 +65,6 @@ export default function Training() {
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Resolution</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Qty</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -74,7 +73,6 @@ export default function Training() {
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.name}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.description}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.resolution}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">50 images</td>
                       </tr>
                     ))}
                   </tbody>

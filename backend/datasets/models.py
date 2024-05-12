@@ -4,8 +4,17 @@ from django.dispatch import receiver
 from .tasks import create_dataset_archive
 
 RESOLUTIONS = [
-    ('224x224', '224x224'),
-    ('380x380', '380x380')
+    ('224', '224'),
+    ('240', '240'),
+    ('260', '260'),
+    ('299', '299'),
+    ('300', '300'),
+    ('331', '331'),
+    ('456', '456'),
+    ('480', '480'),
+    ('512', '512'),
+    ('528', '528'),
+    ('600', '600')
 ]
 
 class Dataset(models.Model):
