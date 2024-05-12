@@ -21,7 +21,7 @@ class Dataset(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
     labels = models.ManyToManyField('Label', related_name='datasets')
-    resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224x224')
+    resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
