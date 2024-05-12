@@ -3,6 +3,19 @@ import { Dialog, Transition } from '@headlessui/react'
 import Spinner from './Spinner';
 import { XCircleIcon } from '@heroicons/react/20/solid'
 
+const resolutions = [
+  {res: '224', des: '224x224'},
+  {res: '240', des: '240x240'},
+  {res: '260', des: '260x260'},
+  {res: '299', des: '299x299'},
+  {res: '300', des: '300x300'},
+  {res: '331', des: '331x331'},
+  {res: '456', des: '456x456'},
+  {res: '480', des: '480x480'},
+  {res: '512', des: '512x512'},
+  {res: '528', des: '528x528'},
+  {res: '600', des: '600x600'}
+];
 
 export default function AddDataset({ isOpen, onClose }) {
   const [open, setOpen] = useState(isOpen);
@@ -158,10 +171,11 @@ export default function AddDataset({ isOpen, onClose }) {
                               name="resolution"
                               required
                               className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                            >
-                              <option disabled>Select resolutions...</option>
-                              <option value="224x224">224x224</option>
-                              <option value="380x380">380x380</option>
+                              >
+                              <option disabled selected>Select resolution...</option>
+                                {resolutions.map((resolution) => (
+                                  <option key={resolution.res} value={resolution.res}>{resolution.des}</option>
+                                ))}
                             </select>
                           </div>
                         </div>
