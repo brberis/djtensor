@@ -9,6 +9,19 @@ export default function TrainingDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { id } = router.query;
+  const [duration, setDuration] = useState(0);
+
+  const formatDuration = (durationInSeconds) => {
+    const seconds = Math.floor(durationInSeconds % 60);
+    const minutes = Math.floor((durationInSeconds / 60) % 60);
+    const hours = Math.floor(durationInSeconds / 3600);
+  
+    const paddedHours = hours.toString().padStart(2, '0');
+    const paddedMinutes = minutes.toString().padStart(2, '0');
+    const paddedSeconds = seconds.toString().padStart(2, '0');
+  
+    return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+  }
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -18,7 +31,12 @@ export default function TrainingDetail() {
         const sessionResponse = await fetch(`/api/feature_extractor/trainingsession/${id}`);
         const sessionData = await sessionResponse.json();
         setSession(sessionData);
-  
+        const createdAt = new Date(sessionData.created_at);
+        const updatedAt = new Date(sessionData.updated_at);
+        const duration = updatedAt - createdAt;
+        const durationInSeconds = duration / 1000;
+        setDuration(formatDuration(durationInSeconds));
+
         const epochsResponse = await fetch(`/api/feature_extractor/epoch/?training_session=${id}`);
         const epochsData = await epochsResponse.json();
         setEpochs(epochsData);
@@ -111,6 +129,10 @@ export default function TrainingDetail() {
                     })}
                   </dd>
                 </div>
+                <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Duration</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{duration}</dd>
+                </div>
                 <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Status</dt>
                   <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{session.status}</dd>
@@ -154,7 +176,7 @@ export default function TrainingDetail() {
           <div className="mt-4">
             {epochs.length ? (
               epochs.map(epoch => (
-                <div key={epoch.number} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4">
+                <div key={epoch.id} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4">
                   <p><strong>Epoch Number:</strong> {epoch.number}</p>
                   <p><strong>Accuracy:</strong> {epoch.accuracy}</p>
                   <p><strong>Loss:</strong> {epoch.loss}</p>

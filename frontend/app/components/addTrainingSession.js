@@ -2,7 +2,18 @@ import { Fragment, useState, useEffect, useRef } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import Spinner from './Spinner';
 import { PaperClipIcon, XCircleIcon } from '@heroicons/react/20/solid'
-
+const datasetsGenerator = [
+  { value: 50, label: '40 Training / 10 Validation' },
+  { value: 100, label: '80 Training / 20 Validation' },
+  { value: 150, label: '120 Training / 30 Validation' },
+  { value: 200, label: '160 Training / 40 Validation' },
+  { value: 250, label: '200 Training / 50 Validation' },
+  { value: 300, label: '240 Training / 60 Validation' },
+  { value: 350, label: '280 Training / 70 Validation' },
+  { value: 400, label: '320 Training / 80 Validation' },
+  { value: 450, label: '360 Training / 90 Validation' },
+  { value: 500, label: '400 Training / 100 Validation' }
+];
 
 export default function AddSession({ isOpen, onClose }) {
   const [open, setOpen] = useState(isOpen);
@@ -193,6 +204,30 @@ export default function AddSession({ isOpen, onClose }) {
                                 htmlFor="model"
                                 className="block text-sm font-medium leading-5 text-gray-700"
                               >
+                                Generate Dataset for Training
+                              </label>
+                              <div className="mt-1 rounded-md shadow-sm">
+                                <select
+                                  id="dataset"
+                                  name="dataset"
+                                  required
+                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                                  >
+                                  <option value="" disabled>Select...</option>
+                                  {datasetsGenerator?.map((generator) => (
+                                    <option key={generator.value} value={generator.value}>
+                                      {generator.label}
+                                    </option>
+                                  ))}                                  
+                                </select>
+                              </div>
+
+                            </div>
+                            {/* <div className="col-span-6 sm:col-span-6">
+                              <label
+                                htmlFor="model"
+                                className="block text-sm font-medium leading-5 text-gray-700"
+                              >
                                 Dataset for Training
                               </label>
                               <div className="mt-1 rounded-md shadow-sm">
@@ -211,7 +246,7 @@ export default function AddSession({ isOpen, onClose }) {
                                 </select>
                               </div>
 
-                            </div>
+                            </div> */}
                             <div className="col-span-full">
                               <label
                                 htmlFor="notes"

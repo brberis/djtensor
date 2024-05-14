@@ -1,5 +1,5 @@
 from django.db import models
-from datasets.models import Dataset
+from datasets.models import Dataset, Image
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .tasks import train_model, test_images
@@ -109,6 +109,7 @@ class Test(models.Model):
 
 class TestResult(models.Model):
     test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
+    image = models.ForeignKey(Image, related_name='test_results', blank=True, null=True, on_delete=models.CASCADE)
     true_label = models.CharField(max_length=100, blank=True, null=True)
     prediction = models.CharField(max_length=100, blank=True, null=True)
     confidence = models.FloatField()

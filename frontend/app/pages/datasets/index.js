@@ -3,42 +3,48 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
 
-export default function Training() {
+export default function Datasets({ base }) {
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddDataset, setIsOpenAddDataset] = useState(false);
   const [refresh, setRefresh] = useState(false);
   const router = useRouter();
 
+  // Function to filter datasets
+  const filterDatasets = (data) => {
+    const baseDatasets = data.filter(dataset => dataset.base);
+    const testingDatasets = data.filter(dataset => dataset.for_testing);
+
+    const lastBaseDataset = baseDatasets.slice(-1);
+
+    return [...lastBaseDataset, ...testingDatasets];
+  };
+
+  // Fetch datasets from API
   useEffect(() => {
-    const fetchSessions = async () => {
+    const fetchDatasets = async () => {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        if (Array.isArray(data)) {
-          setDatasets(data);
-        } else {
-          throw new Error('Data is not an array');
-        }
-        setIsLoading(false);
+        setDatasets(base ? data : filterDatasets(data));
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
-        setIsLoading(false);
         setDatasets([]);
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchSessions();
-
-  }, [refresh]);
+    fetchDatasets();
+  }, [refresh, base]);
 
   const handleDatasetClick = (dataset) => {
-      router.push(`/datasets/${dataset.id}`); 
+    router.push(`/datasets/${dataset.id}`);
   };
 
   const handleClose = () => {
     setIsOpenAddDataset(false);
-    setRefresh((prevRefresh) => !prevRefresh);
+    setRefresh(prev => !prev);
   };
 
   const incomingAction = (action) => {
@@ -65,14 +71,16 @@ export default function Training() {
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
                       <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Resolution</th>
+                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {datasets.map((dataset) => (
-                      <tr key={dataset.id} onClick={() => handleDatasetClick(dataset)} className={'cursor-pointer hover:bg-gray-50'}>
+                      <tr key={dataset.id} onClick={() => handleDatasetClick(dataset)} className="cursor-pointer hover:bg-gray-50">
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.name}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.description}</td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.resolution}</td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.base ? 'Base' : dataset.for_testing ? 'Testing' : 'Training'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -84,4 +92,9 @@ export default function Training() {
       </div>
     </Layout>
   );
+}
+
+export async function getServerSideProps(context) {
+  const base = context.query.base === 'true';
+  return { props: { base } };
 }

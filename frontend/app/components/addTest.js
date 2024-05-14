@@ -32,7 +32,8 @@ export default function AddTest({ isOpen, onClose }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        setDatasets(data); 
+        const filteredData = data.filter(dataset => dataset.for_testing);
+        setDatasets(filteredData); 
         setIsLoading(false);
       } catch (error) {
         console.error('Failed to fetch data:', error);

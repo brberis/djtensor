@@ -7,6 +7,7 @@ import matplotlib.pylab as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
+import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
 
@@ -46,8 +47,9 @@ def train_model(training_session_id):
         #@title
         # Selection of the pre train model  
         
-        model_name = "mobilenet_v2_100_224" # @param ['efficientnetv2-s', 'efficientnetv2-m', 'efficientnetv2-l', 'efficientnetv2-s-21k', 'efficientnetv2-m-21k', 'efficientnetv2-l-21k', 'efficientnetv2-xl-21k', 'efficientnetv2-b0-21k', 'efficientnetv2-b1-21k', 'efficientnetv2-b2-21k', 'efficientnetv2-b3-21k', 'efficientnetv2-s-21k-ft1k', 'efficientnetv2-m-21k-ft1k', 'efficientnetv2-l-21k-ft1k', 'efficientnetv2-xl-21k-ft1k', 'efficientnetv2-b0-21k-ft1k', 'efficientnetv2-b1-21k-ft1k', 'efficientnetv2-b2-21k-ft1k', 'efficientnetv2-b3-21k-ft1k', 'efficientnetv2-b0', 'efficientnetv2-b1', 'efficientnetv2-b2', 'efficientnetv2-b3', 'efficientnet_b0', 'efficientnet_b1', 'efficientnet_b2', 'efficientnet_b3', 'efficientnet_b4', 'efficientnet_b5', 'efficientnet_b6', 'efficientnet_b7', 'bit_s-r50x1', 'inception_v3', 'inception_resnet_v2', 'resnet_v1_50', 'resnet_v1_101', 'resnet_v1_152', 'resnet_v2_50', 'resnet_v2_101', 'resnet_v2_152', 'nasnet_large', 'nasnet_mobile', 'pnasnet_large', 'mobilenet_v2_100_224', 'mobilenet_v2_130_224', 'mobilenet_v2_140_224', 'mobilenet_v3_small_100_224', 'mobilenet_v3_small_075_224', 'mobilenet_v3_large_100_224', 'mobilenet_v3_large_075_224']
 
+        model_name = model_instance.pre_model
+        
         model_handle_map = {
         "efficientnetv2-s": "https://tfhub.dev/google/imagenet/efficientnet_v2_imagenet1k_s/feature_vector/2",
         "efficientnetv2-m": "https://tfhub.dev/google/imagenet/efficientnet_v2_imagenet1k_m/feature_vector/2",
@@ -358,6 +360,8 @@ def train_model(training_session_id):
 @shared_task
 def test_images(test_id, image_size=224):
     from .models import Test, TestResult
+    from datasets.models import Image
+
     logger.info(f"Testing images for test id: {test_id}")
     IMAGE_SIZE = (image_size, image_size)
     BATCH_SIZE = 1
@@ -370,55 +374,54 @@ def test_images(test_id, image_size=224):
         model_file = test_instance.training_session.model_path
         logger.info(f"MODEL FILE: {model_file}")
 
-        file_name =  test_instance.dataset.name.replace(' ', '_').lower()
- 
+        file_name = test_instance.dataset.name.replace(' ', '_').lower()
         logger.info(f"Testing Dataset Name: {file_name}")
 
         base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
         logger.info(f"Testing Dataset NAME: " + base_media_url)
-        tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
+        tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')
         logger.info(f"Testing Dataset PATH: {tar_path}")
 
         data_dir = tf.keras.utils.get_file(
-        file_name,
-        tar_path,
-        untar=True)
+            file_name,
+            tar_path,
+            untar=True
+        )
 
         logger.info(f"Dataset data_dir: {data_dir}")
 
-
-        ##################
-        # Build Testing  #
-        ##################
-
-        normalization_layer = tf.keras.layers.Rescaling(1. / 255)
-        
-        @tf.function
-        def normalization(images, labels):
-            return normalization_layer(images), labels
-
         logger.info("Building and compiling model...")
 
+        # Create the original dataset to extract class names and filenames
+        original_dataset = tf.keras.preprocessing.image_dataset_from_directory(
+            data_dir,
+            label_mode="categorical",
+            image_size=IMAGE_SIZE,
+            batch_size=BATCH_SIZE
+        )
+        class_names = original_dataset.class_names
+
         def build_dataset():
-            return tf.keras.preprocessing.image_dataset_from_directory(
-                data_dir,
-                label_mode="categorical",
-                image_size=IMAGE_SIZE,
-                batch_size=1)
-        
+            dataset = original_dataset
+            # Extract filenames and add them to the dataset
+            filenames = [file_path for file_path in dataset.file_paths]
+            filenames_ds = tf.data.Dataset.from_tensor_slices(filenames)
+            dataset = tf.data.Dataset.zip((dataset, filenames_ds))
+
+            return dataset.map(lambda data, fname: (data[0], data[1], fname))
+
         test_ds = build_dataset()
-        class_names = tuple(test_ds.class_names)
+        normalization_layer = tf.keras.layers.Rescaling(1. / 255)
 
-        test_ds = test_ds.unbatch().batch(BATCH_SIZE)
-        test_ds = test_ds.map(normalization) 
+        def normalization(images, labels, filenames):
+            return normalization_layer(images), labels, filenames
 
+        test_ds = test_ds.map(normalization)
 
-   
-        # Expand the validation image to (1, 224, 224, 3) before predicting the label
         model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer': hub.KerasLayer})
         softmax = tf.keras.layers.Softmax()
 
-        for x, y in test_ds:
+        for x, y, f in test_ds:
             image = x[0]
             true_index = np.argmax(y[0])
             logits = model.predict(np.expand_dims(image, axis=0))
@@ -427,16 +430,25 @@ def test_images(test_id, image_size=224):
             predicted_label = class_names[predicted_index]
             true_label = class_names[true_index]
             confidence = probabilities[0][predicted_index]
+            filename = os.path.basename(f.numpy().decode('utf-8'))
 
             print(f"Predicted probabilities: {probabilities[0]}")
             print(f"Predicted label: {predicted_label}, Confidence: {confidence:.2%}")
             print(f"True label: {true_label}")
+            print(f"Filename: {filename}")
 
+            # Find the Image object by filename
+            try:
+                image_obj = Image.objects.get(dataset=test_instance.dataset, image__icontains=filename)
+            except Image.DoesNotExist:
+                logger.error(f"Image with filename {filename} does not exist.")
+                continue
 
             # Save test results
             TestResult.objects.create(
-                test=test_instance, 
-                true_label=true_label, 
+                test=test_instance,
+                image=image_obj,
+                true_label=true_label,
                 prediction=predicted_label,
                 confidence=float(confidence)
             )

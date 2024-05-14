@@ -22,8 +22,16 @@ export default function AddDataset({ isOpen, onClose }) {
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [labels, setLabels] = useState([]);
+  const [base, setBase] = useState(false);
+  const [forTesting, setForTesting] = useState(false);
+
 
   useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const baseParam = queryParams.get('base');
+    setBase(baseParam === 'true');
+    setForTesting(baseParam !== 'true');
+
     async function fetchData() {
       setIsLoading(true);
       try {
@@ -61,6 +69,8 @@ export default function AddDataset({ isOpen, onClose }) {
       labels: formData.getAll('labels'),
       description: formData.get('description'),
       resolution: formData.get('resolution'),
+      base: formData.get('base') === 'on' ? true : false,
+      for_testing: formData.get('forTesting') === 'on' ? true : false,
     }
 
     setIsLoading(true);
@@ -126,7 +136,7 @@ export default function AddDataset({ isOpen, onClose }) {
                   </svg>
                 </button>
                 <Dialog.Title as="h3" className="text-lg text-center font-medium leading-6 text-gray-900">
-                    New Training Dataset
+                    New Dataset
                 </Dialog.Title>
                 <div className="mt-3 text-left sm:mt-5">
                   <div className="mt-2">
@@ -172,7 +182,7 @@ export default function AddDataset({ isOpen, onClose }) {
                               required
                               className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                               >
-                              <option disabled selected>Select resolution...</option>
+                              <option disabled >Select resolution...</option>
                                 {resolutions.map((resolution) => (
                                   <option key={resolution.res} value={resolution.res}>{resolution.des}</option>
                                 ))}
@@ -196,6 +206,38 @@ export default function AddDataset({ isOpen, onClose }) {
                               ))
                               }
                             </select>
+                          </div>
+                        </div>
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="base" className="block text-sm font-medium leading-5 text-gray-700">
+                            Base Dataset
+                          </label>
+                          <div className="mt-1">
+                            <input
+                              id="base"
+                              name="base"
+                              type="checkbox"
+                              checked={base}
+                              disabled={!base}
+                              onChange={() => setBase(!base)}
+                              className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
+                          </div>
+                        </div>
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="forTesting" className="block text-sm font-medium leading-5 text-gray-700">
+                            For Testing
+                          </label>
+                          <div className="mt-1">
+                            <input
+                              id="forTesting"
+                              name="forTesting"
+                              type="checkbox"
+                              checked={forTesting}
+                              disabled={!forTesting}
+                              onChange={() => setBase(!forTesting)}
+                              className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
                           </div>
                         </div>
                         <div className="col-span-full">
