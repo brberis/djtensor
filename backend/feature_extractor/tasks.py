@@ -21,6 +21,9 @@ def train_model(training_session_id, *args, **kwargs):
     from .models import TrainingSession
     from .models import Epoch
 
+    if not training_session_id:
+        training_session_id = args[0]
+    
     session_instance = TrainingSession.objects.get(id=training_session_id)
     model_instance = TFModel.objects.get(id=session_instance.model.id)
     model_batch_size = model_instance.batch_size

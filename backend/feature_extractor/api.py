@@ -46,17 +46,19 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                             label=label
                         )
                 training_session = serializer.save(dataset=new_dataset)
-                
+                print("T?>>>>>>>>>>  raining session created with hot dataset.",training_session, "ID:", training_session.id)
                 # Delay the task until the transaction is committed
                 transaction.on_commit(lambda: chain(
                     create_dataset_archive.s(new_dataset.id),
-                    train_model.s(training_session.id).set(countdown=10) 
-                )())
+                    train_model.s(training_session.id)
+                ).apply_async())
             else:
                 raise serializers.ValidationError("Base dataset not found.")
         else:
             training_session = serializer.save()
-            transaction.on_commit(lambda: train_model.delay(training_session.id))
+            print("Training session created without hot dataset.", training_session, "ID:", training_session.id)
+
+            transaction.on_commit(lambda: train_model.apply_async((training_session.id,)))  # Adding a delay
 
 class EpochViewSet(viewsets.ModelViewSet):
     queryset = Epoch.objects.all()
