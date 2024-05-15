@@ -12,6 +12,20 @@ STATUS = [
     ('Failed', 'Failed')
 ]
 
+RESOLUTIONS = [
+    ('224', '224'),
+    ('240', '240'),
+    ('260', '260'),
+    ('299', '299'),
+    ('300', '300'),
+    ('331', '331'),
+    ('456', '456'),
+    ('480', '480'),
+    ('512', '512'),
+    ('528', '528'),
+    ('600', '600')
+]
+
 PRE_MODEL = [
     ('efficientnetv2-s', 'efficientnetv2-s'),
     ('efficientnetv2-m', 'efficientnetv2-m'),
@@ -72,6 +86,7 @@ class TFModel(models.Model):
     epochs = models.IntegerField(default=20)
     batch_size = models.IntegerField(default=16)
     validation_split = models.FloatField(default=0.2)
+    resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
     data_augmentation = models.BooleanField(default=False)
     pre_model = models.CharField(max_length=100, choices=PRE_MODEL, default='mobilenet_v3_large_075_224')
     created_at = models.DateTimeField(auto_now_add=True)
@@ -124,4 +139,4 @@ class TestResult(models.Model):
 @receiver(post_save, sender=Test)
 def test_images_on_save(sender, instance, created, **kwargs):
     if created:
-        test_images.delay(instance.id, )
+        test_images.delay(instance.id, instance.training_session.model.resolution)
