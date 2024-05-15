@@ -115,10 +115,10 @@ class TestResult(models.Model):
     confidence = models.FloatField()
 
 
-@receiver(post_save, sender=TrainingSession)
-def train_model_on_save(sender, instance, created, **kwargs):
-    if created:
-        train_model.delay(instance.id)
+# @receiver(post_save, sender=TrainingSession)
+# def train_model_on_save(sender, instance, created, **kwargs):
+#     if created:
+#         train_model.delay(instance.id)
 
     
 @receiver(post_save, sender=Test)

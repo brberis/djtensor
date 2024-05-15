@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 @shared_task
-def train_model(training_session_id):
+def train_model(training_session_id, *args, **kwargs):
     from .models import TFModel  
     from .models import TrainingSession
     from .models import Epoch
