@@ -7,6 +7,12 @@ class TFModelSerializer(serializers.ModelSerializer):
         model = TFModel
         fields = '__all__'
 
+
+class EpochSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Epoch
+        fields = '__all__'
+        
 class TrainingSessionSerializer(serializers.ModelSerializer):
     model = TFModelSerializer(read_only=True)
     model_id = serializers.PrimaryKeyRelatedField(
@@ -21,10 +27,11 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         write_only=True,
         allow_null=True
     )
+    epochs = EpochSerializer(many=True, read_only=True)
 
     class Meta:
         model = TrainingSession
-        fields = ['id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at', 'epochs']
 
     def validate(self, data):
         print("Validation data:", data)
@@ -36,11 +43,6 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         
         return data
 
-
-class EpochSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Epoch
-        fields = '__all__'
         
 
 class TestSerializer(serializers.ModelSerializer):

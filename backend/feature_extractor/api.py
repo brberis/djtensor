@@ -19,6 +19,8 @@ class TFModelViewSet(viewsets.ModelViewSet):
 class TrainingSessionViewSet(viewsets.ModelViewSet):
     queryset = TrainingSession.objects.all()
     serializer_class = TrainingSessionSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['status']
 
     def perform_create(self, serializer):
         hotdataset = self.request.data.get('hotdataset')
@@ -27,7 +29,7 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
             if base_dataset:
                 labels = base_dataset.labels.all()
                 unique_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
-                dataset_name = f"Hot Dataset {hotdataset} {unique_suffix}"
+                dataset_name = f"Dataset {hotdataset}-{unique_suffix}"
                 new_dataset = Dataset.objects.create(
                     name=dataset_name,
                     description=f"Generated dataset with {hotdataset} samples",
@@ -46,7 +48,6 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                             label=label
                         )
                 training_session = serializer.save(dataset=new_dataset)
-                print("T?>>>>>>>>>>  raining session created with hot dataset.",training_session, "ID:", training_session.id)
                 # Delay the task until the transaction is committed
                 transaction.on_commit(lambda: chain(
                     create_dataset_archive.s(new_dataset.id),
@@ -56,13 +57,14 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                 raise serializers.ValidationError("Base dataset not found.")
         else:
             training_session = serializer.save()
-            print("Training session created without hot dataset.", training_session, "ID:", training_session.id)
 
             transaction.on_commit(lambda: train_model.apply_async((training_session.id,)))  # Adding a delay
 
 class EpochViewSet(viewsets.ModelViewSet):
     queryset = Epoch.objects.all()
     serializer_class = EpochSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['training_session']
 
 class TestViewSet(viewsets.ModelViewSet):
     queryset = Test.objects.all()
@@ -78,6 +80,5 @@ class PerformanceViewSet(viewsets.ModelViewSet):
     serializer_class = TrainingSessionSerializer
 
     def get_queryset(self):
-        # return the last 'Completed' training session in a list
         last_session = TrainingSession.objects.filter(status='Completed').last()
-        return [last_session] if last_session else TrainingSession.objects.none()
+        return TrainingSession.objects.filter(id=last_session.id) if last_session else TrainingSession.objects.none()

@@ -6,7 +6,8 @@ export default async function handler(req, res) {
   switch (req.method) {
     case 'GET':
       try {
-        const response = await axios.get(`${baseUrl}/api/feature_extractor/trainingsession/`);
+        const { status } = req.query;
+        const response = await axios.get(`${baseUrl}/api/feature_extractor/trainingsession/`, { params: { status } });
         const data = response.data;
         res.status(200).json(data);
       } catch (error) {
