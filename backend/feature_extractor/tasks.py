@@ -365,8 +365,7 @@ def test_images(test_id, image_size=224):
     from .models import Test, TestResult
     from datasets.models import Image
 
-    logger.info(f"Testing images for test id: {test_id}")
-    IMAGE_SIZE = (image_size, image_size)
+    IMAGE_SIZE = (int(image_size), int(image_size))
     BATCH_SIZE = 1
 
     try:
