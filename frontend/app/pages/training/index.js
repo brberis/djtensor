@@ -17,7 +17,9 @@ export default function Training() {
         const response = await fetch('/api/feature_extractor/trainingsession/');
         const data = await response.json();
         if (Array.isArray(data)) {
-          setSessions(data);
+          // Sort sessions by created_at in ascending order
+          const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          setSessions(sortedData);
         } else {
           throw new Error('Data is not an array');
         }
