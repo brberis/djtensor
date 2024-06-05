@@ -16,9 +16,9 @@ export default function Training() {
       try {
         const response = await fetch('/api/feature_extractor/tests/');
         const data = await response.json();
-        console.log('Tests:', data);
-        if (Array.isArray(data)) {
-          setTests(data);
+        const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        if (Array.isArray(sortedData)) {
+          setTests(sortedData);
         } else {
           throw new Error('Data is not an array');
         }
