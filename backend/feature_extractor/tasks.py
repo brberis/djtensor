@@ -7,8 +7,12 @@ import matplotlib.pylab as plt
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
+from tf_keras_vis.gradcam import Gradcam
+from tf_keras_vis.utils.scores import CategoricalScore
+from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
 import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
+
 
 
 import logging
@@ -438,6 +442,24 @@ def test_images(test_id, image_size=224):
             print(f"Predicted label: {predicted_label}, Confidence: {confidence:.2%}")
             print(f"True label: {true_label}")
             print(f"Filename: {filename}")
+
+
+            # sample_img_path = f.numpy().decode('utf-8')
+            img = load_img(filename, target_size=IMAGE_SIZE)
+            img_array = img_to_array(img)
+            img_array = np.expand_dims(img_array, axis=0)
+            img_array = normalization_layer(img_array)
+
+            def loss(output):
+                return output[0]
+
+            gradcam = Gradcam(model, model_modifier=ReplaceToLinear(), clone=False)
+            cam = gradcam(CategoricalScore([0]), img_array)
+            heatmap = cam[0]
+            
+            # save_and_display_gradcam(filename, heatmap, cam_path="cam.jpg")
+
+
 
             # Find the Image object by filename
             try:
