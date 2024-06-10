@@ -4,12 +4,18 @@ from urllib.parse import urljoin
 from django.http import HttpRequest
 from celery import shared_task
 import matplotlib.pylab as plt
+from scipy.ndimage import sobel
 import numpy as np
 import tensorflow as tf
 import tensorflow_hub as hub
-from tf_keras_vis.gradcam import Gradcam
 from tf_keras_vis.utils.scores import CategoricalScore
 from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
+from tf_keras_vis.saliency import Saliency
+from skimage import exposure 
+from django.core.files import File
+from django.utils.text import get_valid_filename
+from uuid import uuid4
+
 import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
@@ -209,6 +215,11 @@ def train_model(training_session_id, *args, **kwargs):
 
         train_ds = build_dataset("training")
         class_names = tuple(train_ds.class_names)
+
+        # store clas_names in the session_instance
+        session_instance.class_names = ', '.join(class_names)
+        session_instance.save()
+
         train_size = train_ds.cardinality().numpy()
         train_ds = train_ds.unbatch().batch(BATCH_SIZE)
         train_ds = train_ds.repeat()
@@ -378,105 +389,97 @@ def test_images(test_id, image_size=224):
         test_instance.save()
 
         model_file = test_instance.training_session.model_path
+        class_names = test_instance.training_session.class_names.split(', ')
         logger.info(f"MODEL FILE: {model_file}")
 
-        file_name = test_instance.dataset.name.replace(' ', '_').lower()
-        logger.info(f"Testing Dataset Name: {file_name}")
+        logger.info(f"Testing Dataset Name: {test_instance.dataset.name}")
 
-        base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
-        logger.info(f"Testing Dataset NAME: " + base_media_url)
-        tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')
-        logger.info(f"Testing Dataset PATH: {tar_path}")
-
-        data_dir = tf.keras.utils.get_file(
-            file_name,
-            tar_path,
-            untar=True
-        )
-
-        logger.info(f"Dataset data_dir: {data_dir}")
-
-        logger.info("Building and compiling model...")
-
-        # Create the original dataset to extract class names and filenames
-        original_dataset = tf.keras.preprocessing.image_dataset_from_directory(
-            data_dir,
-            label_mode="categorical",
-            image_size=IMAGE_SIZE,
-            batch_size=BATCH_SIZE
-        )
-        class_names = original_dataset.class_names
-
-        def build_dataset():
-            dataset = original_dataset
-            # Extract filenames and add them to the dataset
-            filenames = [file_path for file_path in dataset.file_paths]
-            filenames_ds = tf.data.Dataset.from_tensor_slices(filenames)
-            dataset = tf.data.Dataset.zip((dataset, filenames_ds))
-
-            return dataset.map(lambda data, fname: (data[0], data[1], fname))
-
-        test_ds = build_dataset()
-        normalization_layer = tf.keras.layers.Rescaling(1. / 255)
-
-        def normalization(images, labels, filenames):
-            return normalization_layer(images), labels, filenames
-
-        test_ds = test_ds.map(normalization)
-
+        # Load the model
         model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer': hub.KerasLayer})
+        print('Model Summary:', model.summary())
         softmax = tf.keras.layers.Softmax()
 
-        for x, y, f in test_ds:
-            image = x[0]
-            true_index = np.argmax(y[0])
-            logits = model.predict(np.expand_dims(image, axis=0))
+        print('Model Summary:', model.summary())
+
+        # Define the saliency object
+        saliency = Saliency(model, model_modifier=ReplaceToLinear())
+
+        # Retrieve all images related to the dataset
+        image_objects = Image.objects.filter(dataset=test_instance.dataset)
+
+        for image_obj in image_objects:
+            image_path = image_obj.image.path
+            image = tf.keras.preprocessing.image.load_img(image_path, target_size=IMAGE_SIZE)
+            image_array = tf.keras.preprocessing.image.img_to_array(image)
+            image_array = np.expand_dims(image_array, axis=0)
+
+            # Normalize the image
+            normalization_layer = tf.keras.layers.Rescaling(1. / 255)
+            image_array = normalization_layer(image_array)
+
+            # Perform prediction
+            logits = model.predict(image_array)
             probabilities = softmax(logits).numpy()
             predicted_index = np.argmax(probabilities)
-            predicted_label = class_names[predicted_index]
-            true_label = class_names[true_index]
+            print(f"Predicted INDEX: {predicted_index}")
+            # predicted_label = image_obj.label.name[predicted_index]
+            predicted_label = class_names[predicted_index]  
             confidence = probabilities[0][predicted_index]
-            filename = os.path.basename(f.numpy().decode('utf-8'))
+            true_label = image_obj.label.name.lower().replace(" ", "_")  
 
             print(f"Predicted probabilities: {probabilities[0]}")
             print(f"Predicted label: {predicted_label}, Confidence: {confidence:.2%}")
             print(f"True label: {true_label}")
-            print(f"Filename: {filename}")
+            print(f"Filename: {image_obj.image.name}")
 
+            fig, axes = plt.subplots(1, len(class_names) + 1, figsize=(20, 5))
+            axes[0].imshow(tf.keras.preprocessing.image.load_img(image_path))
+            axes[0].set_title(true_label)
+            axes[0].axis('off')
 
-            # sample_img_path = f.numpy().decode('utf-8')
-            img = load_img(filename, target_size=IMAGE_SIZE)
-            img_array = img_to_array(img)
-            img_array = np.expand_dims(img_array, axis=0)
-            img_array = normalization_layer(img_array)
+            # Generate saliency maps for each class
+            for i, class_name in enumerate(class_names):
+                score = CategoricalScore([i])
 
-            def loss(output):
-                return output[0]
+                # Generate the saliency map
+                saliency_map = saliency(score, image_array)[0]
 
-            gradcam = Gradcam(model, model_modifier=ReplaceToLinear(), clone=False)
-            cam = gradcam(CategoricalScore([0]), img_array)
-            heatmap = cam[0]
-            
-            # save_and_display_gradcam(filename, heatmap, cam_path="cam.jpg")
+                # Normalize the saliency map
+                saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
 
+                # Apply Sobel filter to enhance edges
+                saliency_sobel_x = sobel(saliency_map, axis=0)
+                saliency_sobel_y = sobel(saliency_map, axis=1)
+                edge_map = np.hypot(saliency_sobel_x, saliency_sobel_y)
 
+                # Combine saliency map with edge map 
+                combined_map = saliency_map + edge_map
+                combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min())
+                # combined_map = exposure.equalize_adapthist(combined_map, clip_limit=0.03)
 
-            # Find the Image object by filename
-            try:
-                image_obj = Image.objects.get(dataset=test_instance.dataset, image__icontains=filename)
-            except Image.DoesNotExist:
-                logger.error(f"Image with filename {filename} does not exist.")
-                continue
+                # Display the combined map
+                axes[i + 1].imshow(combined_map, cmap='viridis')
+                axes[i + 1].set_title(class_name)
+                axes[i + 1].axis('off')
+
+            unique_filename = f"grad_cam_{uuid4().hex}_{get_valid_filename(image_obj.image.name)}"
+            plt.savefig(unique_filename)
+            plt.close()
 
             # Save test results
-            TestResult.objects.create(
-                test=test_instance,
-                image=image_obj,
-                true_label=true_label,
-                prediction=predicted_label,
-                confidence=float(confidence)
-            )
-
+            if unique_filename:
+                with open(unique_filename, 'rb') as f:
+                    grad_cam_file = File(f)
+                    test_result = TestResult(
+                        test=test_instance,
+                        image=image_obj,
+                        true_label=true_label,
+                        prediction=predicted_label,
+                        confidence=float(confidence),
+                        grad_cam=grad_cam_file
+                    )
+                    test_result.save()
+                os.remove(unique_filename)
 
         test_instance.status = 'Completed'
     except Exception as e:
@@ -485,53 +488,3 @@ def test_images(test_id, image_size=224):
     finally:
         test_instance.save()
 
-
-
-@shared_task
-def test_images_from_db(test_id):
-    from .models import Test, TestResult
-    logger.info(f"Testing images for test id: {test_id}")
-
-    try:
-        test_instance = Test.objects.get(id=test_id)
-        test_instance.status = 'Testing'
-        test_instance.save()
-
-        model_file = test_instance.training_session.model_path
-        logger.info(f"MODEL FILE: {model_file}")
-
-        # Load the model
-        model = tf.keras.models.load_model(model_file, custom_objects={'KerasLayer': hub.KerasLayer})
-        class_names = tuple(test_instance.dataset.labels.all().values_list('name', flat=True))
-
-        for image in test_instance.dataset.images.all():
-            logger.info(f"Testing image: {image.image.path}")
-
-            img = load_img(image.image.path, target_size=(224, 224))
-            img = img_to_array(img)
-            img = img / 255.0
-            img = np.expand_dims(img, axis=0)
-
-            prediction_scores = model.predict(img)
-            predicted_index = np.argmax(prediction_scores)
-            predicted_label = class_names[predicted_index]
-            confidence = prediction_scores[0][predicted_index]
-            logger.info(f"Predicted scores: {np.array2string(prediction_scores)}")
-
-            # Log prediction details
-            logger.info(f"True label: {image.label.name}, Predicted label: {predicted_label}, Confidence: {confidence}")
-
-            # Save test results
-            TestResult.objects.create(
-                test=test_instance,
-                image=image,
-                prediction=image.dataset.labels.get(name=predicted_label),
-                confidence=float(confidence)
-            )
-
-        test_instance.status = 'Completed'
-    except Exception as e:
-        logger.error(f"Error during testing: {e}")
-        test_instance.status = 'Failed'
-    finally:
-        test_instance.save()
