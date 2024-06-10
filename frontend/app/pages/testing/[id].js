@@ -21,6 +21,7 @@ export default function TestDetail() {
   const [specificity, setSpecificity] = useState(null);
 
   function calculateAccuracy(results) {
+    console.log('Results:', results);
     const correct = results.filter(result => result.prediction === result.true_label).length;
     return (correct / results.length) * 100;
   }

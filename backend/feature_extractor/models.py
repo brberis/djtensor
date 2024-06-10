@@ -102,6 +102,7 @@ class TrainingSession(models.Model):
     notes = models.TextField(blank=True, null=True)
     dataset = models.ForeignKey(Dataset, related_name='training_sessions', on_delete=models.CASCADE)
     model = models.ForeignKey(TFModel, related_name='training_sessions', on_delete=models.CASCADE)
+    class_names = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=30, choices=STATUS, default='Pending')
     model_path = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -127,6 +128,7 @@ class Test(models.Model):
 class TestResult(models.Model):
     test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
     image = models.ForeignKey(Image, related_name='test_results', blank=True, null=True, on_delete=models.CASCADE)
+    grad_cam = models.ImageField(upload_to='grad_cam/', blank=True, null=True)
     true_label = models.CharField(max_length=100, blank=True, null=True)
     prediction = models.CharField(max_length=100, blank=True, null=True)
     confidence = models.FloatField()
