@@ -208,17 +208,24 @@ export default function TestDetail() {
         </div>
         <div className="mt-8">
           {testResults?.length > 0 ? testResults.map(result => (
-            <div key={result.id} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4 flex">
-              <div className="mr-4">
+          <>
+            <div key={result.id} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4">
+              {/* <div className="mr-4">
                 <img src={result.image?.image} alt="Test Image" className="w-32 h-32" />
-                <p className="text-xs text-gray-500 text-center">{result.image?.label?.name}</p> {/* Label text added here */}
+                <p className="text-xs text-gray-500 text-center">{result.image?.label?.name}</p> 
               </div>
+               */}
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Prediction: {formatLabel(result.prediction)}</h3>
                 <h3 className="text-md leading-6 font-medium text-gray-900">True Label: {formatLabel(result.true_label)}</h3>
                 <p className="text-md text-gray-800">Confidence: {(result.confidence * 100).toFixed(2)}%</p>
               </div>
+              <div className="mx-4">
+              <img src={result.grad_cam} alt="Grad cam" className="" />
+            </div> 
             </div>
+   
+          </>        
           )) : (
             <p>No results available.</p>
           )}
