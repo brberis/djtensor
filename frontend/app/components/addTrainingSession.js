@@ -177,7 +177,7 @@ export default function AddSession({ isOpen, onClose }) {
                               />    
                             </div>
                           </div>
-                          <div className="col-span-6 sm:col-span-6">
+                          {/* <div className="col-span-6 sm:col-span-6">
                             <label
                               htmlFor="model"
                               >
@@ -199,71 +199,71 @@ export default function AddSession({ isOpen, onClose }) {
                               </select>
                             </div>
 
+                          </div> */}
+                          <div className="col-span-6 sm:col-span-6">
+                            <label
+                              htmlFor="hotdataset"
+                              className="block text-sm font-medium leading-5 text-gray-700"
+                            >
+                              Generate Dataset for Training
+                            </label>
+                            <div className="mt-1 rounded-md shadow-sm">
+                              <select
+                                id="hotdataset"
+                                name="hotdataset"
+                                required
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                                >
+                                <option value="" disabled>Select...</option>
+                                {datasetsGenerator?.map((hotdataset) => (
+                                  <option key={hotdataset.value} value={hotdataset.value}>
+                                    {hotdataset.label}
+                                  </option>
+                                ))}                                  
+                              </select>
                             </div>
-                            <div className="col-span-6 sm:col-span-6">
-                              <label
-                                htmlFor="hotdataset"
-                                className="block text-sm font-medium leading-5 text-gray-700"
-                              >
-                                Generate Dataset for Training
-                              </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                                <select
-                                  id="hotdataset"
-                                  name="hotdataset"
-                                  required
-                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                  >
-                                  <option value="" disabled>Select...</option>
-                                  {datasetsGenerator?.map((hotdataset) => (
-                                    <option key={hotdataset.value} value={hotdataset.value}>
-                                      {hotdataset.label}
-                                    </option>
-                                  ))}                                  
-                                </select>
-                              </div>
 
-                            </div>
-                            {/* <div className="col-span-6 sm:col-span-6">
-                              <label
-                                htmlFor="model"
-                                className="block text-sm font-medium leading-5 text-gray-700"
-                              >
-                                Dataset for Training
-                              </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                                <select
-                                  id="dataset"
-                                  name="dataset"
-                                  required
-                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                  >
-                                  <option value="" disabled>Select a dataset...</option>
-                                  {datasets?.map((dataset) => (
-                                    <option key={dataset.id} value={dataset.id}>
-                                      {dataset.name}
-                                    </option>
-                                  ))}                                  
-                                </select>
-                              </div>
-
-                            </div> */}
-                            <div className="col-span-full">
-                              <label
-                                htmlFor="notes"
-                                className="block text-sm font-medium leading-5 text-gray-700"
-                              >
-                                Notes
-                              </label>
-                              <div className="mt-1 rounded-md shadow-sm">
-                                <textarea
-                                  id="notes"
-                                  name="notes"
-                                  className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                                  />
-                              </div>
                           </div>
+                          {/* <div className="col-span-6 sm:col-span-6">
+                            <label
+                              htmlFor="model"
+                              className="block text-sm font-medium leading-5 text-gray-700"
+                            >
+                              Dataset for Training
+                            </label>
+                            <div className="mt-1 rounded-md shadow-sm">
+                              <select
+                                id="dataset"
+                                name="dataset"
+                                required
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                                >
+                                <option value="" disabled>Select a dataset...</option>
+                                {datasets?.map((dataset) => (
+                                  <option key={dataset.id} value={dataset.id}>
+                                    {dataset.name}
+                                  </option>
+                                ))}                                  
+                              </select>
+                            </div>
+
+                          </div> */}
+                          <div className="col-span-full">
+                            <label
+                              htmlFor="notes"
+                              className="block text-sm font-medium leading-5 text-gray-700"
+                            >
+                              Notes
+                            </label>
+                            <div className="mt-1 rounded-md shadow-sm">
+                              <textarea
+                                id="notes"
+                                name="notes"
+                                className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                                />
+                            </div>
                         </div>
+                      </div>
 
 
                       <div className={`flex gap-4 justify-end`} >
