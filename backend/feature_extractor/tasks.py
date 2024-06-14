@@ -421,11 +421,9 @@ def test_images(test_id, image_size=224):
             logits = model.predict(image_array)
             probabilities = softmax(logits).numpy()
             predicted_index = np.argmax(probabilities)
-            print(f"Predicted INDEX: {predicted_index}")
-            # predicted_label = image_obj.label.name[predicted_index]
-            predicted_label = class_names[predicted_index]  
+            predicted_label = class_names[predicted_index]
             confidence = probabilities[0][predicted_index]
-            true_label = image_obj.label.name.lower().replace(" ", "_")  
+            true_label = image_obj.label.name.lower().replace(" ", "_")
 
             print(f"Predicted probabilities: {probabilities[0]}")
             print(f"Predicted label: {predicted_label}, Confidence: {confidence:.2%}")
@@ -452,17 +450,21 @@ def test_images(test_id, image_size=224):
                 saliency_sobel_y = sobel(saliency_map, axis=1)
                 edge_map = np.hypot(saliency_sobel_x, saliency_sobel_y)
 
-                # Combine saliency map with edge map 
+                # Combine saliency map with edge map
                 combined_map = saliency_map + edge_map
                 combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min())
-                # combined_map = exposure.equalize_adapthist(combined_map, clip_limit=0.03)
 
                 # Display the combined map
-                axes[i + 1].imshow(combined_map, cmap='viridis')
+                im = axes[i + 1].imshow(combined_map, cmap='viridis')
                 axes[i + 1].set_title(class_name)
                 axes[i + 1].axis('off')
 
-            unique_filename = f"grad_cam_{uuid4().hex}_{get_valid_filename(image_obj.image.name)}"
+            # Add color bar at the bottom
+            cbar = fig.colorbar(im, ax=axes, orientation='horizontal', fraction=0.02, pad=0.04)
+            cbar.set_label('Saliency Value')
+            plt.suptitle(f"Saliency Maps for {image_obj.image.name} using {true_label}")
+
+            unique_filename = f"saliency_map_{uuid4().hex}_{get_valid_filename(image_obj.image.name)}"
             plt.savefig(unique_filename)
             plt.close()
 
@@ -487,4 +489,3 @@ def test_images(test_id, image_size=224):
         test_instance.status = 'Failed'
     finally:
         test_instance.save()
-
