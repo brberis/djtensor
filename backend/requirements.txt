@@ -15,4 +15,3 @@ tensorflow-hub==0.16.1
 tf_keras==2.15.1
 tf-keras-vis
 scikit-image
-flower
