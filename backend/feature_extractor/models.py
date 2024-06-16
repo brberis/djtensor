@@ -96,7 +96,7 @@ class TFModel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.name
+        return f"{self.name} {self.default}"
     
 class TrainingSession(models.Model):
     name = models.CharField(max_length=100)

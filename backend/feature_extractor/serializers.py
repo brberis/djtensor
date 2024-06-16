@@ -18,7 +18,8 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
     model_id = serializers.PrimaryKeyRelatedField(
         queryset=TFModel.objects.all(),
         source='model',
-        write_only=True
+        write_only=True,
+        required=False  # Make this field optional
     )
     dataset = DatasetSerializer(read_only=True)
     dataset_id = serializers.PrimaryKeyRelatedField(
@@ -33,8 +34,19 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         model = TrainingSession
         fields = ['id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at', 'epochs']
 
+    def to_internal_value(self, data):
+        model_id = data.get('model_id')
+
+        if not model_id:
+            default_model = TFModel.objects.filter(default=True).first()
+            if default_model:
+                data['model_id'] = default_model.id
+            else:
+                raise serializers.ValidationError({"model_id": "No default model found and 'model_id' is not provided."})
+
+        return super().to_internal_value(data)
+
     def validate(self, data):
-        print("Validation data:", data)
         hotdataset = self.context['request'].data.get('hotdataset')
         dataset_id = data.get('dataset_id')
 
@@ -44,17 +56,7 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # Check for a default model
-        default_model = TFModel.objects.filter(default=True).first()
-
-        if default_model:
-            validated_data['model'] = default_model
-        else:
-            # Use the user-selected model if no default model exists
-            validated_data['model'] = validated_data.pop('model')
-        
         return super().create(validated_data)
-
 
 class TestSerializer(serializers.ModelSerializer):
     class Meta:

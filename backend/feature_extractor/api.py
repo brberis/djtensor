@@ -1,7 +1,8 @@
 import random
 import string
+from rest_framework import viewsets, serializers, status
+from rest_framework.response import Response
 from django.db import transaction
-from rest_framework import viewsets, serializers
 from .models import TFModel, TrainingSession, Epoch, Test, TestResult
 from datasets.models import Dataset, Image
 from .serializers import TFModelSerializer, TrainingSessionSerializer, EpochSerializer, TestSerializer, TestResultSerializer
@@ -21,6 +22,19 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
     serializer_class = TrainingSessionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status']
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            print('Serializer is valid')
+        except serializers.ValidationError as e:
+            print('Validation error:', e.detail)
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
         hotdataset = self.request.data.get('hotdataset')
@@ -57,9 +71,9 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                 raise serializers.ValidationError("Base dataset not found.")
         else:
             training_session = serializer.save()
-
             transaction.on_commit(lambda: train_model.apply_async((training_session.id,)))  # Adding a delay
 
+            
 class EpochViewSet(viewsets.ModelViewSet):
     queryset = Epoch.objects.all()
     serializer_class = EpochSerializer

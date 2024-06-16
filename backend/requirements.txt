@@ -5,6 +5,7 @@ django-filter
 djangorestframework
 celery
 redis
+scipy
 matplotlib
 numpy
 pandas
