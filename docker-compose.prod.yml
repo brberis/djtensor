@@ -19,11 +19,11 @@ services:
     depends_on:
       - db
       - redis
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #       - capabilities: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - capabilities: ["gpu"]
     networks:
       - backend
 
