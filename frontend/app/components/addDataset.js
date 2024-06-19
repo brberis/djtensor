@@ -70,6 +70,7 @@ export default function AddDataset({ isOpen, onClose }) {
       description: formData.get('description'),
       resolution: formData.get('resolution'),
       base: formData.get('base') === 'on' ? true : false,
+      randomTest: formData.get('randomTest'),
       for_testing: formData.get('forTesting') === 'on' ? true : false,
     }
 
@@ -224,6 +225,22 @@ export default function AddDataset({ isOpen, onClose }) {
                             />
                           </div>
                         </div>
+                        { base &&
+                        <div className="col-span-6 sm:col-span-6">
+                          <label htmlFor="randomTest" className="block text-sm font-medium leading-5 text-gray-700">
+                            Enter the number of sample per class, if you want to split your base dataset and create a random testing dataset.
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <input
+                              id="randomTest"
+                              name="randomTest"
+                              type="text"
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
+                          </div>
+                        </div>
+                        }
                         <div className="col-span-6 sm:col-span-6">
                           <label htmlFor="forTesting" className="block text-sm font-medium leading-5 text-gray-700">
                             For Testing
