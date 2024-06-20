@@ -38,6 +38,16 @@ export default function Datasets({ base }) {
     fetchDatasets();
   }, [refresh, base]);
 
+  useEffect(() => {
+    if (!base) {
+      setAction('New Base Dataset');
+    } else {
+      setAction('Generate Testing Dataset');
+    }
+  }, [base]);
+
+  
+
   const handleDatasetClick = (dataset) => {
     router.push(`/datasets/${dataset.id}`);
   };
@@ -47,8 +57,22 @@ export default function Datasets({ base }) {
     setRefresh(prev => !prev);
   };
 
-  const incomingAction = (action) => {
-    setIsOpenAddDataset(action);
+  const incomingAction = async (action) => {
+    if (action === 'New Base Dataset') {
+      setIsOpenAddDataset(true);
+    }
+    if (action === 'Generate Testing Dataset') {
+      try {
+        const response = await fetch('/api/datasets/testing-dataset/');
+        const res = await response.json();
+        setRefresh(prev => !prev);
+      } catch (error) {
+        console.error('Failed to fetch datasets:', error);
+        setDatasets([]);
+      } finally {
+        setIsLoading(false);
+      }    
+    }
   };
 
   return (
