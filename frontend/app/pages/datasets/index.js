@@ -8,11 +8,17 @@ export default function Datasets({ base }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddDataset, setIsOpenAddDataset] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [action, setAction] = useState('');
+  const [baseSet, setBaseSet] = useState(false);
+  
   const router = useRouter();
 
   // Function to filter datasets
   const filterDatasets = (data) => {
     const baseDatasets = data.filter(dataset => dataset.base);
+    if (baseDatasets.length > 0) {
+      setBaseSet(true);
+    }
     const testingDatasets = data.filter(dataset => dataset.for_testing);
 
     const lastBaseDataset = baseDatasets.slice(-1);
@@ -39,12 +45,12 @@ export default function Datasets({ base }) {
   }, [refresh, base]);
 
   useEffect(() => {
-    if (!base) {
-      setAction('New Base Dataset');
+    if (!baseSet) {
+      setAction('Create Base Dataset');
     } else {
-      setAction('Generate Testing Dataset');
+      setAction('Generate Datasets');
     }
-  }, [base]);
+  }, [baseSet]);
 
   
 
@@ -58,10 +64,12 @@ export default function Datasets({ base }) {
   };
 
   const incomingAction = async (action) => {
-    if (action === 'New Base Dataset') {
+    console.log('Action:', action);
+    if (action === 'Create Base Dataset') {
+      console.log('Create Base Dataset');
       setIsOpenAddDataset(true);
     }
-    if (action === 'Generate Testing Dataset') {
+    if (action === 'Generate Datasets') {
       try {
         const response = await fetch('/api/datasets/testing-dataset/');
         const res = await response.json();
@@ -76,7 +84,7 @@ export default function Datasets({ base }) {
   };
 
   return (
-    <Layout incomingAction={incomingAction} action={'New Dataset'}>
+    <Layout incomingAction={incomingAction} action={action}>
       {isOpenAddDataset && <AddDataset isOpen={isOpenAddDataset} onClose={handleClose} />}
       <div className="px-40 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center">

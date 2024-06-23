@@ -52,7 +52,9 @@ export default function Training() {
   };
 
   const incomingAction = (action) => {
-    setIsOpenAddSession(action);
+    if (action === 'New Training Session') {
+      setIsOpenAddSession(true);
+    }
   };
 
   return (
