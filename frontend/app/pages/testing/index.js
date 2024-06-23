@@ -51,7 +51,9 @@ export default function Training() {
   };
 
   const incomingAction = (action) => {
-    setIsOpenAddTest(action);
+    if (action === 'New Test') {
+      setIsOpenAddTest(true);
+    }
   };
 
   return (
