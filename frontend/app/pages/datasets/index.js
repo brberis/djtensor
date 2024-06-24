@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
+import GenerateDataset from '../../components/generateDataset';
 
 export default function Datasets({ base }) {
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddDataset, setIsOpenAddDataset] = useState(false);
+  const [isOpenGenerateDataset, setIsOpenGenerateDataset] = useState(false);
   const [refresh, setRefresh] = useState(false);
   const [action, setAction] = useState('');
   const [baseSet, setBaseSet] = useState(false);
@@ -71,9 +73,10 @@ export default function Datasets({ base }) {
     }
     if (action === 'Generate Datasets') {
       try {
-        const response = await fetch('/api/datasets/testing-dataset/');
-        const res = await response.json();
-        setRefresh(prev => !prev);
+        // const response = await fetch('/api/datasets/generate-datasets/');
+        // const res = await response.json();
+        // setRefresh(prev => !prev);
+        setIsOpenGenerateDataset(true);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
         setDatasets([]);
@@ -86,6 +89,7 @@ export default function Datasets({ base }) {
   return (
     <Layout incomingAction={incomingAction} action={action}>
       {isOpenAddDataset && <AddDataset isOpen={isOpenAddDataset} onClose={handleClose} />}
+      {isOpenGenerateDataset && <GenerateDataset isOpen={isOpenGenerateDataset} onClose={handleClose} />}
       <div className="px-40 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">

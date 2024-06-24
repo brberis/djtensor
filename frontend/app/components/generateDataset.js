@@ -14,11 +14,10 @@ const resolutions = [
   // {res: '480', des: '480x480'},
   // {res: '512', des: '512x512'},
   // {res: '528', des: '528x528'},
-  // {res: '600', des: '600x600'}
-  {res: '384', des: '384x384'},
+  {res: '384', des: '384x384'}
 ];
 
-export default function AddDataset({ isOpen, onClose }) {
+export default function GenerateDataset({ isOpen, onClose }) {
   const [open, setOpen] = useState(isOpen);
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -70,14 +69,14 @@ export default function AddDataset({ isOpen, onClose }) {
       labels: formData.getAll('labels'),
       description: formData.get('description'),
       resolution: formData.get('resolution'),
-      base: formData.get('base') === 'on' ? true : false,
-      randomTest: formData.get('randomTest'),
+      base: false,
       for_testing: formData.get('forTesting') === 'on' ? true : false,
+      sample_number: formData.get('sampleNumber')
     }
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/datasets/dataset/', {
+      const response = await fetch('/api/datasets/generate-dataset/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -85,6 +84,7 @@ export default function AddDataset({ isOpen, onClose }) {
         body: JSON.stringify(newDataset),
       });
       if (response.ok) {
+        setIsLoading(false);
         handleClose(true);
       } else {
         const data = await response.json();
@@ -211,38 +211,6 @@ export default function AddDataset({ isOpen, onClose }) {
                           </div>
                         </div>
                         <div className="col-span-6 sm:col-span-6">
-                          <label htmlFor="base" className="block text-sm font-medium leading-5 text-gray-700">
-                            Base Dataset
-                          </label>
-                          <div className="mt-1">
-                            <input
-                              id="base"
-                              name="base"
-                              type="checkbox"
-                              checked={base}
-                              disabled={!base}
-                              onChange={() => setBase(!base)}
-                              className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                            />
-                          </div>
-                        </div>
-                        {/* { base &&
-                        <div className="col-span-6 sm:col-span-6">
-                          <label htmlFor="randomTest" className="block text-sm font-medium leading-5 text-gray-700">
-                            Enter the number of sample per class, if you want to split your base dataset and create a random testing dataset.
-                          </label>
-                          <div className="mt-1 rounded-md shadow-sm">
-                            <input
-                              id="randomTest"
-                              name="randomTest"
-                              type="text"
-                              required
-                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                            />
-                          </div>
-                        </div>
-                        }
-                        <div className="col-span-6 sm:col-span-6">
                           <label htmlFor="forTesting" className="block text-sm font-medium leading-5 text-gray-700">
                             For Testing
                           </label>
@@ -251,13 +219,25 @@ export default function AddDataset({ isOpen, onClose }) {
                               id="forTesting"
                               name="forTesting"
                               type="checkbox"
-                              checked={forTesting}
-                              disabled={!forTesting}
                               onChange={() => setBase(!forTesting)}
                               className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                             />
                           </div>
-                        </div> */}
+                        </div>
+                        <div className="col-span-6 sm:col-span-3">
+                          <label htmlFor="sampleNumber" className="block text-sm font-medium leading-5 text-gray-700">
+                            Number of Samples per Label (Training and Validaion)
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <input
+                              id="sampleNumber"
+                              name="sampleNumber"
+                              type="number"
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                            />
+                          </div>
+                        </div>
                         <div className="col-span-full">
                           <label htmlFor="notes" className="block text-sm font-medium leading-5 text-gray-700">
                             Description
