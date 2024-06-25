@@ -65,28 +65,28 @@ class GenerateDatasetsViewSet(viewsets.ViewSet):
             'sample_number': int(formData.get('sample_number'))
         }
         print(newDataset)
-        try:
-            with transaction.atomic():
-                dataset = Dataset.objects.create(
-                    name=newDataset['name'],
-                    description=newDataset['description'],
-                    resolution=newDataset['resolution'],
-                    base=newDataset['base'],
-                    for_testing=newDataset['for_testing']
-                )
+        # try:
+        #     with transaction.atomic():
+        dataset = Dataset.objects.create(
+            name=newDataset['name'],
+            description=newDataset['description'],
+            resolution=newDataset['resolution'],
+            base=newDataset['base'],
+            for_testing=newDataset['for_testing']
+        )
 
-                labels = Label.objects.filter(id__in=newDataset['labels'])
-                dataset.labels.set(labels)
+        labels = Label.objects.filter(id__in=newDataset['labels'])
+        dataset.labels.set(labels)
 
-                if newDataset['for_testing']:
-                    self._create_testing_dataset(dataset, labels, newDataset['sample_number'])
-                else:
-                    self._create_non_testing_dataset(dataset, labels, newDataset['sample_number'])
+        if newDataset['for_testing']:
+            self._create_testing_dataset(dataset, labels, newDataset['sample_number'])
+        else:
+            self._create_non_testing_dataset(dataset, labels, newDataset['sample_number'])
 
-                serializer = DatasetSerializer(dataset)
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = DatasetSerializer(dataset)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # except Exception as e:
+        #     return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     def _create_testing_dataset(self, dataset, labels, sample_number):
         base_images = Image.objects.filter(dataset__base=True)
@@ -103,6 +103,30 @@ class GenerateDatasetsViewSet(viewsets.ViewSet):
                 )
 
     def _create_non_testing_dataset(self, dataset, labels, sample_number):
+        testing_images = Image.objects.filter(dataset__for_testing=True)
+        training_datasets = Dataset.objects.filter(for_testing=False).order_by('-created_at')
+
+        for label in labels:
+            # Collect used images IDs from testing datasets
+            used_images = set(testing_images.filter(label=label).values_list('id', flat=True))
+            selected_images = []
+
+            if training_datasets.exists():
+                latest_dataset = training_datasets.first()
+                latest_images = Image.objects.filter(dataset=latest_dataset, label=label)
+                selected_images = list(latest_images)
+
+            if len(selected_images) < sample_number:
+                remaining_images = Image.objects.exclude(id__in=used_images).filter(label=label)
+                new_images = random.sample(list(remaining_images), sample_number - len(selected_images))
+                selected_images.extend(new_images)
+
+            for image in selected_images:
+                Image.objects.create(
+                    dataset=dataset,
+                    image=image.image,
+                    label=label
+                )
         testing_images = Image.objects.filter(dataset__for_testing=True)
         training_datasets = Dataset.objects.filter(for_testing=False).order_by('-created_at')
 
