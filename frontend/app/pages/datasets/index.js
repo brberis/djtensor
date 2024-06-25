@@ -34,7 +34,8 @@ export default function Datasets({ base }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        setDatasets(base ? data : filterDatasets(data));
+        // setDatasets(base ? data : filterDatasets(data));
+        setDatasets(data);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
         setDatasets([]);
