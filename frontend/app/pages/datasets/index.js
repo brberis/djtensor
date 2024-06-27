@@ -16,17 +16,24 @@ export default function Datasets({ base }) {
   const router = useRouter();
 
   // Function to filter datasets
-  const filterDatasets = (data) => {
-    const baseDatasets = data.filter(dataset => dataset.base);
+  // const filterDatasets = (data) => {
+  //   const baseDatasets = data.filter(dataset => dataset.base);
+  //   if (baseDatasets.length > 0) {
+  //     setBaseSet(true);
+  //   }
+  //   const testingDatasets = data.filter(dataset => dataset.for_testing);
+
+  //   const lastBaseDataset = baseDatasets.slice(-1);
+
+  //   return [...lastBaseDataset, ...testingDatasets];
+  // };
+
+  useEffect(() => {
+    const baseDatasets = datasets.filter(dataset => dataset.base);
     if (baseDatasets.length > 0) {
       setBaseSet(true);
     }
-    const testingDatasets = data.filter(dataset => dataset.for_testing);
-
-    const lastBaseDataset = baseDatasets.slice(-1);
-
-    return [...lastBaseDataset, ...testingDatasets];
-  };
+  }, [datasets]);
 
   // Fetch datasets from API
   useEffect(() => {
