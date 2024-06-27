@@ -127,26 +127,4 @@ class GenerateDatasetsViewSet(viewsets.ViewSet):
                     image=image.image,
                     label=label
                 )
-        testing_images = Image.objects.filter(dataset__for_testing=True)
-        training_datasets = Dataset.objects.filter(for_testing=False).order_by('-created_at')
-
-        for label in labels:
-            used_images = set(testing_images.filter(label=label).values_list('image', flat=True))
-            selected_images = []
-
-            if training_datasets.exists():
-                latest_dataset = training_datasets.first()
-                latest_images = Image.objects.filter(dataset=latest_dataset, label=label)
-                selected_images = list(latest_images.values_list('image', flat=True))
-
-            if len(selected_images) < sample_number:
-                remaining_images = Image.objects.exclude(id__in=used_images).filter(label=label)
-                new_images = random.sample(list(remaining_images), sample_number - len(selected_images))
-                selected_images.extend(new_images)
-
-            for image in selected_images:
-                Image.objects.create(
-                    dataset=dataset,
-                    image=image,
-                    label=label
-                )
+       
