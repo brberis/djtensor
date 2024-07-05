@@ -2,6 +2,7 @@ from django.db import models
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from .tasks import create_dataset_archive
+from feature_extractor.models import Study
 
 RESOLUTIONS = [
     ('224', '224'),
@@ -20,6 +21,7 @@ RESOLUTIONS = [
 ]
 
 class Dataset(models.Model):
+    study = models.ForeignKey(Study, related_name='datasets', blank=True, null=True, on_delete=models.CASCADE)
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True, null=True)
     labels = models.ManyToManyField('Label', related_name='datasets')

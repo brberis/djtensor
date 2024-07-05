@@ -98,7 +98,14 @@ class TFModel(models.Model):
     def __str__(self):
         return f"{self.name} {self.default}"
     
+class Study(models.Model):
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
 class TrainingSession(models.Model):
+    study = models.ForeignKey(Study, related_name='training_sessions', blank=True, null=True, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     notes = models.TextField(blank=True, null=True)
     dataset = models.ForeignKey(Dataset, related_name='training_sessions', on_delete=models.CASCADE)
