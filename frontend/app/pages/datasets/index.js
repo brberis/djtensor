@@ -2,23 +2,38 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
+import GenerateDataset from '../../components/generateDataset';
 
 export default function Datasets({ base }) {
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddDataset, setIsOpenAddDataset] = useState(false);
+  const [isOpenGenerateDataset, setIsOpenGenerateDataset] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [action, setAction] = useState('');
+  const [baseSet, setBaseSet] = useState(false);
+  
   const router = useRouter();
 
   // Function to filter datasets
-  const filterDatasets = (data) => {
-    const baseDatasets = data.filter(dataset => dataset.base);
-    const testingDatasets = data.filter(dataset => dataset.for_testing);
+  // const filterDatasets = (data) => {
+  //   const baseDatasets = data.filter(dataset => dataset.base);
+  //   if (baseDatasets.length > 0) {
+  //     setBaseSet(true);
+  //   }
+  //   const testingDatasets = data.filter(dataset => dataset.for_testing);
 
-    const lastBaseDataset = baseDatasets.slice(-1);
+  //   const lastBaseDataset = baseDatasets.slice(-1);
 
-    return [...lastBaseDataset, ...testingDatasets];
-  };
+  //   return [...lastBaseDataset, ...testingDatasets];
+  // };
+
+  useEffect(() => {
+    const baseDatasets = datasets.filter(dataset => dataset.base);
+    if (baseDatasets.length > 0) {
+      setBaseSet(true);
+    }
+  }, [datasets]);
 
   // Fetch datasets from API
   useEffect(() => {
@@ -26,7 +41,8 @@ export default function Datasets({ base }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        setDatasets(base ? data : filterDatasets(data));
+        // setDatasets(base ? data : filterDatasets(data));
+        setDatasets(data);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
         setDatasets([]);
@@ -38,6 +54,16 @@ export default function Datasets({ base }) {
     fetchDatasets();
   }, [refresh, base]);
 
+  useEffect(() => {
+    if (!baseSet) {
+      setAction('Create Base Dataset');
+    } else {
+      setAction('Generate Datasets');
+    }
+  }, [baseSet]);
+
+  
+
   const handleDatasetClick = (dataset) => {
     router.push(`/datasets/${dataset.id}`);
   };
@@ -47,13 +73,31 @@ export default function Datasets({ base }) {
     setRefresh(prev => !prev);
   };
 
-  const incomingAction = (action) => {
-    setIsOpenAddDataset(action);
+  const incomingAction = async (action) => {
+    console.log('Action:', action);
+    if (action === 'Create Base Dataset') {
+      console.log('Create Base Dataset');
+      setIsOpenAddDataset(true);
+    }
+    if (action === 'Generate Datasets') {
+      try {
+        // const response = await fetch('/api/datasets/generate-datasets/');
+        // const res = await response.json();
+        // setRefresh(prev => !prev);
+        setIsOpenGenerateDataset(true);
+      } catch (error) {
+        console.error('Failed to fetch datasets:', error);
+        setDatasets([]);
+      } finally {
+        setIsLoading(false);
+      }    
+    }
   };
 
   return (
-    <Layout incomingAction={incomingAction} action={'New Dataset'}>
+    <Layout incomingAction={incomingAction} action={action}>
       {isOpenAddDataset && <AddDataset isOpen={isOpenAddDataset} onClose={handleClose} />}
+      {isOpenGenerateDataset && <GenerateDataset isOpen={isOpenGenerateDataset} onClose={handleClose} />}
       <div className="px-40 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">

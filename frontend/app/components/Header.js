@@ -75,7 +75,7 @@ export default function Header(props) {
             <div className="mt-4 flex flex-shrink-0 md:mt-0 md:ml-4 sm:-mr-8">
               <button
                 type="button"
-                onClick={() => actionHandler(true)}
+                onClick={() => actionHandler(action)}
                 className="ml-3 inline-flex items-center rounded-md border border-transparent bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2"
               >
                 {action}
