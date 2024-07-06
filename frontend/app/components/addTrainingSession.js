@@ -20,6 +20,7 @@ export default function AddSession({ isOpen, onClose }) {
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [models, setModels] = useState([]);
+  const [studies, setStudies] = useState([]); 
   const [datasets, setDatasets] = useState([]);
 
   useEffect(() => {
@@ -39,6 +40,22 @@ export default function AddSession({ isOpen, onClose }) {
   }, []);
 
   useEffect(() => {
+    const fetchStudies = async () => {
+      try {
+        const response = await fetch('/api/feature_extractor/studies/');
+        const data = await response.json();
+        setStudies(data); 
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+        setIsLoading(false);
+      }
+    };
+
+    fetchStudies();
+  }, []);
+
+  useEffect(() => {
     const fetchDatasets = async () => {
       try {
         const response = await fetch('/api/datasets/dataset/');
@@ -54,22 +71,17 @@ export default function AddSession({ isOpen, onClose }) {
     fetchDatasets();
   }, []);
 
-  console.log(models);
-  console.log(datasets);
-
   const handleClose = (result) => {
     setOpen(false);
     onClose(result);
   }
-
-  
-
 
   const formHandler = async (e) => {
     e.preventDefault();
 
     const formData = new FormData(e.target);
     const newTraining = {
+      study_id: formData.get('study'),
       name: formData.get('name'), 
       notes: formData.get('notes'),
       dataset_id: formData.get('dataset'),
@@ -157,7 +169,29 @@ export default function AddSession({ isOpen, onClose }) {
 
                     }
                     <form  onSubmit={formHandler}>
+                        <div className="col-span-6 sm:col-span-6">
+                          <label
+                            htmlFor="study"
+                            >
+                            Study
+                          </label>
+                          <div className="mt-1 rounded-md shadow-sm">
+                            <select
+                              id="study"
+                              name="study"
+                              required
+                              className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                              >
+                              <option value="" disabled>Select a model...</option>
+                              {studies?.map((study) => (
+                                <option key={study.id} value={study.id}>
+                                  {study.name}
+                                </option>
+                              ))}                                  
+                            </select>
+                          </div>
 
+                        </div>
 
                         <div className="grid grid-cols-8 sm:grid-cols-3 gap-6 mt-6">
                           <div className="col-span-6 sm:col-span-6">

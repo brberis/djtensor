@@ -3,9 +3,9 @@ import string
 from rest_framework import viewsets, serializers, status
 from rest_framework.response import Response
 from django.db import transaction
-from .models import TFModel, TrainingSession, Epoch, Test, TestResult
+from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult
 from datasets.models import Dataset, Image
-from .serializers import TFModelSerializer, TrainingSessionSerializer, EpochSerializer, TestSerializer, TestResultSerializer
+from .serializers import TFModelSerializer, StudySerializer, TrainingSessionSerializer, EpochSerializer, TestSerializer, TestResultSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from random import sample
 from datasets.tasks import create_dataset_archive
@@ -17,6 +17,11 @@ from .tasks import train_model
 class TFModelViewSet(viewsets.ModelViewSet):
     queryset = TFModel.objects.all()
     serializer_class = TFModelSerializer
+
+class StudyViewSet(viewsets.ModelViewSet):
+    queryset = Study.objects.all()
+    serializer_class = StudySerializer
+
 class TrainingSessionViewSet(viewsets.ModelViewSet):
     queryset = TrainingSession.objects.all()
     serializer_class = TrainingSessionSerializer

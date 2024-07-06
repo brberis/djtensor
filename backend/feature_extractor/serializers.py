@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import TFModel, TrainingSession, Epoch, Test, TestResult
+from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult
 from datasets.models import Dataset
 from datasets.serializers import DatasetSerializer  
 class TFModelSerializer(serializers.ModelSerializer):
@@ -13,13 +13,18 @@ class EpochSerializer(serializers.ModelSerializer):
         model = Epoch
         fields = '__all__'
         
+class StudySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Study
+        fields = '__all__'
+
 class TrainingSessionSerializer(serializers.ModelSerializer):
     model = TFModelSerializer(read_only=True)
     model_id = serializers.PrimaryKeyRelatedField(
         queryset=TFModel.objects.all(),
         source='model',
         write_only=True,
-        required=False  # Make this field optional
+        required=False  
     )
     dataset = DatasetSerializer(read_only=True)
     dataset_id = serializers.PrimaryKeyRelatedField(
@@ -45,6 +50,7 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"model_id": "No default model found and 'model_id' is not provided."})
 
         return super().to_internal_value(data)
+    
 
     def validate(self, data):
         hotdataset = self.context['request'].data.get('hotdataset')

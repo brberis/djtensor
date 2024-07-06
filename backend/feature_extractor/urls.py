@@ -1,9 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .api import  TFModelViewSet, TrainingSessionViewSet, EpochViewSet, TestViewSet, PerformanceViewSet, TestResultViewSet
+from .api import  TFModelViewSet, StudyViewSet, TrainingSessionViewSet, EpochViewSet, TestViewSet, PerformanceViewSet, TestResultViewSet
 
 router = DefaultRouter()
 router.register(r'tfmodel', TFModelViewSet, 'tfmodels')
+router.register(r'studies', StudyViewSet, 'studies')
 router.register(r'trainingsession', TrainingSessionViewSet, 'trainingsessions')
 router.register(r'epoch', EpochViewSet, 'epochs')
 router.register(r'tests', TestViewSet, 'tests')
