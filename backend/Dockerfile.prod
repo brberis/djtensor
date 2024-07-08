@@ -3,14 +3,15 @@
 ###########
 
 # pull official base image
-FROM tensorflow/tensorflow:latest-gpu as builder
+# FROM tensorflow/tensorflow:latest-gpu AS builder
+FROM nvcr.io/nvidia/tensorflow:23.05-tf2-py3 AS builder
 
 # set work directory
 WORKDIR /usr/src/app
 
 # set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
 # # install system dependencies
@@ -59,7 +60,8 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requir
 #########
 
 # pull official base image
-FROM tensorflow/tensorflow:latest-gpu
+# FROM tensorflow/tensorflow:latest-gpu
+FROM nvcr.io/nvidia/tensorflow:23.05-tf2-py3 
 WORKDIR /usr/src/app
 
 # create directory for the app user

@@ -26,7 +26,7 @@ if lspci | grep -i nvidia > /dev/null; then
   sudo apt-get update
 
   # Install the appropriate NVIDIA driver
-  sudo apt-get install -y nvidia-driver-470
+  sudo apt-get install -y nvidia-driver-530
 
   # Load NVIDIA driver without reboot
   sudo modprobe nvidia
@@ -117,4 +117,3 @@ echo "Docker and Docker Compose installation completed. Please log out and log b
 
 # Run Docker Compose to build and start the services
 docker-compose -f docker-compose.prod.yml up --build -d
-
