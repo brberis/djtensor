@@ -102,7 +102,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 #     wget  # Include wget in the installation
 
 RUN apt-get update && apt-get install -y \
-    postgresql-client 
+    postgresql-client \
+    netcat 
+
 
 # Add the deadsnakes PPA for newer Python versions
 # RUN add-apt-repository ppa:deadsnakes/ppa \
