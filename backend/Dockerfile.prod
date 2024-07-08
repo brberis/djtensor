@@ -140,4 +140,4 @@ COPY . $APP_HOME
 # USER app
 
 # run entrypoint.prod.sh
-ENTRYPOINT ["/home/backend/entrypoint.prod.sh"]
+ENTRYPOINT ["/usr/src/app/entrypoint.prod.sh"]
