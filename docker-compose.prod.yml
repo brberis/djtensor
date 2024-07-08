@@ -38,7 +38,7 @@ services:
     environment:
       - POSTGRES_USER=backend
       - POSTGRES_PASSWORD=backend
-      - POSTGRES_DB=backend_dev
+      - POSTGRES_DB=backend_prod
     networks:
       - backend
       
