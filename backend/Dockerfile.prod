@@ -101,6 +101,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 #     software-properties-common \
 #     wget  # Include wget in the installation
 
+RUN apt-get update && apt-get install -y \
+    postgresql-client 
+
 # Add the deadsnakes PPA for newer Python versions
 # RUN add-apt-repository ppa:deadsnakes/ppa \
 #     && apt-get update \
@@ -137,4 +140,4 @@ COPY . $APP_HOME
 # USER app
 
 # run entrypoint.prod.sh
-# ENTRYPOINT ["/home/backend/entrypoint.prod.sh"]
+ENTRYPOINT ["/home/backend/entrypoint.prod.sh"]
