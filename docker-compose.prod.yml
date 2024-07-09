@@ -29,7 +29,6 @@ services:
               count: 1
               capabilities: [gpu]
     runtime: nvidia
-
     networks:
       - backend
 
@@ -86,7 +85,6 @@ services:
     networks:
       - backend
 
-
   nginx:
     build: ./nginx
     volumes:
@@ -99,7 +97,6 @@ services:
       - backend
     networks:
       - backend
-
 
 volumes:
   postgres_data:
