@@ -58,6 +58,11 @@ services:
     depends_on:
       - db    
       - redis
+    environment:
+      - CUDNN_PATH="$HOME/.local/lib/python3.10/site-packages/nvidia/cudnn"
+      - LD_LIBRARY_PATH="$CUDNN_PATH/lib":"/usr/local/cuda/lib64"
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PATH="$PATH":"/usr/local/cuda/bin"
     volumes:
       - ./backend/:/usr/src/app/
       - static_volume:/usr/src/app/staticfiles  
