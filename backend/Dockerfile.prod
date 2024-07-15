@@ -4,7 +4,7 @@
 
 # pull official base image
 # FROM tensorflow/tensorflow:latest-gpu AS builder
-FROM nvcr.io/nvidia/tensorflow:23.05-tf2-py3 AS builder
+FROM tensorflow/tensorflow:latest-gpu AS builder
 
 # set work directory
 WORKDIR /usr/src/app
@@ -60,8 +60,7 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requir
 #########
 
 # pull official base image
-# FROM tensorflow/tensorflow:latest-gpu
-FROM nvcr.io/nvidia/tensorflow:23.05-tf2-py3 
+FROM tensorflow/tensorflow:latest-gpu
 WORKDIR /usr/src/app
 
 # create directory for the app user
