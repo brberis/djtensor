@@ -68,11 +68,11 @@ function Navbar() {
             </Link>
           </li>
         ))}
-        <div className="ml-auto mr-0 w-40">
+        <div className="ml-auto mr-0 w-100">
           <select
             value={selectedStudy}
             onChange={handleStudyChange}
-            className="px-8 py-2 border-2 border-sky-500 text-lg font-medium text-black w-full"
+            className="mt-3 px-4 py-1 border border-gray-400 text-sm font-medium text-gray-700 w-full"
           >
             <option value="" disabled>Select Study</option>
             {studies.map((study) => (
