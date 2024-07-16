@@ -65,6 +65,7 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 class TestSerializer(serializers.ModelSerializer):
+    training_session = TrainingSessionSerializer(read_only=True)
     class Meta:
         model = Test
         fields = '__all__'

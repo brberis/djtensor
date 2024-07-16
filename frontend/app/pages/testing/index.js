@@ -12,13 +12,22 @@ export default function Training() {
   const router = useRouter();
 
   useEffect(() => {
-    const fetchtests = async () => {
+    const fetchTests = async () => {
       try {
         const response = await fetch('/api/feature_extractor/tests/');
         const data = await response.json();
         const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
         if (Array.isArray(sortedData)) {
-          setTests(sortedData);
+          // Retrieve the selected study from local storage
+          const savedStudy = localStorage.getItem('selectedStudy');
+
+          // Filter tests based on the selected study
+          const filteredData = savedStudy
+            ? sortedData.filter(test => test.training_session.study == savedStudy)
+            : sortedData;
+
+          setTests(filteredData);
         } else {
           throw new Error('Data is not an array');
         }
@@ -30,9 +39,9 @@ export default function Training() {
       }
     };
 
-    fetchtests();
+    fetchTests();
     const refreshInterval = 5000;
-    const intervalId = setInterval(fetchtests, refreshInterval);
+    const intervalId = setInterval(fetchTests, refreshInterval);
 
     return () => clearInterval(intervalId);
   }, [refresh]);
@@ -62,7 +71,7 @@ export default function Training() {
       <div className="px-40 sm:px-6 lg:px-8">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">
-            <h1 className="text-lg font-semibold leading-6 text-gray-900">Training tests</h1>
+            <h1 className="text-lg font-semibold leading-6 text-gray-900">Training Tests</h1>
             <p className="mt-2 text-sm text-gray-700">View the status of the last training tests.</p>
           </div>
         </div>

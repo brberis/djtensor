@@ -17,8 +17,10 @@ export default function Training() {
         const response = await fetch('/api/feature_extractor/trainingsession/');
         const data = await response.json();
         if (Array.isArray(data)) {
+          const savedStudy = localStorage.getItem('selectedStudy');
+          const filteredData = savedStudy ? data.filter(session => session.study == savedStudy) : data;
           // Sort sessions by created_at in ascending order
-          const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          const sortedData = filteredData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
           setSessions(sortedData);
         } else {
           throw new Error('Data is not an array');
