@@ -36,7 +36,7 @@ function Navbar() {
         }
       })
       .catch((error) => console.error('Error fetching studies:', error));
-  }, []);
+  }, [selectedStudy]);
 
   // Function to handle study selection
   const handleStudyChange = (e) => {
