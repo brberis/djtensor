@@ -36,13 +36,16 @@ function Navbar() {
         }
       })
       .catch((error) => console.error('Error fetching studies:', error));
-  }, [selectedStudy]);
+  }, []);
 
   // Function to handle study selection
   const handleStudyChange = (e) => {
     const studyId = e.target.value;
     setSelectedStudy(studyId);
     localStorage.setItem('selectedStudy', studyId);
+    const url = new URL(window.location);
+    url.searchParams.set('studyId', studyId);
+    window.location.assign(url.toString());
   };
 
   // Function to determine if the link is the current page
