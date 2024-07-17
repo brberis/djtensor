@@ -43,7 +43,6 @@ function Navbar() {
     const studyId = e.target.value;
     setSelectedStudy(studyId);
     localStorage.setItem('selectedStudy', studyId);
-    router.push(`/studies/${studyId}`);
   };
 
   // Function to determine if the link is the current page
