@@ -4,7 +4,7 @@ import Spinner from './Spinner';
 import { XCircleIcon } from '@heroicons/react/20/solid'
 
 const resolutions = [
-  // {res: '224', des: '224x224'},
+  {res: '224', des: '224x224'},
   // {res: '240', des: '240x240'},
   // {res: '260', des: '260x260'},
   // {res: '299', des: '299x299'},
@@ -12,7 +12,7 @@ const resolutions = [
   // {res: '331', des: '331x331'},
   // {res: '456', des: '456x456'},
   // {res: '480', des: '480x480'},
-  // {res: '512', des: '512x512'},
+  {res: '512', des: '512x512'},
   // {res: '528', des: '528x528'},
   // {res: '600', des: '600x600'}
   {res: '384', des: '384x384'},
