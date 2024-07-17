@@ -18,7 +18,7 @@ export default function Training() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const savedStudy = localStorage.getItem('selectedStudy');
-          const filteredData = savedStudy ? data.filter(session => session.study == savedStudy) : data;
+          const filteredData = savedStudy ? data.filter(session => session.study?.id == savedStudy) : data;
           // Sort sessions by created_at in ascending order
           const sortedData = filteredData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
           setSessions(sortedData);

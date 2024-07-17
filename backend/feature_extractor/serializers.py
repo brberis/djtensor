@@ -33,11 +33,18 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
         write_only=True,
         allow_null=True
     )
+    study_id = serializers.PrimaryKeyRelatedField(
+        queryset=Study.objects.all(),
+        source='study',
+        write_only=True,
+        required=True
+    )
+    study = StudySerializer(read_only=True)
     epochs = EpochSerializer(many=True, read_only=True)
 
     class Meta:
         model = TrainingSession
-        fields = ['id', 'study', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at', 'epochs']
+        fields = ['id', 'study', 'study_id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'created_at', 'updated_at', 'epochs']
 
     def to_internal_value(self, data):
         model_id = data.get('model_id')
@@ -54,7 +61,7 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         hotdataset = self.context['request'].data.get('hotdataset')
-        dataset_id = data.get('dataset_id')
+        dataset_id = self.context['request'].data.get('dataset_id')
 
         if not hotdataset and not dataset_id:
             raise serializers.ValidationError("Either 'hotdataset' or 'dataset_id' must be provided.")

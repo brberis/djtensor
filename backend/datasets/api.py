@@ -56,6 +56,7 @@ class GenerateDatasetsViewSet(viewsets.ViewSet):
         formData = request.data
 
         newDataset = {
+            'study': formData.get('study'), 
             'name': formData.get('name'), 
             'labels': formData['labels'],  
             'description': formData.get('description'),

@@ -64,10 +64,10 @@ export default function AddSession({ isOpen, onClose }) {
     e.preventDefault();
 
     const formData = new FormData(e.target);
-    const selectedStudy = localStorage.getItem('selectedStudy'); // Get the study ID from local storage
+    const selectedStudy = localStorage.getItem('selectedStudy'); 
 
     const newTraining = {
-      study_id: selectedStudy, // Use the study ID from local storage
+      study_id: selectedStudy, 
       name: formData.get('name'),
       notes: formData.get('notes'),
       dataset_id: formData.get('dataset'),

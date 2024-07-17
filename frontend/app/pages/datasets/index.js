@@ -12,21 +12,8 @@ export default function Datasets({ base }) {
   const [refresh, setRefresh] = useState(false);
   const [action, setAction] = useState('');
   const [baseSet, setBaseSet] = useState(false);
-  
+
   const router = useRouter();
-
-  // Function to filter datasets
-  // const filterDatasets = (data) => {
-  //   const baseDatasets = data.filter(dataset => dataset.base);
-  //   if (baseDatasets.length > 0) {
-  //     setBaseSet(true);
-  //   }
-  //   const testingDatasets = data.filter(dataset => dataset.for_testing);
-
-  //   const lastBaseDataset = baseDatasets.slice(-1);
-
-  //   return [...lastBaseDataset, ...testingDatasets];
-  // };
 
   useEffect(() => {
     const baseDatasets = datasets.filter(dataset => dataset.base);
@@ -41,8 +28,10 @@ export default function Datasets({ base }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        // setDatasets(base ? data : filterDatasets(data));
-        setDatasets(data);
+        const selectedStudy = localStorage.getItem('selectedStudy'); 
+        const filteredDatasets = data.filter(dataset => dataset.study == selectedStudy);
+
+        setDatasets(filteredDatasets);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
         setDatasets([]);
@@ -62,8 +51,6 @@ export default function Datasets({ base }) {
     }
   }, [baseSet]);
 
-  
-
   const handleDatasetClick = (dataset) => {
     router.push(`/datasets/${dataset.id}`);
   };
@@ -74,23 +61,18 @@ export default function Datasets({ base }) {
   };
 
   const incomingAction = async (action) => {
-    console.log('Action:', action);
     if (action === 'Create Base Dataset') {
-      console.log('Create Base Dataset');
       setIsOpenAddDataset(true);
     }
     if (action === 'Generate Datasets') {
       try {
-        // const response = await fetch('/api/datasets/generate-datasets/');
-        // const res = await response.json();
-        // setRefresh(prev => !prev);
         setIsOpenGenerateDataset(true);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
         setDatasets([]);
       } finally {
         setIsLoading(false);
-      }    
+      }
     }
   };
 
