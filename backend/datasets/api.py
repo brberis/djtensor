@@ -7,6 +7,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from .tasks import create_dataset_archive
 import random
+from rest_framework.pagination import PageNumberPagination
+
+class ImagePagination(PageNumberPagination):
+    page_size = 10  # Number of images per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 class DatasetViewSet(viewsets.ModelViewSet):
     queryset = Dataset.objects.all()
@@ -24,6 +30,7 @@ class ImageViewSet(viewsets.ModelViewSet):
     serializer_class = ImageSerializer
     filter_backends = (DjangoFilterBackend,)
     filterset_fields = ['dataset']
+    pagination_class = ImagePagination
 
     def create(self, request, *args, **kwargs):
         print(request.data.get('dataset'))
@@ -48,7 +55,6 @@ class ImageViewSet(viewsets.ModelViewSet):
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': 'Unexpected error occurred: ' + str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class GenerateDatasetsViewSet(viewsets.ViewSet):
 

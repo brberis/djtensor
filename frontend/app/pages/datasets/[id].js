@@ -1,15 +1,16 @@
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Layout from '../../components/Layout';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
 
 export default function DatasetDetail() {
   const [dataset, setDataset] = useState(null);
-  const [images, setImages] = useState([]);
+  const [images, setImages] = useState({});
   const [labels, setLabels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [refresh, setRefresh] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const router = useRouter();
   const { id } = router.query;
 
@@ -19,15 +20,18 @@ export default function DatasetDetail() {
 
       setIsLoading(true);
       try {
-        const [datasetData, labelsData, imagesData] = await Promise.all([
+        const [datasetData, labelsData] = await Promise.all([
           fetch(`/api/datasets/dataset/${id}`).then(res => res.json()),
-          fetch(`/api/datasets/label/?datasets__id=${id}`).then(res => res.json()),
-          fetch(`/api/datasets/image/?dataset=${id}`).then(res => res.json())
+          fetch(`/api/datasets/label/?datasets__id=${id}`).then(res => res.json())
         ]);
 
         setDataset(datasetData);
         setLabels(labelsData);
-        setImages(imagesData);
+
+        // Fetch images for each label on initial load
+        labelsData.forEach(label => {
+          fetchImages(label.id, 1);
+        });
       } catch (error) {
         console.error('Failed to fetch data:', error);
       } finally {
@@ -36,7 +40,21 @@ export default function DatasetDetail() {
     }
 
     fetchData();
-  }, [id, refresh]);
+  }, [id]);
+
+  const fetchImages = useCallback(async (labelId, page) => {
+    try {
+      const res = await fetch(`/api/datasets/image/?dataset=${id}&label=${labelId}&page=${page}`);
+      const data = await res.json();
+      setImages(prev => ({
+        ...prev,
+        [labelId]: [...(prev[labelId] || []), ...data.results]
+      }));
+      setHasMore(data.next !== null);
+    } catch (error) {
+      console.error('Failed to fetch images:', error);
+    }
+  }, [id]);
 
   const handleUpload = async (files, labelId, datasetId) => {
     const formData = new FormData();
@@ -45,24 +63,24 @@ export default function DatasetDetail() {
     Array.from(files).forEach(file => {
       formData.append('file', file);
     });
-  
+
     try {
       const response = await axios.post('/api/datasets/image/upload', formData);
-      console.log(response.data);  
+      console.log(response.data);
       if (response.status !== 201) {
         throw new Error('Failed to upload images');
       }
       if (!Array.isArray(response.data.images)) {
         throw new Error("Invalid image data received");
       }
-      setImages(prev => [...prev, ...response.data.images]);
-      setRefresh((prevRefresh) => !prevRefresh);
+      setImages(prev => ({
+        ...prev,
+        [labelId]: [...(prev[labelId] || []), ...response.data.images]
+      }));
     } catch (error) {
       console.error('Error uploading images:', error);
-      setRefresh((prevRefresh) => !prevRefresh);
     }
   };
-  
 
   if (isLoading) {
     return <Spinner />;
@@ -82,13 +100,24 @@ export default function DatasetDetail() {
             <div key={label.id} className="px-4 py-5 sm:px-6 border-t border-gray-200">
               <h3 className="text-lg leading-6 font-medium text-gray-900">{label.name}</h3>
               <input type="file" multiple onChange={(e) => handleUpload(e.target.files, label.id, dataset.id)} className="mb-2" />
-              <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-                {images.filter(image => image.label === label.id).map(image => (
-                  <div key={image.id} className="flex flex-col items-center px-2">
-                    <img src={image.image} alt={label.name} className="object-cover h-24 w-24" style={{ width: '100px', height: '100px' }} />
+              <div className="mt-2 flex overflow-x-auto space-x-4">
+                {(images[label.id] || []).map(image => (
+                  <div key={image.id} className="flex flex-col items-center relative group">
+                    <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />
                     <p className="text-sm mt-2 whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: '100px' }}>{image.image.split('/').pop()}</p>
+                    <div className="absolute left-0 bottom-0 bg-white opacity-0 group-hover:opacity-100 p-1 text-xs">
+                      {image.image.split('/').pop()}
+                    </div>
                   </div>
                 ))}
+                {hasMore && (
+                  <button
+                    onClick={() => fetchImages(label.id, page + 1)}
+                    className="text-sm text-blue-500"
+                  >
+                    Load more
+                  </button>
+                )}
               </div>
             </div>
           ))}
