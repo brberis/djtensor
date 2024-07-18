@@ -10,7 +10,7 @@ import random
 from rest_framework.pagination import PageNumberPagination
 
 class ImagePagination(PageNumberPagination):
-    page_size = 10  # Number of images per page
+    page_size = 10  
     page_size_query_param = 'page_size'
     max_page_size = 100
 

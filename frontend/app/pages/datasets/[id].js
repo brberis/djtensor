@@ -9,8 +9,8 @@ export default function DatasetDetail() {
   const [images, setImages] = useState({});
   const [labels, setLabels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState({});
+  const [hasMore, setHasMore] = useState({});
   const router = useRouter();
   const { id } = router.query;
 
@@ -28,10 +28,16 @@ export default function DatasetDetail() {
         setDataset(datasetData);
         setLabels(labelsData);
 
-        // Fetch images for each label on initial load
+        // Initialize the state for each label
+        const initialPages = {};
+        const initialHasMore = {};
         labelsData.forEach(label => {
+          initialPages[label.id] = 1;
+          initialHasMore[label.id] = true;
           fetchImages(label.id, 1);
         });
+        setPage(initialPages);
+        setHasMore(initialHasMore);
       } catch (error) {
         console.error('Failed to fetch data:', error);
       } finally {
@@ -50,7 +56,10 @@ export default function DatasetDetail() {
         ...prev,
         [labelId]: [...(prev[labelId] || []), ...data.results]
       }));
-      setHasMore(data.next !== null);
+      setHasMore(prev => ({
+        ...prev,
+        [labelId]: data.next !== null
+      }));
     } catch (error) {
       console.error('Failed to fetch images:', error);
     }
@@ -103,16 +112,20 @@ export default function DatasetDetail() {
               <div className="mt-2 flex overflow-x-auto space-x-4">
                 {(images[label.id] || []).map(image => (
                   <div key={image.id} className="flex flex-col items-center relative group">
-                    <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />
                     <p className="text-sm mt-2 whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: '100px' }}>{image.image.split('/').pop()}</p>
+                    <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />
                     <div className="absolute left-0 bottom-0 bg-white opacity-0 group-hover:opacity-100 p-1 text-xs">
                       {image.image.split('/').pop()}
                     </div>
                   </div>
                 ))}
-                {hasMore && (
+                {hasMore[label.id] && (
                   <button
-                    onClick={() => fetchImages(label.id, page + 1)}
+                    onClick={() => {
+                      const nextPage = page[label.id] + 1;
+                      setPage(prev => ({ ...prev, [label.id]: nextPage }));
+                      fetchImages(label.id, nextPage);
+                    }}
                     className="text-sm text-blue-500"
                   >
                     Load more
