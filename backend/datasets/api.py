@@ -21,15 +21,20 @@ class DatasetViewSet(viewsets.ModelViewSet):
 class LabelViewSet(viewsets.ModelViewSet):
     queryset = Label.objects.all()
     serializer_class = LabelSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['datasets__id'] 
+    filter_backends = (DjangoFilterBackend,)
+    filterset_fields = ['datasets__id']
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['dataset_id'] = self.request.query_params.get('datasets__id')
+        return context
 
 
 class ImageViewSet(viewsets.ModelViewSet):
     queryset = Image.objects.all()
     serializer_class = ImageSerializer
     filter_backends = (DjangoFilterBackend,)
-    filterset_fields = ['dataset']
+    filterset_fields = ['dataset', 'label']  
     pagination_class = ImagePagination
 
     def create(self, request, *args, **kwargs):

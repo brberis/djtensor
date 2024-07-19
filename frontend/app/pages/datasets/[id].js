@@ -75,7 +75,6 @@ export default function DatasetDetail() {
 
     try {
       const response = await axios.post('/api/datasets/image/upload', formData);
-      console.log(response.data);
       if (response.status !== 201) {
         throw new Error('Failed to upload images');
       }
@@ -107,10 +106,12 @@ export default function DatasetDetail() {
         <div className="mt-4 bg-white shadow overflow-hidden sm:rounded-lg">
           {labels.map(label => (
             <div key={label.id} className="px-4 py-5 sm:px-6 border-t border-gray-200">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">{label.name}</h3>
+              <h3 className="text-lg leading-6 font-medium text-gray-900">
+                {label.name} ({label.image_count})
+              </h3>
               <input type="file" multiple onChange={(e) => handleUpload(e.target.files, label.id, dataset.id)} className="mb-2" />
               <div className="mt-2 flex overflow-x-auto space-x-4">
-                {(images[label.id] || []).map(image => (
+                {(images[label.id] || []).filter(image => image.label === label.id).map(image => (
                   <div key={image.id} className="flex flex-col items-center relative group">
                     <p className="text-sm mt-2 whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: '100px' }}>{image.image.split('/').pop()}</p>
                     <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />

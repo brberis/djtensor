@@ -12,7 +12,13 @@ class ImageSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class LabelSerializer(serializers.ModelSerializer):
+    image_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Label
-        fields = '__all__'
+        fields = ['id', 'name', 'image_count']
+
+    def get_image_count(self, obj):
+        dataset_id = self.context.get('dataset_id')
+        return Image.objects.filter(label=obj, dataset_id=dataset_id).count()
 
