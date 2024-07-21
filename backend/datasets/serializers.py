@@ -20,5 +20,7 @@ class LabelSerializer(serializers.ModelSerializer):
 
     def get_image_count(self, obj):
         dataset_id = self.context.get('dataset_id')
-        return Image.objects.filter(label=obj, dataset_id=dataset_id).count()
+        if dataset_id:
+            return Image.objects.filter(label=obj, dataset__id=dataset_id).count()
+        return Image.objects.filter(label=obj).count()
 

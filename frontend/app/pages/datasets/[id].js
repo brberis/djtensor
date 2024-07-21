@@ -34,7 +34,7 @@ export default function DatasetDetail() {
         labelsData.forEach(label => {
           initialPages[label.id] = 1;
           initialHasMore[label.id] = true;
-          fetchImages(label.id, 1);
+          fetchImages(label.id, 1); 
         });
         setPage(initialPages);
         setHasMore(initialHasMore);
@@ -52,6 +52,7 @@ export default function DatasetDetail() {
     try {
       const res = await fetch(`/api/datasets/image/?dataset=${id}&label=${labelId}&page=${page}`);
       const data = await res.json();
+      console.log('labelId', labelId, 'data:', data);
       setImages(prev => ({
         ...prev,
         [labelId]: [...(prev[labelId] || []), ...data.results]
@@ -111,7 +112,7 @@ export default function DatasetDetail() {
               </h3>
               <input type="file" multiple onChange={(e) => handleUpload(e.target.files, label.id, dataset.id)} className="mb-2" />
               <div className="mt-2 flex overflow-x-auto space-x-4">
-                {(images[label.id] || []).filter(image => image.label === label.id).map(image => (
+                {(images[label.id] || []).map(image => (
                   <div key={image.id} className="flex flex-col items-center relative group">
                     <p className="text-sm mt-2 whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: '100px' }}>{image.image.split('/').pop()}</p>
                     <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />

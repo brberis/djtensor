@@ -30,6 +30,7 @@ class LabelViewSet(viewsets.ModelViewSet):
         return context
 
 
+
 class ImageViewSet(viewsets.ModelViewSet):
     queryset = Image.objects.all()
     serializer_class = ImageSerializer
