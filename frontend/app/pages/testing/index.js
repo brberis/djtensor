@@ -24,7 +24,7 @@ export default function Training() {
 
           // Filter tests based on the selected study
           const filteredData = savedStudy
-            ? sortedData.filter(test => test.training_session.study == savedStudy)
+            ? sortedData.filter(test => test.training_session.study.id == savedStudy)
             : sortedData;
 
           setTests(filteredData);
@@ -47,9 +47,7 @@ export default function Training() {
   }, [refresh]);
 
   const handleTestClick = (test) => {
-    console.log('Attempting to handle click for:', test);
     if (test.status === 'Completed') {
-      console.log('Test is completed and clickable');
       router.push(`/testing/${test.id}`); 
     }
   };
