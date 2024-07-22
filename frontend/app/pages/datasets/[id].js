@@ -52,7 +52,6 @@ export default function DatasetDetail() {
     try {
       const res = await fetch(`/api/datasets/image/?dataset=${id}&label=${labelId}&page=${page}`);
       const data = await res.json();
-      console.log('labelId', labelId, 'data:', data);
       setImages(prev => ({
         ...prev,
         [labelId]: [...(prev[labelId] || []), ...data.results]

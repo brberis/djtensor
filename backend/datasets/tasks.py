@@ -39,7 +39,7 @@ def create_dataset_archive(dataset_id):
     # Creating tar.gz file directly in 'archive'
     tar_path = settings.MEDIA_ROOT / 'archive' / f'{file_name}.tar.gz'
     with tarfile.open(tar_path, 'w:gz') as tar:
-        tar.add(base_dir, arcname=file_name)  # Set arcname to be the same as file_name
+        tar.add(base_dir, arcname=file_name)  
 
     # Clean up the directory after archiving
     for root, dirs, files in os.walk(base_dir, topdown=False):

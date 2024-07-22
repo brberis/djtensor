@@ -21,7 +21,6 @@ export default function TestDetail() {
   const [specificity, setSpecificity] = useState(null);
 
   function calculateAccuracy(results) {
-    console.log('Results:', results);
     const correct = results.filter(result => result.prediction === result.true_label).length;
     return (correct / results.length) * 100;
   }
@@ -91,13 +90,11 @@ export default function TestDetail() {
         const trainingSessionData = await trainingSessionResponse.json();
         const resultsResponse = await fetch(`/api/feature_extractor/testresults/?test__id=${testData.id}`);
         const resultsData = await resultsResponse.json();
-        console.log('Results:', resultsData);
 
         if (resultsData) {
           setTestResults(resultsData);
         } else {
-          console.error("Results data is missing 'results' key:", resultsData);
-          setTestResults([]);  // Ensuring it remains an array
+          setTestResults([]);  
         }
 
         setTest(testData);

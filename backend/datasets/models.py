@@ -37,15 +37,29 @@ def get_image_upload_path(instance, filename):
     return os.path.join('datasets', f"{dataset_name}-{instance.dataset.id}", filename)
 
 class Image(models.Model):
-    dataset = models.ForeignKey(Dataset, related_name='images', on_delete=models.CASCADE)
+    dataset = models.ForeignKey(Dataset, related_name='images', on_delete=models.SET_NULL, null=True, blank=True)
     image = models.ImageField(upload_to=get_image_upload_path)
     label = models.ForeignKey(Label, related_name='images', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    used_for_training = models.BooleanField(default=False)
+    used_for_testing = models.BooleanField(default=False)
 
     def __str__(self):
         return self.image.url
 
+
 @receiver(post_delete, sender=Image)
 def create_dataset_archive_on_delete(sender, instance, **kwargs):
     create_dataset_archive.delay(instance.dataset.id)
+
+@receiver(post_delete, sender=Dataset)
+def handle_dataset_deletion(sender, instance, **kwargs):
+    base_dataset = Dataset.objects.filter(base=True, study=instance.study).first()
+    if base_dataset:
+        related_images = Image.objects.filter(dataset=instance)
+        related_images.update(
+            dataset=base_dataset,
+            used_for_training=False,
+            used_for_testing=False
+        )
