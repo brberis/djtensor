@@ -103,6 +103,9 @@ class Study(models.Model):
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
     
 class TrainingSession(models.Model):
     study = models.ForeignKey(Study, related_name='training_sessions', blank=True, null=True, on_delete=models.CASCADE)
@@ -116,6 +119,9 @@ class TrainingSession(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return self.name
+    
 class Epoch(models.Model):
     training_session = models.ForeignKey(TrainingSession, related_name='epochs', on_delete=models.CASCADE)
     number = models.IntegerField()
@@ -132,6 +138,9 @@ class Test(models.Model):
     status = models.CharField(max_length=30, choices=STATUS, default='Pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
 
 class TestResult(models.Model):
     test = models.ForeignKey(Test, related_name='results', on_delete=models.CASCADE)
