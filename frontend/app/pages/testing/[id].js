@@ -86,7 +86,7 @@ export default function TestDetail() {
         const testData = await testResponse.json();
         const datasetResponse = await fetch(`/api/datasets/dataset/${testData.dataset}`);
         const datasetData = await datasetResponse.json();
-        const trainingSessionResponse = await fetch(`/api/feature_extractor/trainingsession/${testData.training_session}`);
+        const trainingSessionResponse = await fetch(`/api/feature_extractor/trainingsession/${testData.training_session.id}`);
         const trainingSessionData = await trainingSessionResponse.json();
         const resultsResponse = await fetch(`/api/feature_extractor/testresults/?test__id=${testData.id}`);
         const resultsData = await resultsResponse.json();

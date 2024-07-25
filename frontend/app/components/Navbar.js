@@ -45,7 +45,8 @@ function Navbar() {
     localStorage.setItem('selectedStudy', studyId);
     const url = new URL(window.location);
     url.searchParams.set('studyId', studyId);
-    window.location.assign(url.toString());
+    //redirect to home page
+    window.location.assign('/');
   };
 
   // Function to determine if the link is the current page
