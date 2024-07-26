@@ -71,11 +71,14 @@ function Navbar() {
             </Link>
           </li>
         ))}
-        <div className="ml-auto mr-0 w-100">
+        <div className="flex ml-auto mr-0 items-center w-100 space-x-2">
+          <label htmlFor="study" className="block text-sm font-medium text-gray-700">
+            Study:
+          </label>
           <select
             value={selectedStudy}
             onChange={handleStudyChange}
-            className="mt-3 px-4 py-1 border border-gray-400 text-sm font-medium text-gray-700 w-full"
+            className="px-4 py-1 border border-gray-400 text-sm font-medium text-gray-700"
           >
             <option value="" disabled>Select Study</option>
             {studies.map((study) => (
