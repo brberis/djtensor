@@ -44,8 +44,6 @@ export default function AddTest({ isOpen, onClose }) {
     fetchDatasets();
   }, []);
 
-  console.log(trainingSession);
-  console.log(datasets);
 
   const handleClose = (result) => {
     setOpen(false);
@@ -64,8 +62,8 @@ export default function AddTest({ isOpen, onClose }) {
       notes: formData.get('notes'),
       dataset: formData.get('dataset'),
       training_session: formData.get('trainingsession'),
+      training_session_id: formData.get('trainingsession'),
     }
-    console.log('newTraining', newTest);
 
     setIsLoading(true);
     try {

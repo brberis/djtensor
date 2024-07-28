@@ -39,7 +39,6 @@ export default function GenerateDataset({ isOpen, onClose }) {
           fetch(`/api/datasets/label/`).then(res => res.json()),
         ]);
         setLabels(labelsData);
-        console.log('labelsData', labelsData)
       } catch (error) {
         console.error('Failed to fetch data:', error);
       } finally {

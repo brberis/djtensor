@@ -75,7 +75,6 @@ export default function AddSession({ isOpen, onClose }) {
       hotdataset: formData.get('hotdataset')
     };
 
-    console.log('newTraining', newTraining);
 
     setIsLoading(true);
     try {

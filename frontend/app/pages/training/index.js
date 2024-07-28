@@ -41,9 +41,7 @@ export default function Training() {
   }, [refresh]);
 
   const handleSessionClick = (session) => {
-    console.log('Attempting to handle click for:', session);
     if (session.status === 'Completed') {
-      console.log('Session is completed and clickable');
       router.push(`/training/${session.id}`); 
     }
   };
