@@ -430,39 +430,36 @@ def test_images(test_id, image_size=224):
             print(f"True label: {true_label}")
             print(f"Filename: {image_obj.image.name}")
 
-            fig, axes = plt.subplots(1, len(class_names) + 1, figsize=(20, 5))
+            fig, axes = plt.subplots(1, 2, figsize=(10, 5))
             axes[0].imshow(tf.keras.preprocessing.image.load_img(image_path))
-            axes[0].set_title(true_label)
+            axes[0].set_title(f"True: {true_label}")
             axes[0].axis('off')
 
-            # Generate saliency maps for each class
-            for i, class_name in enumerate(class_names):
-                score = CategoricalScore([i])
+            # Generate saliency map for the predicted class
+            score = CategoricalScore([predicted_index])
+            saliency_map = saliency(score, image_array)[0]
 
-                # Generate the saliency map
-                saliency_map = saliency(score, image_array)[0]
+            # Normalize the saliency map
+            saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
 
-                # Normalize the saliency map
-                saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
+            # Apply Sobel filter to enhance edges
+            saliency_sobel_x = sobel(saliency_map, axis=0)
+            saliency_sobel_y = sobel(saliency_map, axis=1)
+            edge_map = np.hypot(saliency_sobel_x, saliency_sobel_y)
 
-                # Apply Sobel filter to enhance edges
-                saliency_sobel_x = sobel(saliency_map, axis=0)
-                saliency_sobel_y = sobel(saliency_map, axis=1)
-                edge_map = np.hypot(saliency_sobel_x, saliency_sobel_y)
+            # Combine saliency map with edge map
+            combined_map = saliency_map + edge_map
+            combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min())
 
-                # Combine saliency map with edge map
-                combined_map = saliency_map + edge_map
-                combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min())
-
-                # Display the combined map
-                im = axes[i + 1].imshow(combined_map, cmap='viridis')
-                axes[i + 1].set_title(class_name)
-                axes[i + 1].axis('off')
+            # Display the combined map
+            im = axes[1].imshow(combined_map, cmap='viridis')
+            axes[1].set_title(f"Predicted: {predicted_label}")
+            axes[1].axis('off')
 
             # Add color bar at the bottom
             cbar = fig.colorbar(im, ax=axes, orientation='horizontal', fraction=0.02, pad=0.04)
             cbar.set_label('Saliency Value')
-            plt.suptitle(f"Saliency Maps for {image_obj.image.name} using {true_label}")
+            plt.suptitle(f"Saliency Map for {image_obj.image.name}")
 
             unique_filename = f"saliency_map_{uuid4().hex}_{get_valid_filename(image_obj.image.name)}"
             plt.savefig(unique_filename)
