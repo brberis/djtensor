@@ -15,6 +15,8 @@ from skimage import exposure
 from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
+from tf.keras.mixed_precision import experimental as mixed_precision
+
 
 import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
@@ -57,6 +59,10 @@ def train_model(training_session_id, *args, **kwargs):
         print("Hub version:", hub.__version__)
         print("GPU is", "available" if tf.config.list_physical_devices('GPU') else "NOT AVAILABLE")
 
+       # Set up mixed precision
+        policy = mixed_precision.Policy('mixed_float16')
+        mixed_precision.set_policy(policy)
+        
         #@title
         # Selection of the pre train model  
         
@@ -154,6 +160,7 @@ def train_model(training_session_id, *args, **kwargs):
         "pnasnet_large": 331,
         }
 
+
         model_handle = model_handle_map.get(model_name)
         pixels = model_image_size_map.get(model_name, 224)
 
@@ -174,17 +181,6 @@ def train_model(training_session_id, *args, **kwargs):
         tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
         logger.info(f"Dataset PATH: {tar_path}")
 
-        ## Testing Data
-        # data_dir = tf.keras.utils.get_file(
-        # 'flower_photos',
-        # 'https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz',
-        # untar=True)
-
-        ## Testing Data
-        # data_dir = tf.keras.utils.get_file(
-        # 'flower_photos',
-        # 'https://fossil.barberis.com/flower_photos.tar.gz',
-        # untar=True)
 
 
         data_dir = tf.keras.utils.get_file(
@@ -207,8 +203,6 @@ def train_model(training_session_id, *args, **kwargs):
                 validation_split=model_validation_split,
                 subset=subset,
                 label_mode="categorical",
-                # Seed needs to provided when using validation_split and shuffle = True.
-                # A fixed seed is used so that the validation set is stable across runs.
                 seed=123,
                 image_size=IMAGE_SIZE,
                 batch_size=1)
@@ -235,10 +229,6 @@ def train_model(training_session_id, *args, **kwargs):
                 tf.keras.layers.RandomTranslation(0, 0.2))
             preprocessing_model.add(
                 tf.keras.layers.RandomTranslation(0.2, 0))
-            # Like the old tf.keras.preprocessing.image.ImageDataGenerator(),
-            # image sizes are fixed when reading, and then a random zoom is applied.
-            # If all training inputs are larger than image_size, one could also use
-            # RandomCrop with a batch size of 1 and rebatch later.
             preprocessing_model.add(
                 tf.keras.layers.RandomZoom(0.2, 0.2))
             preprocessing_model.add(
@@ -270,8 +260,6 @@ def train_model(training_session_id, *args, **kwargs):
 
         print("Building model with", model_handle)
         model = tf.keras.Sequential([
-            # Explicitly define the input shape so the model can be properly
-            # loaded by the TFLiteConverter
             tf.keras.layers.InputLayer(input_shape=IMAGE_SIZE + (3,)),
             hub.KerasLayer(model_handle, trainable=do_fine_tuning),
             tf.keras.layers.Dropout(rate=0.2),
@@ -304,11 +292,9 @@ def train_model(training_session_id, *args, **kwargs):
             validation_data=val_ds,
             validation_steps=validation_steps)
 
-        # The history attribute of the History object is a dictionary
         hist = history_obj.history 
         logger.info("Training completed")
 
-        # Now, you can log the contents of the hist dictionary
         for epoch in range(1, len(hist['accuracy']) + 1):
             accuracy = hist['accuracy'][epoch - 1]
             loss = hist['loss'][epoch - 1]
@@ -366,7 +352,6 @@ def train_model(training_session_id, *args, **kwargs):
         session_instance.status = 'Completed'
 
     except Exception as e:
-        # If an error occurs, log it and update the status to 'Failed'
         print(f"Error during training: {e}")
         session_instance.status = 'Failed'
 
