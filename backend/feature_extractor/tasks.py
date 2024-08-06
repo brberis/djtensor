@@ -12,8 +12,9 @@ from tf_keras_vis.saliency import Saliency
 from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
-from tensorflow.keras.mixed_precision import experimental as mixed_precision
+
 import os
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
 
 
@@ -52,10 +53,6 @@ def train_model(training_session_id, *args, **kwargs):
         print("TF version:", tf.__version__)
         print("Hub version:", hub.__version__)
         print("GPU is", "available" if tf.config.list_physical_devices('GPU') else "NOT AVAILABLE")
-
-       # Set up mixed precision
-        policy = mixed_precision.Policy('mixed_float16')
-        mixed_precision.set_policy(policy)
 
         #@title
         # Selection of the pre train model  
