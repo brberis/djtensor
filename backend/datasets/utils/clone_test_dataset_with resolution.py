@@ -1,7 +1,7 @@
 import os
-from ..models import Dataset, Image, Label
+from .models import Dataset, Image, Label
 
-def clone_dataset(dataset_id, new_study_id):
+def clone_dataset(dataset_id, new_study_id, new_resolution):
     # Get the existing dataset
     try:
         old_dataset = Dataset.objects.get(id=dataset_id, for_testing=True)
@@ -16,12 +16,12 @@ def clone_dataset(dataset_id, new_study_id):
         print(f"No base dataset found for the new study with id {new_study_id}.")
         return
 
-    # Create a new dataset with the same resolution and new study
+    # Create a new dataset with the new resolution and study
     new_dataset = Dataset.objects.create(
         study_id=new_study_id,
         name=f"{old_dataset.name}_clone",
         description=old_dataset.description,
-        resolution=old_dataset.resolution,
+        resolution=new_resolution,
         base=False,
         for_testing=True
     )
@@ -44,4 +44,4 @@ def clone_dataset(dataset_id, new_study_id):
             print(f"No corresponding image found in the new base dataset for image {old_image_filename}.")
             continue
 
-    print(f"New dataset cloned with id {new_dataset.id} and resolution {old_dataset.resolution} for study {new_study_id}.")
+    print(f"New dataset cloned with id {new_dataset.id} and resolution {new_resolution} for study {new_study_id}.")
