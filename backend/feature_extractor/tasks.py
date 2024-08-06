@@ -1,7 +1,5 @@
-from celery_app import app
 from django.conf import settings
 from urllib.parse import urljoin
-from django.http import HttpRequest
 from celery import shared_task
 import matplotlib.pylab as plt
 from scipy.ndimage import sobel
@@ -11,7 +9,6 @@ import tensorflow_hub as hub
 from tf_keras_vis.utils.scores import CategoricalScore
 from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
 from tf_keras_vis.saliency import Saliency
-from skimage import exposure 
 from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
@@ -301,7 +298,7 @@ def train_model(training_session_id, *args, **kwargs):
 
 
 
-        ###################
+        ###################123456!
         # Plots (object)  #
         ###################
             
@@ -363,7 +360,6 @@ def test_images(test_id, image_size=224):
     from datasets.models import Image
 
     IMAGE_SIZE = (int(image_size), int(image_size))
-    BATCH_SIZE = 1
 
     try:
         test_instance = Test.objects.get(id=test_id)
