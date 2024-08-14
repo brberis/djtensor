@@ -18,9 +18,15 @@ class Dataset(models.Model):
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
     base = models.BooleanField(default=False)
     for_testing = models.BooleanField(default=True)
-    shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets', blank=True)
+    shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs) 
+        if self.study and not self.shared.exists(): 
+            self.shared.add(self.study) 
+        super().save(*args, **kwargs)  
 
     def __str__(self):
         return self.name
