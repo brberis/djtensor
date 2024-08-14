@@ -18,7 +18,7 @@ class Dataset(models.Model):
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
     base = models.BooleanField(default=False)
     for_testing = models.BooleanField(default=True)
-    shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets', blank=True)
+    shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
