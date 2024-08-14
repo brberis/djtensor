@@ -21,6 +21,7 @@ export default function Datasets({ base }) {
       setBaseSet(true);
     }
   }, [datasets]);
+  console.log('datasets', datasets);
 
   // Fetch datasets from API
   useEffect(() => {
@@ -28,9 +29,13 @@ export default function Datasets({ base }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        const selectedStudy = localStorage.getItem('selectedStudy'); 
-        const filteredDatasets = data.filter(dataset => dataset.study == selectedStudy);
-
+        const selectedStudy = localStorage.getItem('selectedStudy');
+  
+        // Filter datasets that either belong to the selected study or are shared with it
+        const filteredDatasets = data.filter(dataset => 
+          dataset.study == selectedStudy || dataset.shared.includes(parseInt(selectedStudy))
+        );
+  
         setDatasets(filteredDatasets);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
@@ -39,7 +44,7 @@ export default function Datasets({ base }) {
         setIsLoading(false);
       }
     };
-
+  
     fetchDatasets();
   }, [refresh, base]);
 
