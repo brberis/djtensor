@@ -14,7 +14,7 @@ def clone_all_images_from_study(old_study_id, new_study_id):
         study_id=new_study_id,
         name=f"consolidated_clone",
         description=f"Consolidated images from study {old_study_id}",
-        resolution=old_datasets.first().resolution,  # Assuming all old datasets have the same resolution
+        resolution=old_datasets.first().resolution, 
         base=False,
         for_testing=False
     )

@@ -25,9 +25,9 @@ def clone_training_dataset(dataset_id, new_study_id, global_base_dataset_id):
         resolution=old_dataset.resolution,
         base=False,
         for_testing=False  
-    )    
-    new_dataset.shared.add(Study.objects.filter(id=new_study_id))
+    )
     new_dataset.labels.set(old_dataset.labels.all())
+    new_dataset.shared.set([new_study_id])
     new_dataset.save()
 
     # Update the images from the old dataset to the new dataset

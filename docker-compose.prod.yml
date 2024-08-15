@@ -65,7 +65,10 @@ services:
       - media_volume:/usr/src/app/mediafiles 
     deploy:
       resources:
+        limits:
+          memory: 5g
         reservations:
+          memory: 4g
           devices:
             - driver: nvidia
               count: 1
