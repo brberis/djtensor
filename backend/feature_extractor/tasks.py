@@ -12,6 +12,7 @@ from tf_keras_vis.saliency import Saliency
 from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
+from PIL import Image as PILImage
 
 import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
@@ -406,7 +407,14 @@ def test_images(test_id, image_size=224):
             print(f"Filename: {image_obj.image.name}")
 
             fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-            axes[0].imshow(tf.keras.preprocessing.image.load_img(image_path))
+            image = PILImage.open(image_path)
+            if image.mode == 'RGBA':
+                bg = PILImage.new("RGB", image.size, (0, 0, 0))
+                image = PILImage.alpha_composite(bg.convert('RGBA'), image).convert('RGB')
+            else:
+                image = image.convert('RGB')
+
+            axes[0].imshow(image)
             axes[0].set_title(f"True: {true_label}")
             axes[0].axis('off')
 
