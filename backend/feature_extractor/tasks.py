@@ -13,6 +13,8 @@ from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
 from PIL import Image as PILImage
+import tensorflow.keras.backend as K
+import gc
 
 import os
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
@@ -346,6 +348,9 @@ def train_model(training_session_id, *args, **kwargs):
     except Exception as e:
         print(f"Error during training: {e}")
         session_instance.status = 'Failed'
+    finally:
+        K.clear_session()  
+        gc.collect()  
 
     session_instance.save()
 
@@ -469,3 +474,5 @@ def test_images(test_id, image_size=224):
         test_instance.status = 'Failed'
     finally:
         test_instance.save()
+        K.clear_session()  
+        gc.collect()  
