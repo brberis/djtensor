@@ -21,6 +21,13 @@ export default function TestDetail() {
   const [specificity, setSpecificity] = useState(null);
   const [filter, setFilter] = useState({ species: 'All', minConfidence: 0 });
   const [filteredResults, setFilteredResults] = useState([]);
+  const [resultCounts, setResultCounts] = useState({
+    truePositive: 0,
+    trueNegative: 0,
+    falsePositive: 0,
+    falseNegative: 0,
+  });
+
 
   function calculateAccuracy(results) {
     const correct = results.filter(result => result.prediction === result.true_label).length;
@@ -93,10 +100,9 @@ export default function TestDetail() {
         const resultsResponse = await fetch(`/api/feature_extractor/testresults/?test__id=${testData.id}`);
         const resultsData = await resultsResponse.json();
 
-
         if (resultsData) {
           setTestResults(resultsData);
-          setFilteredResults(resultsData);  
+          setFilteredResults(resultsData);
         } else {
           setTestResults([]);
           setFilteredResults([]);
@@ -115,14 +121,43 @@ export default function TestDetail() {
     fetchData();
   }, [id]);
 
+
+  
   useEffect(() => {
     if (testResults.length > 0) {
+      // Calculate the counts for each result type
+      const counts = calculateCounts(testResults);
+      setResultCounts(counts);
+  
       const filtered = testResults.filter(result => {
-        const matchesSpecies = filter.species === 'All' || result.true_label === filter.species || result.prediction === filter.species;
-        const matchesConfidence = result.confidence >= filter.minConfidence;
-        return matchesSpecies && matchesConfidence;
+        const matchesSpecies = filter.species === 'All' || result.true_label === filter.species;
+  
+        let matchesResultType = true;
+  
+        // Apply result type filter only if a specific species is selected
+        if (filter.species !== 'All') {
+          const isTruePositive = result.true_label === result.prediction && result.confidence > 0.5;
+          const isFalsePositive = result.prediction !== result.true_label && result.confidence > 0.5;
+          const isFalseNegative = result.prediction !== result.true_label && result.confidence <= 0.5;
+          const isTrueNegative = result.true_label !== result.prediction && result.confidence > 0.5;
+          
+          if (filter.resultType === 'TruePositive') {
+            matchesResultType = isTruePositive;
+          } else if (filter.resultType === 'FalsePositive') {
+            matchesResultType = isFalsePositive;
+          } else if (filter.resultType === 'FalseNegative') {
+            matchesResultType = isFalseNegative;
+          } else if (filter.resultType === 'TrueNegative') {
+            matchesResultType = isTrueNegative;
+          }
+        }
+  
+        return matchesSpecies && matchesResultType;
       });
+  
       setFilteredResults(filtered);
+  
+      // Recalculate metrics based on the filtered results
       const accuracy = calculateAccuracy(filtered);
       const averageConfidence = calculateAverageConfidence(filtered);
       const confusionMatrixData = calculateConfusionMatrix(filtered);
@@ -130,7 +165,7 @@ export default function TestDetail() {
       const recall = calculateRecall(confusionMatrixData);
       const f1Score = calculateF1Score(precision, recall);
       const specificity = calculateSpecificity(confusionMatrixData);
-
+  
       setAccuracy(accuracy);
       setAverageConfidence(averageConfidence);
       setConfusionMatrix(confusionMatrixData);
@@ -140,7 +175,30 @@ export default function TestDetail() {
       setSpecificity(specificity);
     }
   }, [filter, testResults]);
-
+  
+  const calculateCounts = (results) => {
+    const counts = {
+      truePositive: 0,
+      trueNegative: 0,
+      falsePositive: 0,
+      falseNegative: 0,
+    };
+  
+    results.forEach(result => {
+      const isTruePositive = result.true_label === result.prediction && result.confidence > 0.5;
+      const isFalsePositive = result.prediction !== result.true_label && result.confidence > 0.5;
+      const isFalseNegative = result.prediction !== result.true_label && result.confidence <= 0.5;
+      const isTrueNegative = result.true_label !== result.prediction && result.confidence > 0.5;
+      
+      if (isTruePositive) counts.truePositive++;
+      if (isTrueNegative) counts.trueNegative++;
+      if (isFalsePositive) counts.falsePositive++;
+      if (isFalseNegative) counts.falseNegative++;
+    });
+  
+    return counts;
+  };
+  
   function handleFilterChange(e) {
     const { name, value } = e.target;
     setFilter(prevState => ({
@@ -158,7 +216,13 @@ export default function TestDetail() {
   }
 
   if (!test || !(filteredResults?.length > 0)) {
-    return <p>No test data found.</p>;
+    return (
+      <Layout>
+        <div className="px-40 sm:px-6 lg:px-8">
+          <p>No test data found.</p>;
+        </div>
+      </Layout>
+    );
   }
 
   return (
@@ -167,45 +231,47 @@ export default function TestDetail() {
         <h1 className="text-lg font-semibold leading-6 text-gray-900">Test Detail</h1>
         <h2 className="text-md mt-2 text-indigo-600">Dataset: {dataset?.name}</h2>
         <h2 className="text-md text-indigo-600">Training Session: {trainingSession?.name}</h2>
-
+        <div className="flex space-x-4 mt-4">
+          <div>
+            <label htmlFor="species" className="block text-sm font-medium text-gray-700">
+              Filter by Species
+            </label>
+            <select
+              id="species"
+              name="species"
+              value={filter.species}
+              onChange={handleFilterChange}
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            >
+              <option value="All">All Species</option>
+              {confusionMatrix?.labels.map(label => (
+                <option key={label} value={label}>
+                  {formatLabel(label)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="resultType" className="block text-sm font-medium text-gray-700">
+              Filter by Result Type
+            </label>
+            <select
+              id="resultType"
+              name="resultType"
+              value={filter.resultType}
+              onChange={handleFilterChange}
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            >
+              <option value="All">All Results</option>
+              <option value="TruePositive">True Positive ({resultCounts.truePositive})</option>
+              <option value="TrueNegative">True Negative ({resultCounts.trueNegative})</option>
+              <option value="FalsePositive">False Positive ({resultCounts.falsePositive})</option>
+              <option value="FalseNegative">False Negative ({resultCounts.falseNegative})</option>
+            </select>
+          </div>
+        </div>
         <div className="mt-4">
           <h3 className="text-lg leading-6 font-medium text-gray-900">Results</h3>
-          <div className="flex space-x-4">
-            <div>
-              <label htmlFor="species" className="block text-sm font-medium text-gray-700">
-                Filter by Species
-              </label>
-              <select
-                id="species"
-                name="species"
-                value={filter.species}
-                onChange={handleFilterChange}
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              >
-                <option value="All">All Species</option>
-                {confusionMatrix?.labels.map(label => (
-                  <option key={label} value={label}>
-                    {formatLabel(label)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="minConfidence" className="block text-sm font-medium text-gray-700">
-                Min Confidence
-              </label>
-              <input
-                id="minConfidence"
-                name="minConfidence"
-                type="number"
-                value={filter.minConfidence}
-                onChange={handleFilterChange}
-                min={0}
-                max={100}
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              />
-            </div>
-          </div>
 
           <p className="flex items-center">
             Accuracy: {accuracy ? `${accuracy.toFixed(2)}%` : 'Calculating...'}
