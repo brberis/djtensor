@@ -19,6 +19,8 @@ export default function TestDetail() {
   const [recall, setRecall] = useState(null);
   const [f1Score, setF1Score] = useState(null);
   const [specificity, setSpecificity] = useState(null);
+  const [filter, setFilter] = useState({ species: 'All', minConfidence: 0 });
+  const [filteredResults, setFilteredResults] = useState([]);
 
   function calculateAccuracy(results) {
     const correct = results.filter(result => result.prediction === result.true_label).length;
@@ -91,10 +93,13 @@ export default function TestDetail() {
         const resultsResponse = await fetch(`/api/feature_extractor/testresults/?test__id=${testData.id}`);
         const resultsData = await resultsResponse.json();
 
+
         if (resultsData) {
           setTestResults(resultsData);
+          setFilteredResults(resultsData);  
         } else {
-          setTestResults([]);  
+          setTestResults([]);
+          setFilteredResults([]);
         }
 
         setTest(testData);
@@ -103,7 +108,7 @@ export default function TestDetail() {
       } catch (error) {
         console.error('Failed to load test data or results:', error);
       } finally {
-        setIsLoading(false);  // Only set this to false here, ensuring all fetches are done
+        setIsLoading(false);
       }
     };
 
@@ -112,9 +117,15 @@ export default function TestDetail() {
 
   useEffect(() => {
     if (testResults.length > 0) {
-      const accuracy = calculateAccuracy(testResults);
-      const averageConfidence = calculateAverageConfidence(testResults);
-      const confusionMatrixData = calculateConfusionMatrix(testResults);
+      const filtered = testResults.filter(result => {
+        const matchesSpecies = filter.species === 'All' || result.true_label === filter.species || result.prediction === filter.species;
+        const matchesConfidence = result.confidence >= filter.minConfidence;
+        return matchesSpecies && matchesConfidence;
+      });
+      setFilteredResults(filtered);
+      const accuracy = calculateAccuracy(filtered);
+      const averageConfidence = calculateAverageConfidence(filtered);
+      const confusionMatrixData = calculateConfusionMatrix(filtered);
       const precision = calculatePrecision(confusionMatrixData);
       const recall = calculateRecall(confusionMatrixData);
       const f1Score = calculateF1Score(precision, recall);
@@ -128,7 +139,15 @@ export default function TestDetail() {
       setF1Score(f1Score);
       setSpecificity(specificity);
     }
-  }, [testResults]);
+  }, [filter, testResults]);
+
+  function handleFilterChange(e) {
+    const { name, value } = e.target;
+    setFilter(prevState => ({
+      ...prevState,
+      [name]: value,
+    }));
+  }
 
   function formatLabel(label) {
     return label.replace(/_/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -138,7 +157,7 @@ export default function TestDetail() {
     return <Spinner />;
   }
 
-  if (!test || !(testResults?.length > 0)) {
+  if (!test || !(filteredResults?.length > 0)) {
     return <p>No test data found.</p>;
   }
 
@@ -151,6 +170,43 @@ export default function TestDetail() {
 
         <div className="mt-4">
           <h3 className="text-lg leading-6 font-medium text-gray-900">Results</h3>
+          <div className="flex space-x-4">
+            <div>
+              <label htmlFor="species" className="block text-sm font-medium text-gray-700">
+                Filter by Species
+              </label>
+              <select
+                id="species"
+                name="species"
+                value={filter.species}
+                onChange={handleFilterChange}
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              >
+                <option value="All">All Species</option>
+                {confusionMatrix?.labels.map(label => (
+                  <option key={label} value={label}>
+                    {formatLabel(label)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="minConfidence" className="block text-sm font-medium text-gray-700">
+                Min Confidence
+              </label>
+              <input
+                id="minConfidence"
+                name="minConfidence"
+                type="number"
+                value={filter.minConfidence}
+                onChange={handleFilterChange}
+                min={0}
+                max={100}
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              />
+            </div>
+          </div>
+
           <p className="flex items-center">
             Accuracy: {accuracy ? `${accuracy.toFixed(2)}%` : 'Calculating...'}
             <Tooltip text="Accuracy is the proportion of true results (both true positives and true negatives) among the total number of cases examined." />
@@ -204,25 +260,17 @@ export default function TestDetail() {
           )}
         </div>
         <div className="mt-8">
-          {testResults?.length > 0 ? testResults.map(result => (
-          <>
+          {filteredResults?.length > 0 ? filteredResults.map(result => (
             <div key={result.id} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4">
-              {/* <div className="mr-4">
-                <img src={result.image?.image} alt="Test Image" className="w-32 h-32" />
-                <p className="text-xs text-gray-500 text-center">{result.image?.label?.name}</p> 
-              </div>
-               */}
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Prediction: {formatLabel(result.prediction)}</h3>
                 <h3 className="text-md leading-6 font-medium text-gray-900">True Label: {formatLabel(result.true_label)}</h3>
                 <p className="text-md text-gray-800">Confidence: {(result.confidence * 100).toFixed(2)}%</p>
               </div>
               <div className="mx-4">
-              <img src={result.grad_cam} alt="Grad cam" className="" />
-            </div> 
+                <img src={result.grad_cam} alt="Grad cam" className="" />
+              </div>
             </div>
-   
-          </>        
           )) : (
             <p>No results available.</p>
           )}

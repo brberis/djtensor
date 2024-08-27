@@ -45,13 +45,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod    
-    command: celery -A celery_app worker --loglevel=info
+    command: celery -A celery_app worker --loglevel=info --max-tasks-per-child=1
     env_file:
       - ./.env.prod
     depends_on:
       - db    
       - redis
     environment:
+      - CELERYD_MAX_TASKS_PER_CHILD=1
+      - CELERYD_TASK_TIME_LIMIT=3600 
+      - CELERYD_TASK_SOFT_TIME_LIMIT=3500
       - LD_LIBRARY_PATH="$CUDNN_PATH/lib":"/usr/local/cuda/lib64"
       - NVIDIA_VISIBLE_DEVICES=all
       - TF_FORCE_GPU_ALLOW_GROWTH=true
@@ -66,7 +69,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 5g
+          memory: 8g
         reservations:
           memory: 4g
           devices:
@@ -84,6 +87,7 @@ services:
         hard: 67108864
     networks:
       - backend
+    restart: always
 
   frontend:
     build: ./frontend
