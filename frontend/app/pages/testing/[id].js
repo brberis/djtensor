@@ -125,39 +125,35 @@ export default function TestDetail() {
   
   useEffect(() => {
     if (testResults.length > 0) {
-      // Calculate the counts for each result type
-      const counts = calculateCounts(testResults);
+      const filteredBySpecies = testResults.filter(result => filter.species === 'All' || result.true_label === filter.species);
+  
+      const counts = calculateCounts(filteredBySpecies);
       setResultCounts(counts);
   
-      const filtered = testResults.filter(result => {
-        const matchesSpecies = filter.species === 'All' || result.true_label === filter.species;
+      let filtered = filteredBySpecies;
   
-        let matchesResultType = true;
-  
-        // Apply result type filter only if a specific species is selected
-        if (filter.species !== 'All') {
+      if (filter.resultType && filter.resultType !== 'All') {
+        filtered = filtered.filter(result => {
           const isTruePositive = result.true_label === result.prediction && result.confidence > 0.5;
           const isFalsePositive = result.prediction !== result.true_label && result.confidence > 0.5;
           const isFalseNegative = result.prediction !== result.true_label && result.confidence <= 0.5;
           const isTrueNegative = result.true_label !== result.prediction && result.confidence > 0.5;
           
           if (filter.resultType === 'TruePositive') {
-            matchesResultType = isTruePositive;
+            return isTruePositive;
           } else if (filter.resultType === 'FalsePositive') {
-            matchesResultType = isFalsePositive;
+            return isFalsePositive;
           } else if (filter.resultType === 'FalseNegative') {
-            matchesResultType = isFalseNegative;
+            return isFalseNegative;
           } else if (filter.resultType === 'TrueNegative') {
-            matchesResultType = isTrueNegative;
+            return isTrueNegative;
           }
-        }
-  
-        return matchesSpecies && matchesResultType;
-      });
+          return true;
+        });
+      }
   
       setFilteredResults(filtered);
   
-      // Recalculate metrics based on the filtered results
       const accuracy = calculateAccuracy(filtered);
       const averageConfidence = calculateAverageConfidence(filtered);
       const confusionMatrixData = calculateConfusionMatrix(filtered);
@@ -175,6 +171,24 @@ export default function TestDetail() {
       setSpecificity(specificity);
     }
   }, [filter, testResults]);
+  
+  
+  function handleFilterChange(e) {
+    const { name, value } = e.target;
+  
+    if (name === 'species') {
+      // Reset the resultType when species changes
+      setFilter({
+        species: value,
+        resultType: 'All',  
+      });
+    } else {
+      setFilter(prevState => ({
+        ...prevState,
+        [name]: value,
+      }));
+    }
+  }
   
   const calculateCounts = (results) => {
     const counts = {
@@ -219,7 +233,7 @@ export default function TestDetail() {
     return (
       <Layout>
         <div className="px-40 sm:px-6 lg:px-8">
-          <p>No test data found.</p>;
+          <p>No test data found.</p>
         </div>
       </Layout>
     );
