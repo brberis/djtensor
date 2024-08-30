@@ -175,8 +175,6 @@ def train_model(training_session_id, *args, **kwargs):
         tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
         logger.info(f"Dataset PATH: {tar_path}")
 
-
-
         data_dir = tf.keras.utils.get_file(
         file_name,
         tar_path,
@@ -214,7 +212,11 @@ def train_model(training_session_id, *args, **kwargs):
 
         normalization_layer = tf.keras.layers.Rescaling(1. / 255)
         preprocessing_model = tf.keras.Sequential([normalization_layer])
-        
+
+        #####################
+        # Data Augmentation #
+        #####################
+
         do_data_augmentation = model_data_augmentation 
         if do_data_augmentation:
             preprocessing_model.add(
