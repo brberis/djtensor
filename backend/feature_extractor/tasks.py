@@ -219,6 +219,7 @@ def train_model(training_session_id, *args, **kwargs):
 
         do_data_augmentation = model_data_augmentation 
         if do_data_augmentation:
+            logger.info("<--- Data Augmentation enabled --->")
             preprocessing_model.add(
                 tf.keras.layers.RandomRotation(40))
             preprocessing_model.add(
