@@ -225,8 +225,8 @@ def train_model(training_session_id, *args, **kwargs):
                 tf.keras.layers.RandomTranslation(0, 0.2))
             preprocessing_model.add(
                 tf.keras.layers.RandomTranslation(0.2, 0))
-            preprocessing_model.add(
-                tf.keras.layers.RandomZoom(0.2, 0.2))
+            # preprocessing_model.add(
+            #     tf.keras.layers.RandomZoom(0.2, 0.2))
             preprocessing_model.add(
                 tf.keras.layers.RandomFlip(mode="horizontal"))
             
