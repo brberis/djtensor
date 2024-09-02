@@ -17,13 +17,18 @@ import tensorflow.keras.backend as K
 import gc
 
 import os
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
-
-
-
+# from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import logging
-
 logger = logging.getLogger(__name__)
+
+class GrayscaleLayer(tf.keras.layers.Layer):
+    def __init__(self):
+        super(GrayscaleLayer, self).__init__()
+
+    def call(self, inputs):
+        grayscale = tf.image.rgb_to_grayscale(inputs)
+        rgb = tf.image.grayscale_to_rgb(grayscale)
+        return rgb
 
 @shared_task
 def train_model(training_session_id, *args, **kwargs):
@@ -213,14 +218,6 @@ def train_model(training_session_id, *args, **kwargs):
         normalization_layer = tf.keras.layers.Rescaling(1. / 255)
         preprocessing_model = tf.keras.Sequential([normalization_layer])
 
-        class GrayscaleLayer(tf.keras.layers.Layer):
-            def __init__(self):
-                super(GrayscaleLayer, self).__init__()
-
-            def call(self, inputs):
-                grayscale = tf.image.rgb_to_grayscale(inputs)
-                rgb = tf.image.grayscale_to_rgb(grayscale)
-                return rgb
             
         #####################
         # Data Augmentation #
