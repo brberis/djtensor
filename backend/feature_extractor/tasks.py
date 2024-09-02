@@ -213,6 +213,15 @@ def train_model(training_session_id, *args, **kwargs):
         normalization_layer = tf.keras.layers.Rescaling(1. / 255)
         preprocessing_model = tf.keras.Sequential([normalization_layer])
 
+        class GrayscaleLayer(tf.keras.layers.Layer):
+            def __init__(self):
+                super(GrayscaleLayer, self).__init__()
+
+            def call(self, inputs):
+                grayscale = tf.image.rgb_to_grayscale(inputs)
+                rgb = tf.image.grayscale_to_rgb(grayscale)
+                return rgb
+            
         #####################
         # Data Augmentation #
         #####################
@@ -220,6 +229,8 @@ def train_model(training_session_id, *args, **kwargs):
         do_data_augmentation = model_data_augmentation 
         if do_data_augmentation:
             logger.info("<--- Data Augmentation enabled --->")
+            logger.info("Grayscale, Random Rotation, Random Translation, Random Flip")
+            preprocessing_model.add(GrayscaleLayer())
             preprocessing_model.add(
                 tf.keras.layers.RandomRotation(40))
             preprocessing_model.add(
