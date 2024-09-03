@@ -223,22 +223,46 @@ def train_model(training_session_id, *args, **kwargs):
         # Data Augmentation #
         #####################
 
-        do_data_augmentation = model_data_augmentation 
+        def save_image(image_array, file_name):
+            """Save a NumPy array as an image file in the Django media directory."""
+            image = PILImage.fromarray(np.uint8(image_array))
+            image_path = os.path.join(settings.MEDIA_ROOT, file_name)
+            image.save(image_path)
+            return image_path    
+        
+        preprocessing_model = tf.keras.Sequential([
+            GrayscaleLayer(),  
+        ])
+            
+        data_augmentation = tf.keras.Sequential([
+            preprocessing_model,
+            tf.keras.layers.RandomRotation(0.1), 
+            tf.keras.layers.RandomTranslation(0.1, 0.1),
+            tf.keras.layers.RandomFlip('horizontal'),
+            tf.keras.layers.RandomZoom(0.1),
+        ])
+            
+        do_data_augmentation = model_data_augmentation
         if do_data_augmentation:
             logger.info("<--- Data Augmentation enabled --->")
-            logger.info("Grayscale, Random Rotation, Random Translation, Random Flip")
-            preprocessing_model.add(GrayscaleLayer())
-            preprocessing_model.add(
-                tf.keras.layers.RandomRotation(40))
-            preprocessing_model.add(
-                tf.keras.layers.RandomTranslation(0, 0.2))
-            preprocessing_model.add(
-                tf.keras.layers.RandomTranslation(0.2, 0))
-            # preprocessing_model.add(
-            #     tf.keras.layers.RandomZoom(0.2, 0.2))
-            preprocessing_model.add(
-                tf.keras.layers.RandomFlip(mode="horizontal"))
-            
+            augmented_images_dir = os.path.join(settings.MEDIA_ROOT, 'augmented_images')
+            os.makedirs(augmented_images_dir, exist_ok=True)
+            total_samples = train_ds.cardinality().numpy()
+
+            for idx, (image_array, label) in enumerate(train_ds.take(total_samples)): 
+                image_np = image_array.numpy()[0]
+                augmented_image = data_augmentation(tf.expand_dims(image_np, 0))
+                
+                # Remove the batch dimension and save
+                augmented_image_np = augmented_image.numpy()[0]
+                
+                # Convert to image and save
+                file_name = f"augmented_image_{uuid4().hex}_{idx}.png"
+                save_image(augmented_image_np, file_name)
+                logger.info(f"Saved {file_name} to media directory.")
+  
+
+
         @tf.function
         def preprocess(images, labels):
             return preprocessing_model(images), labels
