@@ -15,7 +15,7 @@ from uuid import uuid4
 from PIL import Image as PILImage
 import tensorflow.keras.backend as K
 import gc
-
+import shutil
 import os
 # from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import logging
@@ -194,6 +194,15 @@ def train_model(training_session_id, *args, **kwargs):
 
         logger.info("Building and compiling model...")
 
+        def remove_alpha_and_background(image):
+            """Remove alpha channel and replace transparency with white background."""
+            if image.shape[-1] == 4:  # Check if image has an alpha channel
+                image_pil = PILImage.fromarray((image * 255).astype(np.uint8))  # Convert to PIL image
+                background = PILImage.new("RGB", image_pil.size, (255, 255, 255))
+                background.paste(image_pil, mask=image_pil.split()[3])  # Paste with alpha channel as mask
+                return np.array(background) / 255.0  # Convert back to numpy array and normalize
+            return image
+        
         def build_dataset(subset):
             return tf.keras.preprocessing.image_dataset_from_directory(
                 data_dir,
@@ -219,6 +228,16 @@ def train_model(training_session_id, *args, **kwargs):
         preprocessing_model = tf.keras.Sequential([normalization_layer])
 
             
+        @tf.function
+        def preprocess(images, labels):
+            return preprocessing_model(images), labels
+
+        @tf.function
+        def normalization(images, labels):
+            return normalization_layer(images), labels
+        
+        train_ds = train_ds.map(normalization)
+
         #####################
         # Data Augmentation #
         #####################
@@ -226,7 +245,7 @@ def train_model(training_session_id, *args, **kwargs):
         def save_image(image_array, file_name):
             """Save a NumPy array as an image file in the Django media directory."""
             image = PILImage.fromarray(np.uint8(image_array))
-            image_path = os.path.join(settings.MEDIA_ROOT, file_name)
+            image_path = os.path.join(settings.MEDIA_ROOT, 'augmented_images', file_name)
             image.save(image_path)
             return image_path    
         
@@ -246,10 +265,14 @@ def train_model(training_session_id, *args, **kwargs):
         if do_data_augmentation:
             logger.info("<--- Data Augmentation enabled --->")
             augmented_images_dir = os.path.join(settings.MEDIA_ROOT, 'augmented_images')
+            
+            if os.path.exists(augmented_images_dir):
+                shutil.rmtree(augmented_images_dir) 
+            
             os.makedirs(augmented_images_dir, exist_ok=True)
-            total_samples = train_ds.cardinality().numpy()
+            logger.info(f"Created clean directory at {augmented_images_dir}.")
 
-            for idx, (image_array, label) in enumerate(train_ds.take(total_samples)): 
+            for idx, (image_array, label) in enumerate(train_ds.take(train_size)): 
                 image_np = image_array.numpy()[0]
                 augmented_image = data_augmentation(tf.expand_dims(image_np, 0))
                 
@@ -262,22 +285,14 @@ def train_model(training_session_id, *args, **kwargs):
                 logger.info(f"Saved {file_name} to media directory.")
   
 
+        train_ds = train_ds.map(lambda images, labels: (data_augmentation(images), labels))
 
-        @tf.function
-        def preprocess(images, labels):
-            return preprocessing_model(images), labels
-
-        @tf.function
-        def normalization(images, labels):
-            return normalization_layer(images), labels
-        
-        train_ds = train_ds.map(preprocess)    
 
         val_ds = build_dataset("validation")
         valid_size = val_ds.cardinality().numpy()
         val_ds = val_ds.unbatch().batch(BATCH_SIZE)
 
-        val_ds = val_ds.map(normalization) 
+        val_ds = val_ds.map(preprocess)
 
 
 
