@@ -244,10 +244,14 @@ def train_model(training_session_id, *args, **kwargs):
 
         def save_image(image_array, file_name):
             """Save a NumPy array as an image file in the Django media directory."""
-            image = PILImage.fromarray(np.uint8(image_array))
+            # Assuming the image values are in the range [0, 1], rescale to [0, 255]
+            rescaled_image = np.clip(image_array * 255, 0, 255).astype(np.uint8)
+
+            # Convert the NumPy array to a PIL image and save it
+            image = PILImage.fromarray(rescaled_image)
             image_path = os.path.join(settings.MEDIA_ROOT, 'augmented_images', file_name)
             image.save(image_path)
-            return image_path    
+            return image_path  
         
         preprocessing_model = tf.keras.Sequential([
             GrayscaleLayer(),  
