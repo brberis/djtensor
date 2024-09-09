@@ -22,14 +22,33 @@ import os
 import logging
 logger = logging.getLogger(__name__)
 
+def convert_alpha_to_white(image_path):
+    """Converts an image with alpha transparency to a white background and saves it in the same location."""
+    image = PILImage.open(image_path).convert("RGBA")
+    background = PILImage.new("RGB", image.size, (255, 255, 255)) 
+    background.paste(image, mask=image.split()[3])  
+    background.save(image_path, "PNG")  
+
+def remove_alpha(data_dir):
+    """Iterates through all images in the data directory and converts them to remove transparency, saving in-place."""
+    for root, _, files in os.walk(data_dir):
+        for file in files:
+            if file.endswith(".png") or file.endswith(".jpg"):
+                file_path = os.path.join(root, file)
+                convert_alpha_to_white(file_path)
+                
+
+# custom layer to convert RGB to Grayscale
 class GrayscaleLayer(tf.keras.layers.Layer):
-    def __init__(self):
+    def __init__(self, brightness_factor=0.0):
         super(GrayscaleLayer, self).__init__()
+        self.brightness_factor = brightness_factor  # Brightness factor to adjust
 
     def call(self, inputs):
         grayscale = tf.image.rgb_to_grayscale(inputs)
         rgb = tf.image.grayscale_to_rgb(grayscale)
-        return rgb
+        adjusted_rgb = tf.image.adjust_brightness(rgb, self.brightness_factor)
+        return adjusted_rgb
 
 @shared_task
 def train_model(training_session_id, *args, **kwargs):
@@ -102,22 +121,7 @@ def train_model(training_session_id, *args, **kwargs):
 
         logger.info("Building and compiling model...")
 
-        def convert_alpha_to_white(image_path):
-            """Converts an image with alpha transparency to a white background and saves it in the same location."""
-            image = PILImage.open(image_path).convert("RGBA")
-            background = PILImage.new("RGB", image.size, (255, 255, 255)) 
-            background.paste(image, mask=image.split()[3])  
-            background.save(image_path, "PNG")  
-
-        def preprocess_dataset_images(data_dir):
-            """Iterates through all images in the data directory and converts them to remove transparency, saving in-place."""
-            for root, _, files in os.walk(data_dir):
-                for file in files:
-                    if file.endswith(".png") or file.endswith(".jpg"):
-                        file_path = os.path.join(root, file)
-                        convert_alpha_to_white(file_path)
-
-        preprocess_dataset_images(data_dir)
+        remove_alpha(data_dir)
 
         def build_dataset(subset):
             return tf.keras.preprocessing.image_dataset_from_directory(
@@ -168,20 +172,37 @@ def train_model(training_session_id, *args, **kwargs):
             image.save(image_path)
             return image_path  
         
-        preprocessing_model = tf.keras.Sequential([
-            GrayscaleLayer(),  
-        ])
+        # preprocessing_model = tf.keras.Sequential([
+        #     GrayscaleLayer(),  
+        # ])
             
         data_augmentation = tf.keras.Sequential([
-            preprocessing_model,
+            GrayscaleLayer(),
             tf.keras.layers.RandomRotation(0.1), 
             tf.keras.layers.RandomTranslation(0.1, 0.1),
             tf.keras.layers.RandomFlip('horizontal'),
             tf.keras.layers.RandomZoom(0.1),
         ])
             
-        do_data_augmentation = model_data_augmentation
-        if do_data_augmentation:
+        # Define whether to apply data augmentation
+        apply_data_augmentation = model_data_augmentation
+
+        # Log the state of data augmentation
+        if apply_data_augmentation:
+            logger.info("<--- Data Augmentation enabled --->")
+        else:
+            logger.info("<--- Data Augmentation disabled --->")
+
+        # Define the function that conditionally applies augmentation based on the flag
+        def apply_augmentation(images, labels):
+            if apply_data_augmentation:
+                return data_augmentation(images, training=True), labels
+            return images, labels
+
+        post_train_ds = train_ds.map(apply_augmentation)
+
+        # Save the augmented images for debugging purposes
+        if apply_data_augmentation:
             logger.info("<--- Data Augmentation enabled --->")
             augmented_images_dir = os.path.join(settings.MEDIA_ROOT, 'augmented_images')
             
@@ -199,14 +220,11 @@ def train_model(training_session_id, *args, **kwargs):
                 augmented_image_np = augmented_image.numpy()[0]
                 
                 # Convert to image and save
-                file_name = f"augmented_image_{uuid4().hex}_{idx}.png"
-                save_image(augmented_image_np, file_name)
-                logger.info(f"Saved {file_name} to media directory.")
-  
-
-        train_ds = train_ds.map(lambda images, labels: (data_augmentation(images), labels))
-
-
+                # file_name = f"augmented_image_{uuid4().hex}_{idx}.png"
+                # save_image(augmented_image_np, file_name)
+                # logger.info(f"Saved {file_name} to media directory.")
+            
+            
         val_ds = build_dataset("validation")
         valid_size = val_ds.cardinality().numpy()
         val_ds = val_ds.unbatch().batch(BATCH_SIZE)
@@ -247,13 +265,40 @@ def train_model(training_session_id, *args, **kwargs):
 
         steps_per_epoch = train_size // BATCH_SIZE
         validation_steps = valid_size // BATCH_SIZE
+
+        class SaveAllImagesCallback(tf.keras.callbacks.Callback):
+            def __init__(self, dataset, steps_per_epoch):
+                self.dataset = dataset
+                self.steps_per_epoch = steps_per_epoch  # Limit the number of batches to steps_per_epoch
+
+            def on_epoch_end(self, epoch, logs=None):
+                """Save all images processed during each epoch."""
+                logger.info(f"Saving all images for epoch {epoch+1}")
+                
+                # Iterate through the dataset for only one epoch (steps_per_epoch batches)
+                for batch_idx, (images, labels) in zip(range(self.steps_per_epoch), self.dataset):
+                    for image_idx, image in enumerate(images):
+                        # Convert image to numpy array and save it
+                        image_np = image.numpy()
+                        file_name = f"epoch_{epoch+1}_batch_{batch_idx+1}_image_{image_idx+1}.png"
+                        save_image(image_np, file_name)
+                        logger.info(f"Saved {file_name} to media directory.")
+
+
+                logger.info(f"Saved all images for epoch {epoch+1}, total batches: {self.steps_per_epoch}.")
+
+
+        save_all_images_callback = SaveAllImagesCallback(post_train_ds, steps_per_epoch)
+
         # Fit the model and get the History object
         history_obj = model.fit(
-            train_ds,
+            post_train_ds,
             epochs=model_epochs, 
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
-            validation_steps=validation_steps)
+            validation_steps=validation_steps,
+            callbacks=[save_all_images_callback] 
+            )
 
         hist = history_obj.history 
         logger.info("Training completed")
@@ -359,6 +404,7 @@ def test_images(test_id, image_size=224):
 
         for image_obj in image_objects:
             image_path = image_obj.image.path
+            convert_alpha_to_white(image_path)
             image = tf.keras.preprocessing.image.load_img(image_path, target_size=IMAGE_SIZE)
             image_array = tf.keras.preprocessing.image.img_to_array(image)
             image_array = np.expand_dims(image_array, axis=0)
