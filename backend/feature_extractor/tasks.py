@@ -245,7 +245,7 @@ def train_model(training_session_id, *args, **kwargs):
             hub.KerasLayer(model_handle, trainable=do_fine_tuning),
             tf.keras.layers.Dropout(rate=0.2),
             tf.keras.layers.Dense(len(class_names),
-                                kernel_regularizer=tf.keras.regularizers.l2(0.0001))
+                kernel_regularizer=tf.keras.regularizers.l2(0.0001))
         ])
         model.build((None,)+IMAGE_SIZE+(3,))
         model.summary()
@@ -296,8 +296,8 @@ def train_model(training_session_id, *args, **kwargs):
             epochs=model_epochs, 
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
-            validation_steps=validation_steps,
-            callbacks=[save_all_images_callback] 
+            validation_steps=validation_steps
+            # callbacks=[save_all_images_callback] 
             )
 
         hist = history_obj.history 
