@@ -65,6 +65,8 @@ def train_model(training_session_id, *args, **kwargs):
     model_epochs = model_instance.epochs
     model_validation_split = model_instance.validation_split
     model_data_augmentation = model_instance.data_augmentation
+    model_grayscale = model_instance.grayscale
+    model_horizontal_flip = model_instance.horizontal_flip
 
     session_instance.status = 'Training'
     session_instance.save()
@@ -176,13 +178,24 @@ def train_model(training_session_id, *args, **kwargs):
         #     GrayscaleLayer(),  
         # ])
             
-        data_augmentation = tf.keras.Sequential([
-            GrayscaleLayer(),
-            tf.keras.layers.RandomRotation(0.1), 
-            tf.keras.layers.RandomTranslation(0.1, 0.1),
-            tf.keras.layers.RandomFlip('horizontal'),
-            tf.keras.layers.RandomZoom(0.1),
-        ])
+        # data_augmentation = tf.keras.Sequential([
+        #     GrayscaleLayer(),
+        #     tf.keras.layers.RandomRotation(0.1), 
+        #     tf.keras.layers.RandomTranslation(0.1, 0.1),
+        #     tf.keras.layers.RandomFlip('horizontal'),
+        #     tf.keras.layers.RandomZoom(0.1),
+        # ])
+
+        data_augmentation = tf.keras.Sequential()
+
+        if model_grayscale:
+            logger.info("<--- Grayscale enabled --->")
+            data_augmentation.add(GrayscaleLayer())
+
+        if model_horizontal_flip:
+            logger.info("<--- Horizontal Flip enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomFlip('horizontal'))
+
             
         # Define whether to apply data augmentation
         apply_data_augmentation = model_data_augmentation
