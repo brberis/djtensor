@@ -92,6 +92,8 @@ class TFModel(models.Model):
     data_augmentation = models.BooleanField(default=False)
     grayscale = models.BooleanField(default=False)
     horizontal_flip = models.BooleanField(default=False)
+    random_rotation = models.BooleanField(default=False)
+    blur = models.BooleanField(default=False)
     pre_model = models.CharField(max_length=100, choices=PRE_MODEL, default='mobilenet_v3_large_075_224')
     default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

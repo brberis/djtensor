@@ -50,6 +50,15 @@ class GrayscaleLayer(tf.keras.layers.Layer):
         adjusted_rgb = tf.image.adjust_brightness(rgb, self.brightness_factor)
         return adjusted_rgb
 
+# custom layer to apply blur effect
+class BlurLayer(tf.keras.layers.Layer):
+    def __init__(self, sigma=1.0):
+        super(BlurLayer, self).__init__()
+        self.sigma = sigma
+
+    def call(self, inputs):
+        return tf.image.gaussian_filter2d(inputs, sigma=self.sigma)
+    
 @shared_task
 def train_model(training_session_id, *args, **kwargs):
     from .models import TFModel  
@@ -67,6 +76,8 @@ def train_model(training_session_id, *args, **kwargs):
     model_data_augmentation = model_instance.data_augmentation
     model_grayscale = model_instance.grayscale
     model_horizontal_flip = model_instance.horizontal_flip
+    model_random_rotation = model_instance.random_rotation
+    model_blur = model_instance.blur
 
     session_instance.status = 'Training'
     session_instance.save()
@@ -196,6 +207,13 @@ def train_model(training_session_id, *args, **kwargs):
             logger.info("<--- Horizontal Flip enabled --->")
             data_augmentation.add(tf.keras.layers.RandomFlip('horizontal'))
 
+        if model_random_rotation:
+            logger.info("<--- Random Rotation enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomRotation(0.1))
+
+        if model_blur:
+            logger.info("<--- Blur Blur enabled --->")
+            data_augmentation.add(BlurLayer())
             
         # Define whether to apply data augmentation
         apply_data_augmentation = model_data_augmentation
@@ -309,8 +327,8 @@ def train_model(training_session_id, *args, **kwargs):
             epochs=model_epochs, 
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
-            validation_steps=validation_steps
-            # callbacks=[save_all_images_callback] 
+            validation_steps=validation_steps,
+            callbacks=[save_all_images_callback] 
             )
 
         hist = history_obj.history 
