@@ -14,6 +14,7 @@ from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
 from PIL import Image as PILImage
+import tensorflow_addons as tfa
 import tensorflow.keras.backend as K
 import gc
 import shutil
@@ -52,15 +53,29 @@ class GrayscaleLayer(tf.keras.layers.Layer):
 
 # custom layer to apply random blur effect
 class BlurLayer(tf.keras.layers.Layer):
-    def __init__(self, sigma=1.0, blur_probability=0.5):
+    def __init__(self, sigma=3.0, blur_probability=0.5, filter_shape=(7, 7)):
         super(BlurLayer, self).__init__()
         self.sigma = sigma
         self.blur_probability = blur_probability
+        self.filter_shape = filter_shape
 
     def call(self, inputs):
-        random_value = tf.random.uniform(shape=[], minval=0.0, maxval=1.0)
-        blurred = tf.image.gaussian_filter2d(inputs, sigma=self.sigma)
-        return tf.cond(random_value < self.blur_probability, lambda: blurred, lambda: inputs)
+        batch_size = tf.shape(inputs)[0]
+        random_values = tf.random.uniform([batch_size], 0, 1)
+
+        blur_mask = tf.less(random_values, self.blur_probability)
+        blur_mask = tf.cast(blur_mask, inputs.dtype)
+        blur_mask = tf.reshape(blur_mask, [-1, 1, 1, 1])  
+
+        blurred_inputs = tfa.image.gaussian_filter2d(
+            inputs, sigma=self.sigma, filter_shape=self.filter_shape
+        )
+
+        outputs = inputs * (1 - blur_mask) + blurred_inputs * blur_mask
+
+        return outputs
+
+
     
 @shared_task
 def train_model(training_session_id, *args, **kwargs):
