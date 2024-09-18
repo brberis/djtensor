@@ -50,14 +50,17 @@ class GrayscaleLayer(tf.keras.layers.Layer):
         adjusted_rgb = tf.image.adjust_brightness(rgb, self.brightness_factor)
         return adjusted_rgb
 
-# custom layer to apply blur effect
+# custom layer to apply random blur effect
 class BlurLayer(tf.keras.layers.Layer):
-    def __init__(self, sigma=1.0):
+    def __init__(self, sigma=1.0, blur_probability=0.5):
         super(BlurLayer, self).__init__()
         self.sigma = sigma
+        self.blur_probability = blur_probability
 
     def call(self, inputs):
-        return tf.image.gaussian_filter2d(inputs, sigma=self.sigma)
+        random_value = tf.random.uniform(shape=[], minval=0.0, maxval=1.0)
+        blurred = tf.image.gaussian_filter2d(inputs, sigma=self.sigma)
+        return tf.cond(random_value < self.blur_probability, lambda: blurred, lambda: inputs)
     
 @shared_task
 def train_model(training_session_id, *args, **kwargs):
