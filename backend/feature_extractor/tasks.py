@@ -41,15 +41,27 @@ def remove_alpha(data_dir):
 
 # custom layer to convert RGB to Grayscale
 class GrayscaleLayer(tf.keras.layers.Layer):
-    def __init__(self, brightness_factor=0.0):
+    def __init__(self, brightness_factor=0.0, p=1.0):
         super(GrayscaleLayer, self).__init__()
-        self.brightness_factor = brightness_factor  # Brightness factor to adjust
+        self.brightness_factor = brightness_factor  
+        self.p = p  
 
-    def call(self, inputs):
-        grayscale = tf.image.rgb_to_grayscale(inputs)
-        rgb = tf.image.grayscale_to_rgb(grayscale)
-        adjusted_rgb = tf.image.adjust_brightness(rgb, self.brightness_factor)
-        return adjusted_rgb
+    def call(self, inputs, training=None):
+        if training:
+            batch_size = tf.shape(inputs)[0]
+            random_values = tf.random.uniform([batch_size], 0, 1)
+            mask = tf.less(random_values, self.p)
+            mask = tf.cast(mask, dtype=tf.float32)
+            mask = tf.reshape(mask, [batch_size, 1, 1, 1])
+
+            grayscale = tf.image.rgb_to_grayscale(inputs)
+            rgb = tf.image.grayscale_to_rgb(grayscale)
+            adjusted_rgb = tf.image.adjust_brightness(rgb, self.brightness_factor)
+
+            outputs = inputs * (1 - mask) + adjusted_rgb * mask
+            return outputs
+        else:
+            return inputs
 
 # custom layer to apply random blur effect
 class BlurLayer(tf.keras.layers.Layer):
@@ -93,6 +105,7 @@ def train_model(training_session_id, *args, **kwargs):
     model_validation_split = model_instance.validation_split
     model_data_augmentation = model_instance.data_augmentation
     model_grayscale = model_instance.grayscale
+    model_random_grayscale = model_instance.random_grayscale
     model_horizontal_flip = model_instance.horizontal_flip
     model_random_rotation = model_instance.random_rotation
     model_blur = model_instance.blur
@@ -219,7 +232,11 @@ def train_model(training_session_id, *args, **kwargs):
 
         if model_grayscale:
             logger.info("<--- Grayscale enabled --->")
-            data_augmentation.add(GrayscaleLayer())
+            data_augmentation.add(GrayscaleLayer(p=1.0))  
+        
+        if model_random_grayscale:
+            logger.info("<--- Random Grayscale enabled --->")
+            data_augmentation.add(GrayscaleLayer(p=0.5))  
 
         if model_horizontal_flip:
             logger.info("<--- Horizontal Flip enabled --->")
@@ -345,8 +362,8 @@ def train_model(training_session_id, *args, **kwargs):
             epochs=model_epochs, 
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
-            validation_steps=validation_steps,
-            callbacks=[save_all_images_callback] 
+            validation_steps=validation_steps
+            # callbacks=[save_all_images_callback] 
             )
 
         hist = history_obj.history 

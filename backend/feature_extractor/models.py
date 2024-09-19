@@ -91,6 +91,7 @@ class TFModel(models.Model):
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
     data_augmentation = models.BooleanField(default=False)
     grayscale = models.BooleanField(default=False)
+    random_grayscale = models.BooleanField(default=False)
     horizontal_flip = models.BooleanField(default=False)
     random_rotation = models.BooleanField(default=False)
     blur = models.BooleanField(default=False)
