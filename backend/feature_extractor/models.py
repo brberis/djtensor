@@ -89,12 +89,20 @@ class TFModel(models.Model):
     batch_size = models.IntegerField(default=16)
     validation_split = models.FloatField(default=0.2)
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
+    # Data augmentation flags
     data_augmentation = models.BooleanField(default=False)
     grayscale = models.BooleanField(default=False)
     random_grayscale = models.BooleanField(default=False)
     horizontal_flip = models.BooleanField(default=False)
+    vertical_flip = models.BooleanField(default=False)  # Added vertical flip
     random_rotation = models.BooleanField(default=False)
     blur = models.BooleanField(default=False)
+    zoom = models.BooleanField(default=False)  # Added zoom
+    brightness_contrast = models.BooleanField(default=False) 
+    random_crop = models.BooleanField(default=False) 
+    gaussian_noise = models.BooleanField(default=False) 
+    cutout = models.BooleanField(default=False) 
+    
     pre_model = models.CharField(max_length=100, choices=PRE_MODEL, default='mobilenet_v3_large_075_224')
     default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

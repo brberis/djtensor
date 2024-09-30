@@ -109,7 +109,13 @@ def train_model(training_session_id, *args, **kwargs):
     model_horizontal_flip = model_instance.horizontal_flip
     model_random_rotation = model_instance.random_rotation
     model_blur = model_instance.blur
-
+    model_vertical_flip = model_instance.vertical_flip
+    model_zoom = model_instance.zoom
+    model_brightness_contrast = model_instance.brightness_contrast
+    model_random_crop = model_instance.random_crop
+    model_gaussian_noise = model_instance.gaussian_noise
+    model_cutout = model_instance.cutout
+  
     session_instance.status = 'Training'
     session_instance.save()
 
@@ -234,22 +240,63 @@ def train_model(training_session_id, *args, **kwargs):
             logger.info("<--- Grayscale enabled --->")
             data_augmentation.add(GrayscaleLayer(p=1.0))  
         
+        # Apply random grayscale if the model specifies random grayscale
         if model_random_grayscale:
             logger.info("<--- Random Grayscale enabled --->")
-            data_augmentation.add(GrayscaleLayer(p=0.5))  
-
+            data_augmentation.add(GrayscaleLayer(p=0.5))  # Randomly apply grayscale 50% of the time
+        
+        # Apply horizontal flip if the model specifies horizontal flipping
         if model_horizontal_flip:
             logger.info("<--- Horizontal Flip enabled --->")
             data_augmentation.add(tf.keras.layers.RandomFlip('horizontal'))
-
+        
+        # Apply vertical flip if the model specifies vertical flipping (new)
+        if model_vertical_flip:  # Assuming you want to control vertical flip separately
+            logger.info("<--- Vertical Flip enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomFlip('vertical'))
+        
+        # Apply random rotation with a smaller angle range (±15 degrees)
         if model_random_rotation:
             logger.info("<--- Random Rotation enabled --->")
-            data_augmentation.add(tf.keras.layers.RandomRotation(0.1))
-
+            data_augmentation.add(tf.keras.layers.RandomRotation(0.15))  # Rotate randomly by ±15 degrees
+        
+        # Apply zoom if the model specifies random zoom
+        if model_zoom:
+            logger.info("<--- Random Zoom enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomZoom(0.05, 0.15))  # Zoom in/out by 5%-15%
+        
+        # Apply brightness and contrast adjustments if enabled
+        if model_brightness_contrast:
+            logger.info("<--- Random Brightness and Contrast enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomBrightness(0.1))  # Adjust brightness by ±10%
+            data_augmentation.add(tf.keras.layers.RandomContrast(0.1))  # Adjust contrast by ±10%
+        
+        # Apply random crop and resize if enabled
+        if model_random_crop:
+            logger.info("<--- Random Crop and Rescale enabled --->")
+            data_augmentation.add(tf.keras.layers.RandomCrop(height=IMAGE_SIZE[0] - 10, width=IMAGE_SIZE[1] - 10))  
+            data_augmentation.add(tf.keras.layers.Resizing(IMAGE_SIZE[0], IMAGE_SIZE[1]))  # Resize to original dimensions
+        
+        # Apply Gaussian noise if specified
+        if model_gaussian_noise:
+            logger.info("<--- Gaussian Noise enabled --->")
+            def add_gaussian_noise(images):
+                noise = tf.random.normal(shape=tf.shape(images), mean=0.0, stddev=0.02, dtype=tf.float32)  # 2% noise
+                return images + noise
+            data_augmentation.add(tf.keras.layers.Lambda(add_gaussian_noise))
+        
+        # Apply Gaussian blur if specified (new)
         if model_blur:
-            logger.info("<--- Blur Blur enabled --->")
-            data_augmentation.add(BlurLayer())
-            
+            logger.info("<--- Gaussian Blur enabled --->")
+            def apply_gaussian_blur(images):
+                blurred_images = tfa.image.gaussian_filter2d(images, filter_shape=(3, 3), sigma=0.7)  # Moderate blur
+                return blurred_images
+            data_augmentation.add(tf.keras.layers.Lambda(apply_gaussian_blur))
+        
+        # Optionally, apply Cutout if enabled
+        if model_cutout:
+            logger.info("<--- Cutout enabled --->")
+            data_augmentation.add(tfa.layers.RandomCutout(mask_size=(20, 20)))  
         # Define whether to apply data augmentation
         apply_data_augmentation = model_data_augmentation
 
