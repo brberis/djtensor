@@ -296,7 +296,11 @@ def train_model(training_session_id, *args, **kwargs):
         # Optionally, apply Cutout if enabled
         if model_cutout:
             logger.info("<--- Cutout enabled --->")
-            data_augmentation.add(tfa.layers.RandomCutout(mask_size=(20, 20)))  
+            def apply_random_cutout(images):
+                cutout_images = tfa.image.random_cutout(images, mask_size=(20, 20))
+                return cutout_images
+            data_augmentation.add(tf.keras.layers.Lambda(apply_random_cutout))
+   
         # Define whether to apply data augmentation
         apply_data_augmentation = model_data_augmentation
 
