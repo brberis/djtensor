@@ -265,12 +265,16 @@ def train_model(training_session_id, *args, **kwargs):
             logger.info("<--- Random Zoom enabled --->")
             data_augmentation.add(tf.keras.layers.RandomZoom(0.05, 0.15))  # Zoom in/out by 5%-15%
         
+        def clip_values(images):
+            return tf.clip_by_value(images, 0.0, 1.0)
+        
         # Apply brightness and contrast adjustments if enabled
         if model_brightness_contrast:
             logger.info("<--- Random Brightness and Contrast enabled --->")
             data_augmentation.add(tf.keras.layers.RandomBrightness(0.1))  # Adjust brightness by ±10%
-            data_augmentation.add(tf.keras.layers.RandomContrast(0.1))  # Adjust contrast by ±10%
-        
+            data_augmentation.add(tf.keras.layers.RandomContrast(0.1))    # Adjust contrast by ±10%
+            data_augmentation.add(tf.keras.layers.Lambda(clip_values)) 
+
         # Apply random crop and resize if enabled
         if model_random_crop:
             logger.info("<--- Random Crop and Rescale enabled --->")
@@ -413,7 +417,7 @@ def train_model(training_session_id, *args, **kwargs):
             epochs=model_epochs, 
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
-            validation_steps=validation_steps
+            validation_steps=validation_steps,
             # callbacks=[save_all_images_callback] 
             )
 
