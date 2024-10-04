@@ -358,7 +358,7 @@ def train_model(training_session_id, *args, **kwargs):
         # Build the model #
         ###################
 
-        do_fine_tuning = False #@param {type:"boolean"}
+        do_fine_tuning = True #@param {type:"boolean"}
 
         print("Building model with", model_handle)
         model = tf.keras.Sequential([
