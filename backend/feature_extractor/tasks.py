@@ -131,7 +131,14 @@ def train_model(training_session_id, *args, **kwargs):
         print("TF version:", tf.__version__)
         print("Hub version:", hub.__version__)
         print("GPU is", "available" if tf.config.list_physical_devices('GPU') else "NOT AVAILABLE")
+        
+        physical_devices = tf.config.list_physical_devices('GPU')
+        for device in physical_devices:
+            print(device)
+            tf.config.experimental.set_memory_growth(device, True)
 
+        print("TF_GPU_ALLOCATOR is set to:", os.getenv("TF_GPU_ALLOCATOR"))
+        
         #@title
         # Selection of the pre train model  
         

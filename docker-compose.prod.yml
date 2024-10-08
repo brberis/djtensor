@@ -61,6 +61,7 @@ services:
       - PATH="$PATH":"/usr/local/cuda/bin"
       - PATH=/usr/local/cuda/bin:$PATH
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+      - TF_GPU_ALLOCATOR=cuda_malloc_async
 
     volumes:
       - ./backend/:/usr/src/app/
