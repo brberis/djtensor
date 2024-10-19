@@ -103,6 +103,7 @@ def train_model(training_session_id, *args, **kwargs):
     model_batch_size = model_instance.batch_size
     model_epochs = model_instance.epochs
     model_validation_split = model_instance.validation_split
+    model_fine_tuning = model_instance.fine_tuning
     model_data_augmentation = model_instance.data_augmentation
     model_grayscale = model_instance.grayscale
     model_random_grayscale = model_instance.random_grayscale
@@ -365,7 +366,9 @@ def train_model(training_session_id, *args, **kwargs):
         # Build the model #
         ###################
 
-        do_fine_tuning = True #@param {type:"boolean"}
+        do_fine_tuning = model_fine_tuning #@param {type:"boolean"}
+        if do_fine_tuning:
+            print(">>>> Model is fine-tuning <<<<")
 
         print("Building model with", model_handle)
         model = tf.keras.Sequential([

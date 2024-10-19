@@ -89,6 +89,7 @@ class TFModel(models.Model):
     batch_size = models.IntegerField(default=16)
     validation_split = models.FloatField(default=0.2)
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
+    fine_tuning = models.BooleanField(default=False)
     # Data augmentation flags
     data_augmentation = models.BooleanField(default=False)
     grayscale = models.BooleanField(default=False)
