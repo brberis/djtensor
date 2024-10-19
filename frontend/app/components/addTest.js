@@ -10,13 +10,18 @@ export default function AddTest({ isOpen, onClose }) {
   const [isLoading, setIsLoading] = useState(false);
   const [trainingSession, setTrainingSession] = useState([]);
   const [datasets, setDatasets] = useState([]);
+  const selectedStudy = localStorage.getItem('selectedStudy'); 
 
   useEffect(() => {
     const fetchModels = async () => {
       try {
         const response = await fetch('/api/feature_extractor/trainingsession/');
         const data = await response.json();
-        setTrainingSession(data); 
+        const filteredData = data.filter(dataset => {
+          // Check if study id matches selectedStudy
+          return dataset.study.id.toString() === selectedStudy
+          });
+        setTrainingSession(filteredData); 
         setIsLoading(false);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -32,7 +37,11 @@ export default function AddTest({ isOpen, onClose }) {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        const filteredData = data.filter(dataset => dataset.for_testing);
+        const filteredData = data.filter(dataset => {
+          // Check if any object in the 'shared' array has an id that matches selectedStudy
+          return dataset.shared.some(sharedStudy => sharedStudy.toString() === selectedStudy) &&
+                 dataset.for_testing
+          });
         setDatasets(filteredData); 
         setIsLoading(false);
       } catch (error) {

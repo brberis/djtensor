@@ -40,18 +40,29 @@ export default function AddSession({ isOpen, onClose }) {
   }, []);
 
   useEffect(() => {
+    const selectedStudy = localStorage.getItem('selectedStudy'); 
+  
     const fetchDatasets = async () => {
       try {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
-        setDatasets(data);
+  
+        // Filter datasets based on the selected study
+        const filteredData = data.filter(dataset => {
+          // Check if any object in the 'shared' array has an id that matches selectedStudy
+          return dataset.shared.some(sharedStudy => sharedStudy.toString() === selectedStudy) &&
+                 !dataset.for_testing && 
+                 !dataset.base;       
+          });
+  
+        setDatasets(filteredData); 
         setIsLoading(false);
       } catch (error) {
         console.error('Failed to fetch data:', error);
         setIsLoading(false);
       }
     };
-
+  
     fetchDatasets();
   }, []);
 
