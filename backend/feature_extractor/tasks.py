@@ -204,20 +204,7 @@ def train_model(training_session_id, *args, **kwargs):
         train_ds = train_ds.repeat()
 
         normalization_layer = tf.keras.layers.Rescaling(1. / 255)
-
-        ##################################################################################################
-        ### Additional normalization step (x-mean/standard deviation) to prevent distributional shifts ### 
-        ##################################################################################################
-
-        mean = tf.constant([0.485, 0.456, 0.406])
-        std = tf.constant([0.229, 0.224, 0.225])
-        
-        def normalize_images(images):
-            images = (images - mean) / std
-            return images
-        
-        preprocessing_model = tf.keras.Sequential([ normalization_layer, tf.keras.layers.Lambda(normalize_images) ])
-        # preprocessing_model = tf.keras.Sequential([normalization_layer])
+        preprocessing_model = tf.keras.Sequential([normalization_layer])
 
             
         @tf.function
@@ -555,21 +542,7 @@ def test_images(test_id, image_size=224):
 
             # Normalize the image
             normalization_layer = tf.keras.layers.Rescaling(1. / 255)
-
-            ##################################################################################################
-            ### Additional normalization step (x-mean/standard deviation) to prevent distributional shifts ### 
-            ##################################################################################################
-
-            mean = tf.constant([0.485, 0.456, 0.406])
-            std = tf.constant([0.229, 0.224, 0.225])
-            
-            def normalize_images(images):
-                images = (images - mean) / std
-                return images
-            
-            preprocessing_model = tf.keras.Sequential([ normalization_layer, tf.keras.layers.Lambda(normalize_images) ])
-            
-            image_array = preprocessing_model(image_array)
+            image_array = normalization_layer(image_array)
 
             # Perform prediction
             logits = model.predict(image_array)
