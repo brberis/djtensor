@@ -443,7 +443,7 @@ def train_model(training_session_id, *args, **kwargs):
 
 
 
-        ###################123456!
+        ###################
         # Plots (object)  #
         ###################
             
