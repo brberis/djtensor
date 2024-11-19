@@ -200,7 +200,7 @@ def train_model(training_session_id, *args, **kwargs):
         session_instance.save()
 
         train_size = train_ds.cardinality().numpy()
-        train_ds = train_ds.unbatch().batch(BATCH_SIZE)
+        train_ds = train_ds.unbatch().shuffle(buffer_size=train_size).batch(BATCH_SIZE) 
         train_ds = train_ds.repeat()
 
         normalization_layer = tf.keras.layers.Rescaling(1. / 255)
@@ -215,7 +215,7 @@ def train_model(training_session_id, *args, **kwargs):
         def normalization(images, labels):
             return normalization_layer(images), labels
         
-        train_ds = train_ds.map(normalization)
+        #train_ds = train_ds.map(normalization) # AP commented out this line
 
         #####################
         # Data Augmentation #
@@ -329,6 +329,7 @@ def train_model(training_session_id, *args, **kwargs):
             return images, labels
 
         post_train_ds = train_ds.map(apply_augmentation)
+        post_train_ds = post_train_ds.map(normalization) # AP added this line
 
         # Save the augmented images for debugging purposes
         if apply_data_augmentation:
@@ -443,7 +444,7 @@ def train_model(training_session_id, *args, **kwargs):
 
 
 
-        ###################123456!
+        ###################
         # Plots (object)  #
         ###################
             
@@ -529,7 +530,7 @@ def test_images(test_id, image_size=224):
 
         # Define the saliency object
         saliency = Saliency(model, model_modifier=ReplaceToLinear())
-
+        
         # Retrieve all images related to the dataset
         image_objects = Image.objects.filter(dataset=test_instance.dataset)
 
