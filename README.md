@@ -85,7 +85,9 @@ To stop all services, you can run:
 
 ### Software Development Team
 
-- **Dêvi Hall** - Software developer, volunteer, responsible for the development and maintenance of the AI tools and software infrastructure.
-- **Cristobal Barberis** - Software engineer, volunteer, contributing to backend and front end development, infrastructure and system architecture.
+
+- **Cristobal Barberis** 
+- **Arthur Porto**
+- **Dêvi Hall** 
 
 
