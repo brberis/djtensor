@@ -1,3 +1,12 @@
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: models.py
+# Copyright (c) 2024
+
 from django.db import models
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver

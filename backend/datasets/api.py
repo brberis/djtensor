@@ -1,3 +1,12 @@
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: api.py
+# Copyright (c) 2024
+
 import logging
 from rest_framework import viewsets, status
 from feature_extractor.models import Study

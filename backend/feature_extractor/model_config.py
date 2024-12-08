@@ -1,3 +1,12 @@
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: model_config.py
+# Copyright (c) 2024
+
 model_handle_map = {
         "efficientnetv2-s": "https://tfhub.dev/google/imagenet/efficientnet_v2_imagenet1k_s/feature_vector/2",
         "efficientnetv2-m": "https://tfhub.dev/google/imagenet/efficientnet_v2_imagenet1k_m/feature_vector/2",

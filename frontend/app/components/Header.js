@@ -1,3 +1,14 @@
+/*
+ * Shark AI
+ * Author: Cristobal Barberis
+ * License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+ * For academic use only. Commercial use is prohibited without prior written permission.
+ * Contact: cristobal@barberis.com
+ *
+ * File: Header.js
+ * Copyright (c) 2024
+ */
+
 import { useState, useEffect } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
 import Link from "next/link";

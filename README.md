@@ -94,5 +94,13 @@ To stop all services, you can run:
 - **Dêvi Hall**  
   Contributor who assisted in project coordination, documentation, and process workflows, ensuring alignment between research and software development.
 
+## License
+
+This software is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/).
+
+### Summary
+- **Academic Use**: Free for research, teaching, and educational purposes.
+- **Commercial Use**: Prohibited without prior written permission from the author.
+- For commercial inquiries, please contact **Cristobal Barberis** at [cristobal@barberis.com](mailto:cristobal@barberis.com).
 
 

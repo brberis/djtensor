@@ -1,3 +1,12 @@
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: tasks.py
+# Copyright (c) 2024
+
 from django.conf import settings
 from urllib.parse import urljoin
 from celery import shared_task
@@ -19,7 +28,6 @@ import tensorflow.keras.backend as K
 import gc
 import shutil
 import os
-# from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import logging
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,12 @@
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: add_from_base.py
+# Copyright (c) 2024
+
 import os
 from ..models import Dataset, Image, Label
 from django.db.models import Count

@@ -1,4 +1,11 @@
-version: '3.8'
+# Shark AI
+# Author: Cristobal Barberis
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# For academic use only. Commercial use is prohibited without prior written permission.
+# Contact: cristobal@barberis.com
+#
+# File: docker-compose.yml
+# Copyright (c) 2024
 
 services:
   backend:
@@ -8,7 +15,6 @@ services:
                     python manage.py migrate --noinput &&
                     python manage.py shell -c \"from django.contrib.auth.models import User; User.objects.filter(username='testuser').exists() or User.objects.create_superuser('testuser', 'testuser@example.com', 'testpassword')\" &&
                     python manage.py runserver 0.0.0.0:8000"
-    # python manage.py loaddata basic_fixture &&
                 
     volumes:
       - ./backend/:/usr/src/app/
@@ -54,21 +60,6 @@ services:
       - ./backend/:/usr/src/app/
     networks:
       - backend
-
-  # jupyter:
-  #   build: ./jupyter
-  #   environment:
-  #     - JUPYTER_ENABLE_LAB=yes
-  #     - JUPYTER_TOKEN=k96y%tiq26be!tqb#p
-  #   ports:
-  #     - "8888:8888"
-  #   volumes:
-  #     - ./data:/home/jovyan/data
-  #     - ./notebooks:/home/jovyan/work
-  #   depends_on:
-  #     - db
-  #   networks:
-  #     - backend
 
   frontend:
     build: ./frontend
