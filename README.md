@@ -85,9 +85,14 @@ To stop all services, you can run:
 
 ### Software Development Team
 
+- **Cristobal Barberis**  
+  Lead developer responsible for the entire software architecture, implementation, and deployment of the project. Led the development of the machine learning models, backend, and integration processes.
 
-- **Cristobal Barberis** 
-- **Arthur Porto**
-- **Dêvi Hall** 
+- **Arthur Porto**  
+  AI expert and advisor who provided domain-specific insights into machine learning applications for paleontology. Contributed by reviewing models and writing code for key AI functionalities.
+
+- **Dêvi Hall**  
+  Contributor who assisted in project coordination, documentation, and process workflows, ensuring alignment between research and software development.
+
 
 
