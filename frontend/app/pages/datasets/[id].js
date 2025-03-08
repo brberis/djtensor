@@ -25,6 +25,9 @@ export default function DatasetDetail() {
   const router = useRouter();
   const { id } = router.query;
 
+  console.log('labels', labels);
+  console.log('images', images);
+
   useEffect(() => {
     async function fetchData() {
       if (!id) return;

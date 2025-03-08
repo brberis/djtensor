@@ -19,7 +19,7 @@ services:
                     python manage.py runserver 0.0.0.0:8000" 
     volumes:
       - static_volume:/usr/src/app/staticfiles
-      - media_volume:/usr/src/app/mediafiles
+      # - media_volume:/usr/src/app/mediafiles
       - ./backend/:/usr/src/app/
     expose:
       - 8000
@@ -71,12 +71,12 @@ services:
       - PATH="$PATH":"/usr/local/cuda/bin"
       - PATH=/usr/local/cuda/bin:$PATH
       - LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-      - TF_GPU_ALLOCATOR=cuda_malloc_async
+      # - TF_GPU_ALLOCATOR=cuda_malloc_async
 
     volumes:
       - ./backend/:/usr/src/app/
       - static_volume:/usr/src/app/staticfiles  
-      - media_volume:/usr/src/app/mediafiles 
+      # - media_volume:/usr/src/app/mediafiles 
     deploy:
       resources:
         limits:
@@ -116,7 +116,7 @@ services:
     build: ./nginx
     volumes:
       - static_volume:/usr/src/app/staticfiles
-      - media_volume:/usr/src/app/mediafiles
+      # - media_volume:/usr/src/app/mediafiles
     ports:
       - "80:80"
       - "443:443"
@@ -128,7 +128,7 @@ services:
 volumes:
   postgres_data:
   static_volume:
-  media_volume:
+  # media_volume:
 
 networks:
   backend:
