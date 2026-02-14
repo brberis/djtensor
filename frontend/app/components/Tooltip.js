@@ -13,10 +13,13 @@ import { InformationCircleIcon } from '@heroicons/react/20/solid';
 
 export default function Tooltip({ text }) {
   return (
-    <div className="relative group inline-block">
-      <InformationCircleIcon className="w-4 h-4 text-sky-500 cursor-pointer ml-1" />
-      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded-lg p-2 z-10 shadow-lg w-48">
+    <div className="relative group inline-block ml-1.5">
+      <InformationCircleIcon className="w-4 h-4 text-teal-500 cursor-pointer" />
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-900 text-white text-xs rounded-lg py-2 px-3 z-50 shadow-lg w-52 leading-relaxed">
         {text}
+        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
+          <div className="border-4 border-transparent border-t-gray-900"></div>
+        </div>
       </div>
     </div>
   );
