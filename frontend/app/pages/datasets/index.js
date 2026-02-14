@@ -14,6 +14,7 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
 import GenerateDataset from '../../components/generateDataset';
+import { CircleStackIcon } from '@heroicons/react/24/outline';
 
 export default function Datasets({ base }) {
   const [datasets, setDatasets] = useState([]);
@@ -32,7 +33,6 @@ export default function Datasets({ base }) {
       setBaseSet(true);
     }
   }, [datasets]);
-  console.log('datasets', datasets);
 
   // Fetch datasets from API
   useEffect(() => {
@@ -41,12 +41,11 @@ export default function Datasets({ base }) {
         const response = await fetch('/api/datasets/dataset/');
         const data = await response.json();
         const selectedStudy = localStorage.getItem('selectedStudy');
-  
-        // Filter datasets that either belong to the selected study or are shared with it
-        const filteredDatasets = data.filter(dataset => 
+
+        const filteredDatasets = data.filter(dataset =>
           dataset.study == selectedStudy || dataset.shared.includes(parseInt(selectedStudy))
         );
-  
+
         setDatasets(filteredDatasets);
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
@@ -55,7 +54,7 @@ export default function Datasets({ base }) {
         setIsLoading(false);
       }
     };
-  
+
     fetchDatasets();
   }, [refresh, base]);
 
@@ -73,6 +72,7 @@ export default function Datasets({ base }) {
 
   const handleClose = () => {
     setIsOpenAddDataset(false);
+    setIsOpenGenerateDataset(false);
     setRefresh(prev => !prev);
   };
 
@@ -92,45 +92,77 @@ export default function Datasets({ base }) {
     }
   };
 
+  const getDatasetType = (dataset) => {
+    if (dataset.base) return 'Base';
+    if (dataset.for_testing) return 'Testing';
+    return 'Training';
+  };
+
+  const getTypeBadge = (dataset) => {
+    const type = getDatasetType(dataset);
+    const styles = {
+      Base: 'bg-purple-50 text-purple-700 ring-purple-700/10',
+      Testing: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+      Training: 'bg-teal-50 text-teal-700 ring-teal-600/20',
+    };
+    return (
+      <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${styles[type]}`}>
+        {type}
+      </span>
+    );
+  };
+
   return (
     <Layout incomingAction={incomingAction} action={action}>
       {isOpenAddDataset && <AddDataset isOpen={isOpenAddDataset} onClose={handleClose} />}
       {isOpenGenerateDataset && <GenerateDataset isOpen={isOpenGenerateDataset} onClose={handleClose} />}
-      <div className="px-40 sm:px-6 lg:px-8">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
-            <h1 className="text-lg font-semibold leading-6 text-gray-900">Datasets</h1>
-            <p className="mt-2 text-sm text-gray-700">List of datasets available.</p>
-          </div>
+
+      {/* Page header */}
+      <div className="sm:flex sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Datasets</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Manage your image datasets for training and testing models.
+          </p>
         </div>
-        <div className="mt-8 flow-root">
-          <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-            <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-                <table className="min-w-full divide-y divide-gray-300">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Resolution</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {datasets.map((dataset) => (
-                      <tr key={dataset.id} onClick={() => handleDatasetClick(dataset)} className="cursor-pointer hover:bg-gray-50">
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.name}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.description}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.resolution}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{dataset.base ? 'Base' : dataset.for_testing ? 'Testing' : 'Training'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Resolution</th>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {datasets.length === 0 && !isLoading ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-12 text-center">
+                  <CircleStackIcon className="mx-auto h-12 w-12 text-gray-300" />
+                  <h3 className="mt-2 text-sm font-semibold text-gray-900">No datasets</h3>
+                  <p className="mt-1 text-sm text-gray-500">Get started by creating a base dataset.</p>
+                </td>
+              </tr>
+            ) : (
+              datasets.map((dataset) => (
+                <tr
+                  key={dataset.id}
+                  onClick={() => handleDatasetClick(dataset)}
+                  className="cursor-pointer hover:bg-teal-50 transition-colors"
+                >
+                  <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{dataset.name}</td>
+                  <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{dataset.description}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">{dataset.resolution}px</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-sm">{getTypeBadge(dataset)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </Layout>
   );

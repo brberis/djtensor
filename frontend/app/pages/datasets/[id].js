@@ -14,6 +14,8 @@ import { useEffect, useState, useCallback } from 'react';
 import Layout from '../../components/Layout';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
+import theme from '../../theme';
+import { ArrowUpTrayIcon, PhotoIcon } from '@heroicons/react/24/outline';
 
 export default function DatasetDetail() {
   const [dataset, setDataset] = useState(null);
@@ -24,9 +26,6 @@ export default function DatasetDetail() {
   const [hasMore, setHasMore] = useState({});
   const router = useRouter();
   const { id } = router.query;
-
-  console.log('labels', labels);
-  console.log('images', images);
 
   useEffect(() => {
     async function fetchData() {
@@ -42,13 +41,12 @@ export default function DatasetDetail() {
         setDataset(datasetData);
         setLabels(labelsData);
 
-        // Initialize the state for each label
         const initialPages = {};
         const initialHasMore = {};
         labelsData.forEach(label => {
           initialPages[label.id] = 1;
           initialHasMore[label.id] = true;
-          fetchImages(label.id, 1); 
+          fetchImages(label.id, 1);
         });
         setPage(initialPages);
         setHasMore(initialHasMore);
@@ -105,51 +103,122 @@ export default function DatasetDetail() {
   };
 
   if (isLoading) {
-    return <Spinner />;
+    return (
+      <Layout>
+        <Spinner />
+      </Layout>
+    );
   }
 
   if (!dataset || dataset.message) {
-    return <p>No dataset data found.</p>;
+    return (
+      <Layout>
+        <div className="text-center py-12">
+          <PhotoIcon className="mx-auto h-12 w-12 text-gray-300" />
+          <h3 className="mt-2 text-sm font-semibold text-gray-900">No dataset found</h3>
+          <p className="mt-1 text-sm text-gray-500">The requested dataset could not be loaded.</p>
+        </div>
+      </Layout>
+    );
   }
 
   return (
     <Layout>
-      <div className="px-40 sm:px-6 lg:px-8">
-        <h1 className="text-lg font-semibold leading-6 text-gray-900">Dataset Detail</h1>
-        <p className="mt-2 text-sm text-gray-700">Detailed information about the dataset named {dataset.name}.</p>
-        <div className="mt-4 bg-white shadow overflow-hidden sm:rounded-lg">
-          {labels.map(label => (
-            <div key={label.id} className="px-4 py-5 sm:px-6 border-t border-gray-200">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                {label.name} ({label.image_count})
-              </h3>
-              <input type="file" multiple onChange={(e) => handleUpload(e.target.files, label.id, dataset.id)} className="mb-2" />
-              <div className="mt-2 flex overflow-x-auto space-x-4">
-                {(images[label.id] || []).map(image => (
-                  <div key={image.id} className="flex flex-col items-center relative group">
-                    <p className="text-sm mt-2 whitespace-nowrap overflow-hidden text-ellipsis" style={{ maxWidth: '100px' }}>{image.image.split('/').pop()}</p>
-                    <img src={image.image} alt={label.name} className="object-cover" style={{ width: '100px', height: '100px' }} loading="lazy" />
-                    <div className="absolute left-0 bottom-0 bg-white opacity-0 group-hover:opacity-100 p-1 text-xs">
-                      {image.image.split('/').pop()}
-                    </div>
-                  </div>
-                ))}
-                {hasMore[label.id] && (
-                  <button
-                    onClick={() => {
-                      const nextPage = page[label.id] + 1;
-                      setPage(prev => ({ ...prev, [label.id]: nextPage }));
-                      fetchImages(label.id, nextPage);
-                    }}
-                    className="text-sm text-blue-500"
-                  >
-                    Load more
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+      {/* Page header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-x-3">
+          <button
+            onClick={() => router.push('/datasets')}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            Datasets
+          </button>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm font-medium text-gray-900">{dataset.name}</span>
         </div>
+        <h1 className="mt-3 text-2xl font-bold text-gray-900">{dataset.name}</h1>
+        {dataset.description && (
+          <p className="mt-1 text-sm text-gray-500">{dataset.description}</p>
+        )}
+      </div>
+
+      {/* Dataset info card */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+          <div>
+            <dt className="text-sm font-medium text-gray-500">Resolution</dt>
+            <dd className="mt-1 text-sm text-gray-900">{dataset.resolution}px</dd>
+          </div>
+          <div>
+            <dt className="text-sm font-medium text-gray-500">Type</dt>
+            <dd className="mt-1 text-sm text-gray-900">
+              {dataset.base ? 'Base' : dataset.for_testing ? 'Testing' : 'Training'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm font-medium text-gray-500">Labels</dt>
+            <dd className="mt-1 text-sm text-gray-900">{labels.length} categories</dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* Labels and images */}
+      <div className="space-y-6">
+        {labels.map(label => (
+          <div key={label.id} className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">{label.name}</h3>
+                <p className="text-sm text-gray-500">{label.image_count} images</p>
+              </div>
+              <label className={`${theme.classes.btnSecondary} cursor-pointer flex items-center gap-1.5`}>
+                <ArrowUpTrayIcon className="h-4 w-4" />
+                Upload
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => handleUpload(e.target.files, label.id, dataset.id)}
+                />
+              </label>
+            </div>
+            <div className="p-5">
+              {(images[label.id] || []).length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">No images uploaded yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  {(images[label.id] || []).map(image => (
+                    <div key={image.id} className="relative group">
+                      <img
+                        src={image.image}
+                        alt={label.name}
+                        className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                        <p className="text-[10px] text-white truncate">
+                          {image.image.split('/').pop()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {hasMore[label.id] && (
+                <button
+                  onClick={() => {
+                    const nextPage = page[label.id] + 1;
+                    setPage(prev => ({ ...prev, [label.id]: nextPage }));
+                    fetchImages(label.id, nextPage);
+                  }}
+                  className="mt-3 text-sm font-medium text-teal-600 hover:text-teal-500"
+                >
+                  Load more images...
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </Layout>
   );

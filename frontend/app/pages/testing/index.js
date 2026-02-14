@@ -13,9 +13,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddTest from '../../components/addTest';
-import { getStatusColor } from '../../utils';
+import { getStatusBadgeClass } from '../../theme';
+import { ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 
-export default function Training() {
+export default function Testing() {
   const [tests, setTests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddTest, setIsOpenAddTest] = useState(false);
@@ -30,10 +31,7 @@ export default function Training() {
         const sortedData = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
         if (Array.isArray(sortedData)) {
-          // Retrieve the selected study from local storage
           const savedStudy = localStorage.getItem('selectedStudy');
-
-          // Filter tests based on the selected study
           const filteredData = savedStudy
             ? sortedData.filter(test => test.training_session.study.id == savedStudy)
             : sortedData;
@@ -59,7 +57,7 @@ export default function Training() {
 
   const handleTestClick = (test) => {
     if (test.status === 'Completed') {
-      router.push(`/testing/${test.id}`); 
+      router.push(`/testing/${test.id}`);
     }
   };
 
@@ -77,39 +75,55 @@ export default function Training() {
   return (
     <Layout incomingAction={incomingAction} action={'New Test'}>
       {isOpenAddTest && <AddTest isOpen={isOpenAddTest} onClose={handleClose} />}
-      <div className="px-40 sm:px-6 lg:px-8">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
-            <h1 className="text-lg font-semibold leading-6 text-gray-900">Training Tests</h1>
-            <p className="mt-2 text-sm text-gray-700">View the status of the last training tests.</p>
-          </div>
+
+      {/* Page header */}
+      <div className="sm:flex sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Model Tests</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Evaluate trained models against test datasets. Click a completed test for results.
+          </p>
         </div>
-        <div className="mt-8 flow-root">
-          <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-            <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-                <table className="min-w-full divide-y divide-gray-300">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Test Name</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Date / Time</th>
-                      <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {tests.map((test) => (
-                      <tr key={test.id} onClick={() => handleTestClick(test)} className={test.status === 'Completed' ? 'cursor-pointer hover:bg-gray-50' : ''}>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900">{test.name}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{new Date(test.created_at).toLocaleString()}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm" style={{ color: getStatusColor(test.status) }}>{test.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
+      </div>
+
+      {/* Tests table */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Test Name</th>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Date / Time</th>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {tests.length === 0 && !isLoading ? (
+              <tr>
+                <td colSpan={3} className="px-4 py-12 text-center">
+                  <ClipboardDocumentCheckIcon className="mx-auto h-12 w-12 text-gray-300" />
+                  <h3 className="mt-2 text-sm font-semibold text-gray-900">No tests yet</h3>
+                  <p className="mt-1 text-sm text-gray-500">Create a new test to evaluate your models.</p>
+                </td>
+              </tr>
+            ) : (
+              tests.map((test) => (
+                <tr
+                  key={test.id}
+                  onClick={() => handleTestClick(test)}
+                  className={test.status === 'Completed' ? 'cursor-pointer hover:bg-teal-50 transition-colors' : ''}
+                >
+                  <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{test.name}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">
+                    {new Date(test.created_at).toLocaleString()}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-sm">
+                    <span className={getStatusBadgeClass(test.status)}>{test.status}</span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </Layout>
   );

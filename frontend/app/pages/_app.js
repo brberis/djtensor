@@ -70,7 +70,7 @@ export default function App({ Component, pageProps }) {
                 <link rel="icon" type="image/png" sizes="32x32" href="/icons/Icon-32.png" />
                 <link rel="icon" type="image/png" sizes="16x16" href="/icons/Icon-16.png" />
                 <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#5bbad5" />
-                <title>Fossil</title>
+                <title>Shark AI</title>
             </Head>
             <Component {...pageProps} />
         </AppProvider>

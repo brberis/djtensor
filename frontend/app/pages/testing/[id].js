@@ -13,7 +13,8 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import Spinner from '../../components/Spinner';
-import Tooltip from '../../components/Tooltip'; // Import Tooltip component
+import Tooltip from '../../components/Tooltip';
+import theme from '../../theme';
 
 export default function TestDetail() {
   const [test, setTest] = useState(null);
@@ -38,7 +39,6 @@ export default function TestDetail() {
     falsePositive: 0,
     falseNegative: 0,
   });
-
 
   function calculateAccuracy(results) {
     const correct = results.filter(result => result.prediction === result.true_label).length;
@@ -132,104 +132,69 @@ export default function TestDetail() {
     fetchData();
   }, [id]);
 
-
-  
   useEffect(() => {
     if (testResults.length > 0) {
       const filteredBySpecies = testResults.filter(result => filter.species === 'All' || result.true_label === filter.species);
-  
+
       const counts = calculateCounts(filteredBySpecies);
       setResultCounts(counts);
-  
+
       let filtered = filteredBySpecies;
-  
+
       if (filter.resultType && filter.resultType !== 'All') {
         filtered = filtered.filter(result => {
           const isTruePositive = result.true_label === result.prediction && result.confidence > 0.5;
           const isFalsePositive = result.prediction !== result.true_label && result.confidence > 0.5;
           const isFalseNegative = result.prediction !== result.true_label && result.confidence <= 0.5;
           const isTrueNegative = result.true_label !== result.prediction && result.confidence > 0.5;
-          
-          if (filter.resultType === 'TruePositive') {
-            return isTruePositive;
-          } else if (filter.resultType === 'FalsePositive') {
-            return isFalsePositive;
-          } else if (filter.resultType === 'FalseNegative') {
-            return isFalseNegative;
-          } else if (filter.resultType === 'TrueNegative') {
-            return isTrueNegative;
-          }
+
+          if (filter.resultType === 'TruePositive') return isTruePositive;
+          if (filter.resultType === 'FalsePositive') return isFalsePositive;
+          if (filter.resultType === 'FalseNegative') return isFalseNegative;
+          if (filter.resultType === 'TrueNegative') return isTrueNegative;
           return true;
         });
       }
-  
+
       setFilteredResults(filtered);
-  
-      const accuracy = calculateAccuracy(filtered);
-      const averageConfidence = calculateAverageConfidence(filtered);
-      const confusionMatrixData = calculateConfusionMatrix(filtered);
-      const precision = calculatePrecision(confusionMatrixData);
-      const recall = calculateRecall(confusionMatrixData);
-      const f1Score = calculateF1Score(precision, recall);
-      const specificity = calculateSpecificity(confusionMatrixData);
-  
-      setAccuracy(accuracy);
-      setAverageConfidence(averageConfidence);
-      setConfusionMatrix(confusionMatrixData);
-      setPrecision(precision);
-      setRecall(recall);
-      setF1Score(f1Score);
-      setSpecificity(specificity);
+
+      const acc = calculateAccuracy(filtered);
+      const avgConf = calculateAverageConfidence(filtered);
+      const confMatrix = calculateConfusionMatrix(filtered);
+      const prec = calculatePrecision(confMatrix);
+      const rec = calculateRecall(confMatrix);
+      const f1 = calculateF1Score(prec, rec);
+      const spec = calculateSpecificity(confMatrix);
+
+      setAccuracy(acc);
+      setAverageConfidence(avgConf);
+      setConfusionMatrix(confMatrix);
+      setPrecision(prec);
+      setRecall(rec);
+      setF1Score(f1);
+      setSpecificity(spec);
     }
   }, [filter, testResults]);
-  
-  
-  function handleFilterChange(e) {
-    const { name, value } = e.target;
-  
-    if (name === 'species') {
-      // Reset the resultType when species changes
-      setFilter({
-        species: value,
-        resultType: 'All',  
-      });
-    } else {
-      setFilter(prevState => ({
-        ...prevState,
-        [name]: value,
-      }));
-    }
-  }
-  
+
   const calculateCounts = (results) => {
-    const counts = {
-      truePositive: 0,
-      trueNegative: 0,
-      falsePositive: 0,
-      falseNegative: 0,
-    };
-  
+    const counts = { truePositive: 0, trueNegative: 0, falsePositive: 0, falseNegative: 0 };
     results.forEach(result => {
       const isTruePositive = result.true_label === result.prediction && result.confidence > 0.5;
       const isFalsePositive = result.prediction !== result.true_label && result.confidence > 0.5;
       const isFalseNegative = result.prediction !== result.true_label && result.confidence <= 0.5;
       const isTrueNegative = result.true_label !== result.prediction && result.confidence > 0.5;
-      
+
       if (isTruePositive) counts.truePositive++;
       if (isTrueNegative) counts.trueNegative++;
       if (isFalsePositive) counts.falsePositive++;
       if (isFalseNegative) counts.falseNegative++;
     });
-  
     return counts;
   };
-  
+
   function handleFilterChange(e) {
     const { name, value } = e.target;
-    setFilter(prevState => ({
-      ...prevState,
-      [name]: value,
-    }));
+    setFilter(prevState => ({ ...prevState, [name]: value }));
   }
 
   function formatLabel(label) {
@@ -237,133 +202,176 @@ export default function TestDetail() {
   }
 
   if (isLoading) {
-    return <Spinner />;
+    return (
+      <Layout>
+        <Spinner />
+      </Layout>
+    );
   }
 
   if (!test || !(filteredResults?.length > 0)) {
     return (
       <Layout>
-        <div className="px-40 sm:px-6 lg:px-8">
-          <p>No test data found.</p>
+        <div className="text-center py-12">
+          <p className="text-sm text-gray-500">No test data found.</p>
         </div>
       </Layout>
     );
   }
 
+  // Metric card helper
+  const MetricCard = ({ label, value, tooltip }) => (
+    <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl px-4 py-4">
+      <div className="flex items-center gap-x-1">
+        <p className="text-sm font-medium text-gray-500">{label}</p>
+        {tooltip && <Tooltip text={tooltip} />}
+      </div>
+      <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">
+        {value !== null ? `${value.toFixed(2)}%` : '...'}
+      </p>
+    </div>
+  );
+
   return (
     <Layout>
-      <div className="px-40 sm:px-6 lg:px-8">
-        <h1 className="text-lg font-semibold leading-6 text-gray-900">Test Detail</h1>
-        <h2 className="text-md mt-2 text-indigo-600">Dataset: {dataset?.name}</h2>
-        <h2 className="text-md text-indigo-600">Training Session: {trainingSession?.name}</h2>
-        <div className="flex space-x-4 mt-4">
-          <div>
-            <label htmlFor="species" className="block text-sm font-medium text-gray-700">
-              Filter by Species
-            </label>
-            <select
-              id="species"
-              name="species"
-              value={filter.species}
-              onChange={handleFilterChange}
-              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="All">All Species</option>
-              {confusionMatrix?.labels.map(label => (
-                <option key={label} value={label}>
-                  {formatLabel(label)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="resultType" className="block text-sm font-medium text-gray-700">
-              Filter by Result Type
-            </label>
-            <select
-              id="resultType"
-              name="resultType"
-              value={filter.resultType}
-              onChange={handleFilterChange}
-              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="All">All Results</option>
-              <option value="TruePositive">True Positive ({resultCounts.truePositive})</option>
-              <option value="TrueNegative">True Negative ({resultCounts.trueNegative})</option>
-              <option value="FalsePositive">False Positive ({resultCounts.falsePositive})</option>
-              <option value="FalseNegative">False Negative ({resultCounts.falseNegative})</option>
-            </select>
-          </div>
+      {/* Breadcrumb & header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-x-3">
+          <button onClick={() => router.push('/testing')} className="text-sm text-gray-500 hover:text-gray-700">
+            Tests
+          </button>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm font-medium text-gray-900">{test.name}</span>
         </div>
-        <div className="mt-4">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Results</h3>
+        <h1 className="mt-3 text-2xl font-bold text-gray-900">{test.name}</h1>
+        <div className="mt-1 flex flex-wrap gap-x-6 text-sm text-gray-500">
+          <span>Dataset: <span className="font-medium text-teal-600">{dataset?.name}</span></span>
+          <span>Training: <span className="font-medium text-teal-600">{trainingSession?.name}</span></span>
+        </div>
+      </div>
 
-          <p className="flex items-center">
-            Accuracy: {accuracy ? `${accuracy.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="Accuracy is the proportion of true results (both true positives and true negatives) among the total number of cases examined." />
-          </p>
-          <p className="flex items-center">
-            Average Confidence: {averageConfidence ? `${averageConfidence.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="Average Confidence represents the average of the confidence scores of all predictions made by the model." />
-          </p>
-          <p className="flex items-center">
-            Precision: {precision !== null ? `${precision.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="Precision is the ratio of correctly predicted positive observations to the total predicted positives." />
-          </p>
-          <p className="flex items-center">
-            Recall: {recall !== null ? `${recall.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="Recall is the ratio of correctly predicted positive observations to all observations in actual class." />
-          </p>
-          <p className="flex items-center">
-            F1 Score: {f1Score !== null ? `${f1Score.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="F1 Score is the weighted average of Precision and Recall." />
-          </p>
-          <p className="flex items-center">
-            Specificity: {specificity !== null ? `${specificity.toFixed(2)}%` : 'Calculating...'}
-            <Tooltip text="Specificity is the proportion of actual negatives that are correctly identified as such." />
-          </p>
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-4">
+        <div className="min-w-[200px]">
+          <label htmlFor="species" className={theme.classes.label}>Filter by Species</label>
+          <select
+            id="species"
+            name="species"
+            value={filter.species}
+            onChange={handleFilterChange}
+            className={`mt-1 ${theme.classes.select}`}
+          >
+            <option value="All">All Species</option>
+            {confusionMatrix?.labels.map(label => (
+              <option key={label} value={label}>{formatLabel(label)}</option>
+            ))}
+          </select>
         </div>
-        <div className="my-10">
-          {confusionMatrix && (
-            <div>
-              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Confusion Matrix</h3>
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actual \ Predicted</th>
-                    {confusionMatrix.labels.map(label => (
-                      <th key={label} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{formatLabel(label)}</th>
+        <div className="min-w-[200px]">
+          <label htmlFor="resultType" className={theme.classes.label}>Filter by Result Type</label>
+          <select
+            id="resultType"
+            name="resultType"
+            value={filter.resultType}
+            onChange={handleFilterChange}
+            className={`mt-1 ${theme.classes.select}`}
+          >
+            <option value="All">All Results</option>
+            <option value="TruePositive">True Positive ({resultCounts.truePositive})</option>
+            <option value="TrueNegative">True Negative ({resultCounts.trueNegative})</option>
+            <option value="FalsePositive">False Positive ({resultCounts.falsePositive})</option>
+            <option value="FalseNegative">False Negative ({resultCounts.falseNegative})</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Metrics grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <MetricCard label="Accuracy" value={accuracy}
+          tooltip="Proportion of true results among the total number of cases examined." />
+        <MetricCard label="Avg Confidence" value={averageConfidence}
+          tooltip="Average confidence score across all predictions made by the model." />
+        <MetricCard label="Precision" value={precision}
+          tooltip="Ratio of correctly predicted positive observations to total predicted positives." />
+        <MetricCard label="Recall" value={recall}
+          tooltip="Ratio of correctly predicted positive observations to all actual positives." />
+        <MetricCard label="F1 Score" value={f1Score}
+          tooltip="Weighted average of Precision and Recall." />
+        <MetricCard label="Specificity" value={specificity}
+          tooltip="Proportion of actual negatives correctly identified as such." />
+      </div>
+
+      {/* Confusion Matrix */}
+      {confusionMatrix && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Confusion Matrix</h2>
+          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actual / Predicted
+                  </th>
+                  {confusionMatrix.labels.map(label => (
+                    <th key={label} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {formatLabel(label)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {confusionMatrix.labels.map((label, rowIndex) => (
+                  <tr key={label}>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{formatLabel(label)}</td>
+                    {confusionMatrix.matrix[rowIndex].map((value, colIndex) => (
+                      <td
+                        key={colIndex}
+                        className={`px-4 py-3 text-sm font-mono ${rowIndex === colIndex ? 'font-bold text-teal-700 bg-teal-50' : 'text-gray-500'}`}
+                      >
+                        {value}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {confusionMatrix.labels.map((label, rowIndex) => (
-                    <tr key={label}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatLabel(label)}</td>
-                      {confusionMatrix.matrix[rowIndex].map((value, colIndex) => (
-                        <td key={colIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{value}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="mt-8">
-          {filteredResults?.length > 0 ? filteredResults.map(result => (
-            <div key={result.id} className="bg-white shadow overflow-hidden sm:rounded-lg p-4 mb-4">
-              <div>
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Prediction: {formatLabel(result.prediction)}</h3>
-                <h3 className="text-md leading-6 font-medium text-gray-900">True Label: {formatLabel(result.true_label)}</h3>
-                <p className="text-md text-gray-800">Confidence: {(result.confidence * 100).toFixed(2)}%</p>
+      )}
+
+      {/* Individual results */}
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Prediction Results ({filteredResults?.length})
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filteredResults?.length > 0 ? filteredResults.map(result => {
+            const isCorrect = result.prediction === result.true_label;
+            return (
+              <div key={result.id} className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
+                {result.grad_cam && (
+                  <img src={result.grad_cam} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50" />
+                )}
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${isCorrect ? 'bg-green-50 text-green-700 ring-green-600/20' : 'bg-red-50 text-red-700 ring-red-600/10'}`}>
+                      {isCorrect ? 'Correct' : 'Incorrect'}
+                    </span>
+                    <span className="text-sm font-mono text-gray-500">
+                      {(result.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-900">
+                    <span className="font-medium">Predicted:</span> {formatLabel(result.prediction)}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    <span className="font-medium">Actual:</span> {formatLabel(result.true_label)}
+                  </p>
+                </div>
               </div>
-              <div className="mx-4">
-                <img src={result.grad_cam} alt="Grad cam" className="" />
-              </div>
-            </div>
-          )) : (
-            <p>No results available.</p>
+            );
+          }) : (
+            <p className="text-sm text-gray-500 col-span-full">No results available.</p>
           )}
         </div>
       </div>
