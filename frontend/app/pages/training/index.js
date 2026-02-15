@@ -9,18 +9,22 @@
  * Copyright (c) 2024
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, Fragment } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddSession from '../../components/addTrainingSession';
+import LogViewer from '../../components/LogViewer';
 import { getStatusBadgeClass } from '../../theme';
-import { CpuChipIcon } from '@heroicons/react/24/outline';
+import { CpuChipIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 
 export default function Training() {
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddSession, setIsOpenAddSession] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [logSessionId, setLogSessionId] = useState(null);
+  const menuRef = useRef(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -51,6 +55,17 @@ export default function Training() {
     return () => clearInterval(intervalId);
   }, [refresh]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleSessionClick = (session) => {
     if (session.status === 'Completed') {
       router.push(`/training/${session.id}`);
@@ -68,9 +83,43 @@ export default function Training() {
     }
   };
 
+  const handleRetrain = async (sessionId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}/retrain/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.cookie.match(/csrftoken=([^;]*)/)?.[1] || '',
+        },
+      });
+      if (response.ok) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error('Retrain failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Retrain error:', error);
+    }
+  };
+
+  const handleShowLogs = (sessionId) => {
+    setOpenMenuId(null);
+    setLogSessionId(sessionId);
+  };
+
+  const isTerminal = (status) => status === 'Completed' || status === 'Failed';
+
   return (
     <Layout incomingAction={incomingAction} action={'New Training Session'}>
       {isOpenAddSession && <AddSession isOpen={isOpenAddSession} onClose={handleClose} />}
+      {logSessionId && (
+        <LogViewer
+          sessionId={logSessionId}
+          onClose={() => setLogSessionId(null)}
+        />
+      )}
 
       {/* Page header */}
       <div className="sm:flex sm:items-center sm:justify-between mb-6">
@@ -87,17 +136,20 @@ export default function Training() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Session Name</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Date / Time</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Model</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Dataset</th>
-              <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+              <th scope="col" className="relative px-4 py-3.5">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {sessions.length === 0 && !isLoading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center">
+                <td colSpan={6} className="px-4 py-12 text-center">
                   <CpuChipIcon className="mx-auto h-12 w-12 text-gray-300" />
                   <h3 className="mt-2 text-sm font-semibold text-gray-900">No training sessions</h3>
                   <p className="mt-1 text-sm text-gray-500">Create a new training session to get started.</p>
@@ -107,17 +159,78 @@ export default function Training() {
               sessions.map((session) => (
                 <tr
                   key={session.id}
-                  onClick={() => handleSessionClick(session)}
                   className={session.status === 'Completed' ? 'cursor-pointer hover:bg-teal-50 transition-colors' : ''}
                 >
-                  <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{session.name}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">
-                    {new Date(session.created_at).toLocaleString()}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">{session.model.name}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">{session.dataset.name}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm">
                     <span className={getStatusBadgeClass(session.status)}>{session.status}</span>
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900"
+                    onClick={() => handleSessionClick(session)}
+                  >
+                    {session.name}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-4 text-sm text-gray-500"
+                    onClick={() => handleSessionClick(session)}
+                  >
+                    {new Date(session.created_at).toLocaleString()}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-4 text-sm text-gray-500"
+                    onClick={() => handleSessionClick(session)}
+                  >
+                    {session.model.name}
+                  </td>
+                  <td
+                    className="whitespace-nowrap px-4 py-4 text-sm text-gray-500"
+                    onClick={() => handleSessionClick(session)}
+                  >
+                    {session.dataset.name}
+                  </td>
+                  <td className="relative whitespace-nowrap px-4 py-4 text-right text-sm">
+                    <div className="relative inline-block text-left" ref={openMenuId === session.id ? menuRef : null}>
+                      <button
+                        type="button"
+                        className="rounded-full p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === session.id ? null : session.id);
+                        }}
+                      >
+                        <EllipsisVerticalIcon className="h-5 w-5" />
+                      </button>
+
+                      {openMenuId === session.id && (
+                        <div className="absolute right-0 z-10 mt-1 w-36 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none">
+                          <div className="py-1">
+                            <button
+                              className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isTerminal(session.status)) {
+                                  handleRetrain(session.id);
+                                } else {
+                                  // For active sessions, "Train" does nothing special
+                                  setOpenMenuId(null);
+                                }
+                              }}
+                            >
+                              {isTerminal(session.status) ? 'Re-train' : 'Train'}
+                            </button>
+                            <button
+                              className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShowLogs(session.id);
+                              }}
+                            >
+                              Logs
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
