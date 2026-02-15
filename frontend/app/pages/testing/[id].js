@@ -257,7 +257,7 @@ export default function TestDetail() {
                 <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
                     <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
-                      {selectedImage?.title || Image}
+                      {selectedImage?.title || "Image"}
                     </Dialog.Title>
                     <button
                       type="button"
@@ -273,7 +273,7 @@ export default function TestDetail() {
                     {selectedImage?.src && (
                       <img
                         src={selectedImage.src}
-                        alt={selectedImage.title || Image}
+                        alt={selectedImage.title || "Image"}
                         className="w-full max-h-[80vh] object-contain"
                       />
                     )}
@@ -325,7 +325,7 @@ export default function TestDetail() {
                 <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
                     <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
-                      {selectedImage?.title || Image}
+                      {selectedImage?.title || "Image"}
                     </Dialog.Title>
                     <button
                       type="button"
@@ -341,7 +341,7 @@ export default function TestDetail() {
                     {selectedImage?.src && (
                       <img
                         src={selectedImage.src}
-                        alt={selectedImage.title || Image}
+                        alt={selectedImage.title || "Image"}
                         className="w-full max-h-[80vh] object-contain"
                       />
                     )}
@@ -587,7 +587,7 @@ export default function TestDetail() {
                 <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
                     <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
-                      {selectedImage?.title || Image}
+                      {selectedImage?.title || "Image"}
                     </Dialog.Title>
                     <button
                       type="button"
@@ -603,7 +603,7 @@ export default function TestDetail() {
                     {selectedImage?.src && (
                       <img
                         src={selectedImage.src}
-                        alt={selectedImage.title || Image}
+                        alt={selectedImage.title || "Image"}
                         className="w-full max-h-[80vh] object-contain"
                       />
                     )}
