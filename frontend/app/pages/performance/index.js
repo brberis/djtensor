@@ -51,16 +51,21 @@ export default function Performance() {
       series: ['Training Accuracy', 'Validation Accuracy']
     };
 
+    const lossEl = document.getElementById(`loss-container-${sessionId}`);
+    const accEl = document.getElementById(`accuracy-container-${sessionId}`);
+    const lossWidth = lossEl ? Math.min(lossEl.clientWidth, 500) : 400;
+    const accWidth = accEl ? Math.min(accEl.clientWidth, 500) : 400;
+
     tfvis.render.linechart(
-      document.getElementById(`loss-container-${sessionId}`),
+      lossEl,
       lossData,
-      { xLabel: 'Epoch', yLabel: 'Loss', width: 400, height: 300 }
+      { xLabel: 'Epoch', yLabel: 'Loss', width: lossWidth, height: 300 }
     );
 
     tfvis.render.linechart(
-      document.getElementById(`accuracy-container-${sessionId}`),
+      accEl,
       accuracyData,
-      { xLabel: 'Epoch', yLabel: 'Accuracy', width: 400, height: 300 }
+      { xLabel: 'Epoch', yLabel: 'Accuracy', width: accWidth, height: 300 }
     );
   };
 
@@ -152,11 +157,11 @@ export default function Performance() {
                 <div className="space-y-4">
                   <div>
                     <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Loss</h4>
-                    <div id={`loss-container-${session.id}`} style={{ width: '100%', height: '250px' }}></div>
+                    <div id={`loss-container-${session.id}`} className="overflow-x-auto" style={{ width: '100%', maxWidth: '100%' }}></div>
                   </div>
                   <div>
                     <h4 className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Accuracy</h4>
-                    <div id={`accuracy-container-${session.id}`} style={{ width: '100%', height: '250px' }}></div>
+                    <div id={`accuracy-container-${session.id}`} className="overflow-x-auto" style={{ width: '100%', maxWidth: '100%' }}></div>
                   </div>
                 </div>
               )}

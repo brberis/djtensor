@@ -86,16 +86,21 @@ export default function TrainingDetail() {
       series: ['Training Accuracy', 'Validation Accuracy']
     };
 
+    const lossEl = document.getElementById('loss-container');
+    const accEl = document.getElementById('accuracy-container');
+    const lossWidth = lossEl ? Math.min(lossEl.clientWidth, 500) : 400;
+    const accWidth = accEl ? Math.min(accEl.clientWidth, 500) : 400;
+
     tfvis.render.linechart(
-      document.getElementById('loss-container'),
+      lossEl,
       lossData,
-      { xLabel: 'Epoch', yLabel: 'Loss', width: 400, height: 300 }
+      { xLabel: 'Epoch', yLabel: 'Loss', width: lossWidth, height: 300 }
     );
 
     tfvis.render.linechart(
-      document.getElementById('accuracy-container'),
+      accEl,
       accuracyData,
-      { xLabel: 'Epoch', yLabel: 'Accuracy', width: 400, height: 300 }
+      { xLabel: 'Epoch', yLabel: 'Accuracy', width: accWidth, height: 300 }
     );
   };
 
