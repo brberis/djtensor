@@ -33,12 +33,28 @@ export default function TestDetail() {
   const [specificity, setSpecificity] = useState(null);
   const [filter, setFilter] = useState({ species: 'All', minConfidence: 0 });
   const [filteredResults, setFilteredResults] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedImage, setSelectedImage] = useState(null);
   const [resultCounts, setResultCounts] = useState({
     truePositive: 0,
     trueNegative: 0,
     falsePositive: 0,
     falseNegative: 0,
   });
+
+  const PAGE_SIZE = 24;
+
+  const normalizeMediaUrl = (value) => {
+    if (!value) return null;
+    if (value.startsWith(http) || value.startsWith(/)) return value;
+    return /media/ + value;
+  };
+
+  const totalPages = Math.max(1, Math.ceil((filteredResults?.length || 0) / PAGE_SIZE));
+  const pageStartIndex = (currentPage - 1) * PAGE_SIZE;
+  const pageEndIndex = Math.min(pageStartIndex + PAGE_SIZE, filteredResults.length);
+  const pagedResults = filteredResults.slice(pageStartIndex, pageEndIndex);
+
 
   function calculateAccuracy(results) {
     const correct = results.filter(result => result.prediction === result.true_label).length;
@@ -96,6 +112,10 @@ export default function TestDetail() {
 
     return { labels, matrix };
   }
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter.species, filter.minConfidence]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -205,7 +225,65 @@ export default function TestDetail() {
     return (
       <Layout>
         <Spinner />
-      </Layout>
+      
+
+      <Transition.Root show={!!selectedImage} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setSelectedImage(null)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500/75 transition-opacity" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center text-center sm:items-center sm:p-4">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 translate-y-4 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                leaveTo="opacity-0 translate-y-4 sm:scale-95"
+              >
+                <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                    <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
+                      {selectedImage?.title || Image}
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedImage(null)}
+                      className="rounded-md p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      aria-label="Close"
+                    >
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-50">
+                    {selectedImage?.src && (
+                      <img
+                        src={selectedImage.src}
+                        alt={selectedImage.title || Image}
+                        className="w-full max-h-[80vh] object-contain"
+                      />
+                    )}
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+
+    </Layout>
     );
   }
 
@@ -215,7 +293,65 @@ export default function TestDetail() {
         <div className="text-center py-12">
           <p className="text-sm text-gray-500">No test data found.</p>
         </div>
-      </Layout>
+      
+
+      <Transition.Root show={!!selectedImage} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setSelectedImage(null)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500/75 transition-opacity" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center text-center sm:items-center sm:p-4">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 translate-y-4 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                leaveTo="opacity-0 translate-y-4 sm:scale-95"
+              >
+                <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                    <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
+                      {selectedImage?.title || Image}
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedImage(null)}
+                      className="rounded-md p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      aria-label="Close"
+                    >
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-50">
+                    {selectedImage?.src && (
+                      <img
+                        src={selectedImage.src}
+                        alt={selectedImage.title || Image}
+                        className="w-full max-h-[80vh] object-contain"
+                      />
+                    )}
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+
+    </Layout>
     );
   }
 
@@ -344,18 +480,56 @@ export default function TestDetail() {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
           Prediction Results ({filteredResults?.length})
         </h2>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <p className="text-sm text-gray-500">
+            Showing <span className="font-medium text-gray-700">{filteredResults.length === 0 ? 0 : pageStartIndex + 1}</span>
+            to
+            <span className="font-medium text-gray-700">{pageEndIndex}</span>
+            of
+            <span className="font-medium text-gray-700">{filteredResults.length}</span>
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold shadow-sm ring-1 ring-inset ring-gray-300 bg-white text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+            <span className="text-sm text-gray-500">Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="inline-flex items-center rounded-md px-3 py-2 text-sm font-semibold shadow-sm ring-1 ring-inset ring-gray-300 bg-white text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredResults?.length > 0 ? filteredResults.map(result => {
+          {filteredResults?.length > 0 ? pagedResults.map(result => {
             const isCorrect = result.prediction === result.true_label;
             return (
               <div key={result.id} className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
                 {result.grad_cam && (() => {
-                  const src = (result.grad_cam.startsWith("http") || result.grad_cam.startsWith("/"))
-                    ? result.grad_cam
-                    : "/media/" + result.grad_cam;
+                  const src = normalizeMediaUrl(result.grad_cam);
+                  if (!src) return null;
+
+                  const title = "Grad-CAM - " + formatLabel(result.prediction);
 
                   return (
-                    <img src={src} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50" />
+                    <button
+                      type="button"
+                      onClick={() => setSelectedImage({ src, title })}
+                      className="block w-full focus:outline-none"
+                      aria-label="Open Grad-CAM image"
+                    >
+                      <img src={src} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50 hover:bg-gray-100" />
+                    </button>
                   );
                 })()}
                 <div className="p-4">
@@ -381,6 +555,64 @@ export default function TestDetail() {
           )}
         </div>
       </div>
+    
+
+      <Transition.Root show={!!selectedImage} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setSelectedImage(null)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500/75 transition-opacity" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center text-center sm:items-center sm:p-4">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 translate-y-4 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                leaveTo="opacity-0 translate-y-4 sm:scale-95"
+              >
+                <Dialog.Panel className="relative transform overflow-hidden bg-white text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-5xl">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                    <Dialog.Title as="h3" className="text-sm font-semibold text-gray-900">
+                      {selectedImage?.title || Image}
+                    </Dialog.Title>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedImage(null)}
+                      className="rounded-md p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                      aria-label="Close"
+                    >
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-50">
+                    {selectedImage?.src && (
+                      <img
+                        src={selectedImage.src}
+                        alt={selectedImage.title || Image}
+                        className="w-full max-h-[80vh] object-contain"
+                      />
+                    )}
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+
     </Layout>
   );
 }
