@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddTest from '../../components/addTest';
+import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
 import { ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 
@@ -97,7 +98,9 @@ export default function Testing() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {tests.length === 0 && !isLoading ? (
+            {isLoading ? (
+              <TableSpinnerRow colSpan={3} />
+            ) : tests.length === 0 ? (
               <tr>
                 <td colSpan={3} className="px-4 py-12 text-center">
                   <ClipboardDocumentCheckIcon className="mx-auto h-12 w-12 text-gray-300" />

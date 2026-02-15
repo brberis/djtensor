@@ -14,6 +14,7 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
 import GenerateDataset from '../../components/generateDataset';
+import { TableSpinnerRow } from '../../components/Spinner';
 import { CircleStackIcon } from '@heroicons/react/24/outline';
 
 export default function Datasets({ base }) {
@@ -139,7 +140,9 @@ export default function Datasets({ base }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {datasets.length === 0 && !isLoading ? (
+            {isLoading ? (
+              <TableSpinnerRow colSpan={4} />
+            ) : datasets.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-12 text-center">
                   <CircleStackIcon className="mx-auto h-12 w-12 text-gray-300" />

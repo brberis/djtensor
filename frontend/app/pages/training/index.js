@@ -14,6 +14,7 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddSession from '../../components/addTrainingSession';
 import LogViewer from '../../components/LogViewer';
+import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
 import { CpuChipIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 
@@ -173,7 +174,9 @@ export default function Training() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {sessions.length === 0 && !isLoading ? (
+            {isLoading ? (
+              <TableSpinnerRow colSpan={6} />
+            ) : sessions.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center">
                   <CpuChipIcon className="mx-auto h-12 w-12 text-gray-300" />
