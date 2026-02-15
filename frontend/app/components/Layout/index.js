@@ -19,10 +19,14 @@ import {
   CpuChipIcon,
   ChartBarIcon,
   ClipboardDocumentCheckIcon,
+  Cog6ToothIcon,
+  ArrowRightOnRectangleIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import theme from '../../theme';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Sidebar navigation items
 const navigation = [
@@ -42,9 +46,17 @@ const Layout = (props) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [studies, setStudies] = useState([]);
   const [selectedStudy, setSelectedStudy] = useState('');
-  const [isActive, setIsActive] = useState(false);
+  const { user, loading, logout } = useAuth();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/login');
+    }
+  }, [user, loading, router]);
 
   useEffect(() => {
+    if (!user) return;
     fetch('/api/feature_extractor/studies/')
       .then((response) => response.json())
       .then((data) => {
@@ -59,12 +71,7 @@ const Layout = (props) => {
         }
       })
       .catch((error) => console.error('Error fetching studies:', error));
-  }, []);
-
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    setIsActive(queryParams.get('active') == 1);
-  }, [router]);
+  }, [user]);
 
   const handleStudyChange = (e) => {
     const studyId = e.target.value;
@@ -85,6 +92,15 @@ const Layout = (props) => {
       incomingAction(action);
     }
   };
+
+  // Show spinner while checking auth
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-500 border-t-transparent" />
+      </div>
+    );
+  }
 
   // Sidebar content reused for both mobile and desktop
   const SidebarContent = () => (
@@ -122,7 +138,9 @@ const Layout = (props) => {
             ))}
           </ul>
         </li>
-        <li className="mt-auto pb-4">
+
+        {/* Study selector */}
+        <li>
           <div className="px-2">
             <label htmlFor="sidebar-study" className="block text-xs font-medium text-gray-400 mb-1">
               Active Study
@@ -140,6 +158,37 @@ const Layout = (props) => {
                 </option>
               ))}
             </select>
+          </div>
+        </li>
+
+        {/* User section at the bottom */}
+        <li className="mt-auto pb-4">
+          <div className="border-t border-gray-700 pt-4 px-2">
+            <div className="flex items-center gap-x-3 mb-3">
+              <UserCircleIcon className="h-8 w-8 text-gray-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white truncate">{user.username}</p>
+                {user.email && (
+                  <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-x-2">
+              <Link
+                href="/settings"
+                className="flex-1 flex items-center justify-center gap-x-1.5 rounded-md bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
+              >
+                <Cog6ToothIcon className="h-4 w-4" />
+                Settings
+              </Link>
+              <button
+                onClick={logout}
+                className="flex-1 flex items-center justify-center gap-x-1.5 rounded-md bg-gray-700 px-2 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
+              >
+                <ArrowRightOnRectangleIcon className="h-4 w-4" />
+                Sign out
+              </button>
+            </div>
           </div>
         </li>
       </ul>
@@ -227,7 +276,7 @@ const Layout = (props) => {
               {/* Page context info can go here */}
             </div>
             <div className="flex items-center gap-x-4 lg:gap-x-6">
-              {/* Study selector (desktop - also shown in sidebar but accessible here on mobile) */}
+              {/* Study selector in top bar for quick access */}
               <div className="hidden sm:flex items-center gap-x-2">
                 <label htmlFor="topbar-study" className="text-sm font-medium text-gray-500">
                   Study:
@@ -250,8 +299,7 @@ const Layout = (props) => {
                 <button
                   type="button"
                   onClick={actionHandler}
-                  disabled={!isActive}
-                  className={isActive ? theme.classes.btnPrimary : theme.classes.btnDisabled}
+                  className={theme.classes.btnPrimary}
                 >
                   {action}
                 </button>

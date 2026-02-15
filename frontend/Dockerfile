@@ -28,12 +28,14 @@ WORKDIR /app
 COPY --from=builder /app/next.config.mjs ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/components ./components
+COPY --from=builder /app/contexts ./contexts
 COPY --from=builder /app/utils ./utils
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/tailwind.config.js ./
 COPY --from=builder /app/postcss.config.mjs ./
+COPY --from=builder /app/theme.js ./
 
 # Ensure the pages directory is copied over
 COPY --from=builder /app/pages ./pages

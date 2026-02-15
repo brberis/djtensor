@@ -12,7 +12,7 @@
 // pages/api/datasets/image/upload.js
 
 import multer from 'multer';
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 import FormData from 'form-data';
 import { NextApiResponse } from 'next';
 
@@ -37,6 +37,7 @@ function runMiddleware(req, res, fn) {
 }
 
 export default async function handler(req, res) {
+  const api = createApiClient(req);
   // Handle file upload with multer
   await runMiddleware(req, res, upload.array('file'));
 
@@ -54,8 +55,7 @@ export default async function handler(req, res) {
   formData.append('label', label);
 
   try {
-    const baseUrl = process.env.DJANGO_API_BASE_URL;
-    const response = await axios.post(`${baseUrl}/api/datasets/image/`, formData, {
+    const response = await api.post(`api/datasets/image/`, formData, {
       headers: {
         ...formData.getHeaders(),
       },

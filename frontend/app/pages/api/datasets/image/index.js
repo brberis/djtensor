@@ -9,7 +9,7 @@
  * Copyright (c) 2024
  */
 
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 import FormData from 'form-data';
 import multer from 'multer';
 
@@ -22,13 +22,12 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  const baseUrl = process.env.DJANGO_API_BASE_URL;
-
+  const api = createApiClient(req);
   if (req.method === 'GET') {
     const { dataset, label, page } = req.query;
 
     try {
-      const response = await axios.get(`${baseUrl}/api/datasets/image/`, { params: { dataset, label, page } });
+      const response = await api.get(`api/datasets/image/`, { params: { dataset, label, page } });
       res.status(200).json(response.data);
     } catch (error) {
       console.error('Failed to fetch images:', error);
@@ -52,9 +51,9 @@ export default async function handler(req, res) {
       }
 
       try {
-        const response = await axios({
+        const response = await api({
           method: 'post',
-          url: `${baseUrl}/api/datasets/image/upload`,
+          url: `api/datasets/image/upload`,
           data: formData,
           headers: formData.getHeaders(),
         });

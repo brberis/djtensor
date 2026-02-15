@@ -9,15 +9,14 @@
  * Copyright (c) 2024
  */
 
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
-  const baseUrl = process.env.DJANGO_API_BASE_URL; 
-
+  const api = createApiClient(req);
   switch (req.method) {
     case 'GET':
       try {
-        const response = await axios.get(`${baseUrl}/api/feature_extractor/tests/`);
+        const response = await api.get(`api/feature_extractor/tests/`);
         const data = response.data;
         res.status(200).json(data);
       } catch (error) {
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
     case 'POST':
       try {
         const postData = req.body;  
-        const response = await axios.post(`${baseUrl}/api/feature_extractor/tests/`, postData);
+        const response = await api.post(`api/feature_extractor/tests/`, postData);
         const data = response.data;
         res.status(201).json(data);
       } catch (error) {

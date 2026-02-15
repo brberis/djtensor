@@ -9,16 +9,15 @@
  * Copyright (c) 2024
  */
 
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
+  const api = createApiClient(req);
   if (req.method === 'GET') {
     const { datasets__id } = req.query;
 
     try {
-      const baseUrl = process.env.DJANGO_API_BASE_URL;
-
-      const response = await axios.get(`${baseUrl}/api/datasets/label/`, { params: { datasets__id } });
+      const response = await api.get(`api/datasets/label/`, { params: { datasets__id } });
       const data = response.data;
 
       res.status(200).json(data);

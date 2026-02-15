@@ -9,19 +9,18 @@
  * Copyright (c) 2024
  */
 
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
+  const api = createApiClient(req);
   const { id } = req.query;
-  const baseUrl = process.env.DJANGO_API_BASE_URL;  
-
-  const url = `${baseUrl}/api/feature_extractor/testresult/`;
+  const url = `api/feature_extractor/testresult/`;
 
   switch (req.method) {
     case 'GET':
       try {
         const { test__id } = req.query;
-        const response = await axios.get(url, { params: { test__id } } );
+        const response = await api.get(url, { params: { test__id } } );
         const data = response.data;
         res.status(200).json(data);
       } catch (error) {
@@ -37,7 +36,7 @@ export default async function handler(req, res) {
         if (!id) {
           return res.status(400).json({ message: 'Missing ID for deletion' });
         }
-        await axios.get(url);
+        await api.get(url);
         res.status(204).end();  
       } catch (error) {
         console.error('Failed to delete training test esult:', error);

@@ -9,15 +9,14 @@
  * Copyright (c) 2024
  */
 
-import axios from 'axios';
+import { createApiClient } from '../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
+  const api = createApiClient(req);
   if (req.method === 'GET') {
     try {
       // Use the environment variable to get the base URL
-      const baseUrl = process.env.DJANGO_API_BASE_URL;
-
-      const response = await axios.get(`${baseUrl}/api/feature_extractor/performance/`);
+      const response = await api.get(`api/feature_extractor/performance/`);
       const data = response.data;
 
       res.status(200).json(data);
