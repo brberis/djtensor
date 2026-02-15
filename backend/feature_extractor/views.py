@@ -13,6 +13,7 @@ import os
 import time
 
 import redis
+from celery.result import AsyncResult
 from django.http import StreamingHttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from rest_framework.decorators import api_view, permission_classes
@@ -135,4 +136,56 @@ def retrain_session(request, session_id):
     return JsonResponse({
         "success": True,
         "message": f"Training session '{session.name}' queued for re-training",
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def stop_training(request, session_id):
+    """
+    Stop a running training session. Revokes the celery task and marks
+    the session as Failed.
+    """
+    try:
+        session = TrainingSession.objects.get(pk=session_id)
+    except TrainingSession.DoesNotExist:
+        return JsonResponse({"error": "Session not found"}, status=404)
+
+    if session.status not in ('Training', 'Pending'):
+        return JsonResponse(
+            {"error": f"Cannot stop session with status '{session.status}'"},
+            status=400,
+        )
+
+    # Revoke any active celery tasks for this session
+    from celery_app import app as celery_app
+    # Inspect active tasks across all workers
+    inspector = celery_app.control.inspect()
+    active = inspector.active() or {}
+    revoked = False
+    for worker_tasks in active.values():
+        for task in worker_tasks:
+            # Match tasks that have this session id as argument
+            if (task.get('name') == 'feature_extractor.tasks.train_model' and
+                    session_id in (task.get('args', []) or [])):
+                celery_app.control.revoke(task['id'], terminate=True, signal='SIGTERM')
+                revoked = True
+
+    # Also revoke any reserved (queued but not started) tasks
+    reserved = inspector.reserved() or {}
+    for worker_tasks in reserved.values():
+        for task in worker_tasks:
+            if (task.get('name') == 'feature_extractor.tasks.train_model' and
+                    session_id in (task.get('args', []) or [])):
+                celery_app.control.revoke(task['id'], terminate=True, signal='SIGTERM')
+                revoked = True
+
+    # Update session status regardless of whether we found the task
+    session.status = 'Failed'
+    session.save()
+
+    return JsonResponse({
+        "success": True,
+        "revoked": revoked,
+        "message": f"Training session '{session.name}' stopped",
     })

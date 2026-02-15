@@ -83,6 +83,10 @@ export default function Training() {
     }
   };
 
+  const getCsrfToken = () => {
+    return document.cookie.match(/csrftoken=([^;]*)/)?.[1] || '';
+  };
+
   const handleRetrain = async (sessionId) => {
     setOpenMenuId(null);
     try {
@@ -91,7 +95,7 @@ export default function Training() {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': document.cookie.match(/csrftoken=([^;]*)/)?.[1] || '',
+          'X-CSRFToken': getCsrfToken(),
         },
       });
       if (response.ok) {
@@ -104,12 +108,34 @@ export default function Training() {
     }
   };
 
+  const handleStop = async (sessionId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}/stop/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+      });
+      if (response.ok) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error('Stop failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Stop error:', error);
+    }
+  };
+
   const handleShowLogs = (sessionId) => {
     setOpenMenuId(null);
     setLogSessionId(sessionId);
   };
 
   const isTerminal = (status) => status === 'Completed' || status === 'Failed';
+  const isActive = (status) => status === 'Training' || status === 'Pending';
 
   return (
     <Layout incomingAction={incomingAction} action={'New Training Session'}>
@@ -204,20 +230,28 @@ export default function Training() {
                       {openMenuId === session.id && (
                         <div className="absolute right-0 z-10 mt-1 w-36 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none">
                           <div className="py-1">
-                            <button
-                              className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (isTerminal(session.status)) {
+                            {isTerminal(session.status) && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleRetrain(session.id);
-                                } else {
-                                  // For active sessions, "Train" does nothing special
-                                  setOpenMenuId(null);
-                                }
-                              }}
-                            >
-                              {isTerminal(session.status) ? 'Re-train' : 'Train'}
-                            </button>
+                                }}
+                              >
+                                Re-train
+                              </button>
+                            )}
+                            {isActive(session.status) && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStop(session.id);
+                                }}
+                              >
+                                Stop
+                              </button>
+                            )}
                             <button
                               className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                               onClick={(e) => {

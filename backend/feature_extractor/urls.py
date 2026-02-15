@@ -10,7 +10,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .api import TFModelViewSet, StudyViewSet, TrainingSessionViewSet, EpochViewSet, TestViewSet, PerformanceViewSet, TestResultViewSet
-from .views import stream_training_logs, retrain_session
+from .views import stream_training_logs, retrain_session, stop_training
 
 router = DefaultRouter()
 router.register(r'tfmodel', TFModelViewSet, 'tfmodels')
@@ -25,4 +25,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('trainingsession/<int:session_id>/logs/', stream_training_logs, name='training-logs'),
     path('trainingsession/<int:session_id>/retrain/', retrain_session, name='training-retrain'),
+    path('trainingsession/<int:session_id>/stop/', stop_training, name='training-stop'),
 ]

@@ -9,7 +9,7 @@
 
 import os
 from celery import Celery
-from celery.signals import after_setup_logger
+from celery.signals import after_setup_logger, after_setup_task_logger
 import logging
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app.settings')
@@ -21,13 +21,17 @@ app.autodiscover_tasks()
 app.log.setup_logging_subsystem(loglevel=logging.INFO)
 
 
-@after_setup_logger.connect
-def setup_redis_log_handler(logger, **kwargs):
+def _attach_redis_handler(logger, **kwargs):
     """
-    Attach the Redis log handler to the celery worker logger so all
-    training output is published to Redis for real-time streaming.
+    Attach the Redis log handler to a celery logger so all training
+    output is published to Redis for real-time streaming.
     """
     from log_handler import RedisLogHandler
+
+    # Avoid adding duplicate handlers on reconnect
+    for h in logger.handlers:
+        if isinstance(h, RedisLogHandler):
+            return
 
     redis_url = os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')
     handler = RedisLogHandler(redis_url=redis_url)
@@ -35,3 +39,15 @@ def setup_redis_log_handler(logger, **kwargs):
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+
+# Hook into both the main worker logger and the per-task logger
+# so logs from all concurrency modes (prefork children) are captured
+@after_setup_logger.connect
+def on_setup_logger(logger, **kwargs):
+    _attach_redis_handler(logger)
+
+
+@after_setup_task_logger.connect
+def on_setup_task_logger(logger, **kwargs):
+    _attach_redis_handler(logger)

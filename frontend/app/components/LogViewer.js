@@ -46,8 +46,6 @@ export default function LogViewer({ sessionId, onClose }) {
     };
 
     eventSource.onerror = () => {
-      // SSE auto-reconnects on error; if the stream ends normally
-      // the readyState will be CLOSED
       if (eventSource.readyState === EventSource.CLOSED) {
         setConnected(false);
       } else {
@@ -92,7 +90,7 @@ export default function LogViewer({ sessionId, onClose }) {
         </Transition.Child>
 
         <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div className="flex min-h-full items-end justify-center text-center sm:items-center sm:p-4">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -102,16 +100,11 @@ export default function LogViewer({ sessionId, onClose }) {
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-gray-950 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl">
+              <Dialog.Panel className="relative transform overflow-hidden bg-gray-950 text-left shadow-xl transition-all w-full sm:rounded-lg sm:my-8 sm:max-w-4xl">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                   <div className="flex items-center gap-3">
-                    <div className="flex gap-1.5">
-                      <span className="h-3 w-3 rounded-full bg-red-500" />
-                      <span className="h-3 w-3 rounded-full bg-yellow-500" />
-                      <span className="h-3 w-3 rounded-full bg-green-500" />
-                    </div>
-                    <Dialog.Title as="h3" className="text-sm font-medium text-gray-300">
+                    <Dialog.Title as="h3" className="text-sm font-semibold text-gray-200">
                       Training Logs
                     </Dialog.Title>
                     {connected && (
@@ -136,7 +129,7 @@ export default function LogViewer({ sessionId, onClose }) {
                 {/* Terminal body */}
                 <div
                   ref={terminalRef}
-                  className="h-[28rem] sm:h-[32rem] overflow-y-auto overflow-x-auto px-4 py-3 font-mono text-xs sm:text-sm leading-relaxed text-green-400 selection:bg-green-800 selection:text-green-200"
+                  className="h-[70vh] sm:h-[32rem] overflow-y-auto overflow-x-auto px-4 py-3 font-mono text-xs sm:text-sm leading-relaxed text-green-400 selection:bg-green-800 selection:text-green-200"
                 >
                   {lines.length === 0 && !error ? (
                     <div className="text-gray-500 animate-pulse">
@@ -152,7 +145,7 @@ export default function LogViewer({ sessionId, onClose }) {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between border-t border-gray-800 px-4 py-2">
+                <div className="flex items-center justify-between border-t border-gray-800 px-4 py-2.5">
                   <span className="text-xs text-gray-600">
                     {lines.length} lines
                   </span>
