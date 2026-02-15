@@ -10,7 +10,9 @@
  */
 
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import Layout from '../../components/Layout';
 import Spinner from '../../components/Spinner';
 import Tooltip from '../../components/Tooltip';
