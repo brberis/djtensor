@@ -41,11 +41,16 @@ def _attach_redis_handler(logger, **kwargs):
     logger.addHandler(handler)
 
 
-# Hook into both the main worker logger and the per-task logger
-# so logs from all concurrency modes (prefork children) are captured
 @after_setup_logger.connect
 def on_setup_logger(logger, **kwargs):
     _attach_redis_handler(logger)
+
+    # Also attach to the root logger so that task-level loggers
+    # (e.g. feature_extractor.tasks) propagate their output to Redis.
+    # Tasks use logging.getLogger(__name__) which sits outside the
+    # celery logger hierarchy, but propagation carries logs up to root.
+    root = logging.getLogger()
+    _attach_redis_handler(root)
 
 
 @after_setup_task_logger.connect
