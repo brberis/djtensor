@@ -141,7 +141,7 @@ export default function Training() {
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Date / Time</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Model</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Dataset</th>
-              <th scope="col" className="relative px-4 py-3.5">
+              <th scope="col" className="sticky right-0 bg-gray-50 px-4 py-3.5">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
@@ -159,7 +159,7 @@ export default function Training() {
               sessions.map((session) => (
                 <tr
                   key={session.id}
-                  className={session.status === 'Completed' ? 'cursor-pointer hover:bg-teal-50 transition-colors' : ''}
+                  className={session.status === 'Completed' ? 'group cursor-pointer hover:bg-teal-50 transition-colors' : 'group'}
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm">
                     <span className={getStatusBadgeClass(session.status)}>{session.status}</span>
@@ -188,7 +188,7 @@ export default function Training() {
                   >
                     {session.dataset.name}
                   </td>
-                  <td className="relative whitespace-nowrap px-4 py-4 text-right text-sm">
+                  <td className="sticky right-0 bg-white group-hover:bg-teal-50 whitespace-nowrap px-4 py-4 text-right text-sm">
                     <div className="relative inline-block text-left" ref={openMenuId === session.id ? menuRef : null}>
                       <button
                         type="button"
