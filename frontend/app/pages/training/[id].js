@@ -142,7 +142,7 @@ export default function TrainingDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Session details card */}
-        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
+        <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-x-auto">
           <div className="px-5 py-4 border-b border-gray-100">
             <h3 className="text-base font-semibold text-gray-900">Session Details</h3>
           </div>
@@ -210,7 +210,7 @@ export default function TrainingDetail() {
       <div className="mt-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Epoch Details</h2>
         {epochs.length ? (
-          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+          <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
