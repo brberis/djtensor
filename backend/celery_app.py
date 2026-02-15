@@ -9,7 +9,7 @@
 
 import os
 from celery import Celery
-from celery.signals import after_setup_logger, after_setup_task_logger
+from celery.signals import worker_process_init
 import logging
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app.settings')
@@ -21,14 +21,12 @@ app.autodiscover_tasks()
 app.log.setup_logging_subsystem(loglevel=logging.INFO)
 
 
-def _attach_redis_handler(logger, **kwargs):
+def _attach_redis_handler(logger):
     """
-    Attach the Redis log handler to a celery logger so all training
-    output is published to Redis for real-time streaming.
+    Attach the Redis log handler to a logger, skipping if already present.
     """
     from log_handler import RedisLogHandler
 
-    # Avoid adding duplicate handlers on reconnect
     for h in logger.handlers:
         if isinstance(h, RedisLogHandler):
             return
@@ -41,18 +39,12 @@ def _attach_redis_handler(logger, **kwargs):
     logger.addHandler(handler)
 
 
-@after_setup_logger.connect
-def on_setup_logger(logger, **kwargs):
-    _attach_redis_handler(logger)
-
-    # Also attach to the root logger so that task-level loggers
-    # (e.g. feature_extractor.tasks) propagate their output to Redis.
-    # Tasks use logging.getLogger(__name__) which sits outside the
-    # celery logger hierarchy, but propagation carries logs up to root.
+@worker_process_init.connect
+def on_worker_process_init(**kwargs):
+    """
+    Fires inside each forked worker child process. This is the only reliable
+    way to attach handlers in prefork mode since after_setup_logger only
+    fires in the main process and forked children don't inherit the handler.
+    """
     root = logging.getLogger()
     _attach_redis_handler(root)
-
-
-@after_setup_task_logger.connect
-def on_setup_task_logger(logger, **kwargs):
-    _attach_redis_handler(logger)
