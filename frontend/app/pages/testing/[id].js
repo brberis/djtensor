@@ -349,9 +349,15 @@ export default function TestDetail() {
             const isCorrect = result.prediction === result.true_label;
             return (
               <div key={result.id} className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
-                {result.grad_cam && (
-                  <img src={result.grad_cam} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50" />
-                )}
+                {result.grad_cam && (() => {
+                  const src = (result.grad_cam.startsWith("http") || result.grad_cam.startsWith("/"))
+                    ? result.grad_cam
+                    : "/media/" + result.grad_cam;
+
+                  return (
+                    <img src={src} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50" />
+                  );
+                })()}
                 <div className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${isCorrect ? 'bg-green-50 text-green-700 ring-green-600/20' : 'bg-red-50 text-red-700 ring-red-600/10'}`}>
