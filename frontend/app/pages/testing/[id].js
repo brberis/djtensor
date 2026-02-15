@@ -46,8 +46,8 @@ export default function TestDetail() {
 
   const normalizeMediaUrl = (value) => {
     if (!value) return null;
-    if (value.startsWith(http) || value.startsWith(/)) return value;
-    return /media/ + value;
+    if (value.startsWith("http") || value.startsWith("/")) return value;
+    return "/media/" + value;
   };
 
   const totalPages = Math.max(1, Math.ceil((filteredResults?.length || 0) / PAGE_SIZE));
