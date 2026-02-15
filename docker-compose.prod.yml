@@ -19,6 +19,7 @@ services:
                     python manage.py runserver 0.0.0.0:8000" 
     volumes:
       - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles
       # - media_volume:/usr/src/app/mediafiles
       - ./backend/:/usr/src/app/
     expose:
@@ -75,7 +76,8 @@ services:
 
     volumes:
       - ./backend/:/usr/src/app/
-      - static_volume:/usr/src/app/staticfiles  
+      - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles  
       # - media_volume:/usr/src/app/mediafiles 
     deploy:
       resources:
@@ -116,6 +118,7 @@ services:
     build: ./nginx
     volumes:
       - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles
       # - media_volume:/usr/src/app/mediafiles
     ports:
       - "80:80"
