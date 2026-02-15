@@ -93,7 +93,17 @@ class TestSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+
 class TestResultSerializer(serializers.ModelSerializer):
+    grad_cam = serializers.SerializerMethodField()
+
+    def get_grad_cam(self, obj):
+        if not obj.grad_cam:
+            return None
+        # Cache-bust to avoid stale CDN 404s after deployment
+        return f"/media/{obj.grad_cam.name}?v={obj.id}"
+
     class Meta:
         model = TestResult
         depth = 2
