@@ -118,6 +118,13 @@ class ImageViewSet(viewsets.ModelViewSet):
     filterset_fields = ['dataset', 'label']
     pagination_class = ImagePagination
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(image__icontains=search)
+        return qs
+
     def create(self, request, *args, **kwargs):
         try:
             dataset = Dataset.objects.get(id=request.data.get('dataset'))
