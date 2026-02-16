@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         if (!id) {
           return res.status(400).json({ message: 'Missing ID for deletion' });
         }
-        await api.get(url);
+        await api.delete(url);
         res.status(204).end();  
       } catch (error) {
         console.error('Failed to delete training session:', error);

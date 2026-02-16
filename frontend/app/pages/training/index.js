@@ -132,6 +132,27 @@ export default function Training() {
     }
   };
 
+
+  const handleDelete = async (sessionId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          'X-CSRFToken': getCsrfToken(),
+        },
+      });
+      if (response.ok) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error('Delete failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+    }
+  };
+
   const handleShowLogs = (sessionId) => {
     setOpenMenuId(null);
     setLogSessionId(sessionId);
@@ -164,16 +185,19 @@ export default function Training() {
 
       <ConfirmDialog
         open={!!confirmAction}
-        title={confirmAction?.type === "retrain" ? "Re-train this session?" : "Confirm action"}
+        title={confirmAction?.type === "retrain" ? "Re-train this session?" : "Delete this training session?"}
         description={confirmAction?.type === "retrain"
-          ? `This will start a new training run for "${confirmAction.name}".`
-          : ""}
-        confirmLabel={confirmAction?.type === "retrain" ? "Re-train" : "Confirm"}
+          ? `This will start a new training run for "${confirmAction?.name}".`
+          : `This will permanently delete "${confirmAction?.name}" and all associated data. This cannot be undone.`}
+        confirmLabel={confirmAction?.type === "retrain" ? "Re-train" : "Delete"}
+        confirmTone={confirmAction?.type === "delete" ? "danger" : "primary"}
+        requireText={confirmAction?.type === "delete" ? confirmAction?.name : undefined}
         onConfirm={() => {
           const action = confirmAction;
           setConfirmAction(null);
           if (!action) return;
           if (action.type === "retrain") handleRetrain(action.id);
+          if (action.type === "delete") handleDelete(action.id);
         }}
         onClose={() => setConfirmAction(null)}
       />
@@ -258,7 +282,7 @@ export default function Training() {
                                 className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setConfirmAction({ type: retrain, id: session.id, name: session.name });
+                                  setConfirmAction({ type: "retrain", id: session.id, name: session.name });
                                 }}
                               >
                                 Re-train
@@ -284,6 +308,18 @@ export default function Training() {
                             >
                               Logs
                             </button>
+                            {isTerminal(session.status) && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuId(null);
+                                  setConfirmAction({ type: "delete", id: session.id, name: session.name });
+                                }}
+                              >
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}

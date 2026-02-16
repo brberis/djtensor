@@ -379,6 +379,7 @@ export default function DatasetDetail() {
           ? 'This will remove every image in this class. This cannot be undone.'
           : `This will remove ${confirmAction?.count || 0} selected image(s). This cannot be undone.`}
         confirmLabel={confirmAction?.type === 'delete-all' ? 'Delete all' : 'Delete selected'}
+        requireText={confirmAction?.type === 'delete-all' ? confirmAction?.labelName : undefined}
         confirmTone="danger"
         onConfirm={() => {
           const action = confirmAction;
@@ -633,7 +634,7 @@ export default function DatasetDetail() {
                         </button>
                         <button
                           onClick={() => {
-                            setConfirmAction({ type: 'delete-all', labelId: label.id });
+                            setConfirmAction({ type: 'delete-all', labelId: label.id, labelName: label.name });
                           }}
                           disabled={datasetLocked || currentImages.length === 0}
                           title={datasetLocked ? lockTooltip : 'Delete all in class'}

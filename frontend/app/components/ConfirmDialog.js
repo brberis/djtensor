@@ -7,9 +7,13 @@
  *
  * File: ConfirmDialog.js
  * Copyright (c) 2024
+ *
+ * Reusable confirmation dialog. Supports an optional type-to-confirm
+ * pattern: pass requireText with the exact string the user must type
+ * before the confirm button enables.
  */
 
-import { Fragment } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 
 export default function ConfirmDialog({
@@ -18,13 +22,25 @@ export default function ConfirmDialog({
   description,
   confirmLabel,
   confirmTone = 'primary',
+  requireText,
+  requireTextLabel,
   onConfirm,
   onClose,
 }) {
+  const [typed, setTyped] = useState('');
+
+  // Reset typed text whenever dialog opens or requireText changes
+  useEffect(() => {
+    if (open) setTyped('');
+  }, [open, requireText]);
+
+  const needsTyping = Boolean(requireText);
+  const typingMatch = !needsTyping || typed === requireText;
+
   const confirmClasses =
     confirmTone === 'danger'
-      ? 'bg-red-600 hover:bg-red-500 focus-visible:outline-red-600'
-      : 'bg-teal-600 hover:bg-teal-500 focus-visible:outline-teal-600';
+      ? 'bg-red-600 hover:bg-red-500 focus-visible:outline-red-600 disabled:bg-red-300 disabled:cursor-not-allowed'
+      : 'bg-teal-600 hover:bg-teal-500 focus-visible:outline-teal-600 disabled:bg-teal-300 disabled:cursor-not-allowed';
 
   return (
     <Transition.Root show={Boolean(open)} as={Fragment}>
@@ -58,9 +74,26 @@ export default function ConfirmDialog({
                 </Dialog.Title>
                 {description && <p className="mt-2 text-sm text-gray-500">{description}</p>}
 
+                {needsTyping && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700">
+                      {requireTextLabel || <>Type <span className="font-semibold text-gray-900">{requireText}</span> to confirm</>}
+                    </label>
+                    <input
+                      type="text"
+                      value={typed}
+                      onChange={(e) => setTyped(e.target.value)}
+                      className="mt-1.5 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-teal-600 sm:text-sm"
+                      placeholder={requireText}
+                      autoFocus
+                    />
+                  </div>
+                )}
+
                 <div className="mt-5 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
                   <button
                     type="button"
+                    disabled={!typingMatch}
                     className={`inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto ${confirmClasses}`}
                     onClick={onConfirm}
                   >
