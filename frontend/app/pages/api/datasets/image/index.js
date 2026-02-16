@@ -24,10 +24,10 @@ export const config = {
 export default async function handler(req, res) {
   const api = createApiClient(req);
   if (req.method === 'GET') {
-    const { dataset, label, page } = req.query;
+    const { dataset, label, page, search } = req.query;
 
     try {
-      const response = await api.get(`api/datasets/image/`, { params: { dataset, label, page } });
+      const response = await api.get(`api/datasets/image/`, { params: { dataset, label, page, search } });
       res.status(200).json(response.data);
     } catch (error) {
       console.error('Failed to fetch images:', error);

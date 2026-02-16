@@ -86,6 +86,32 @@ export default function DatasetDetail() {
     }
   }, [id]);
 
+
+
+  const fetchGlobalSearch = useCallback(async (term, pageNumber = 1, append = false) => {
+    if (!id || !term?.trim()) {
+      setSearchResults([]);
+      setSearchHasMore(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const query = encodeURIComponent(term.trim());
+      const res = await fetch(`/api/datasets/image/?dataset=${id}&search=${query}&page=${pageNumber}`);
+      const data = await res.json();
+      const nextResults = data.results || [];
+
+      setSearchResults((prev) => (append ? [...prev, ...nextResults] : nextResults));
+      setSearchHasMore(Boolean(data.next));
+      setSearchPage(pageNumber);
+    } catch (error) {
+      console.error('Failed to search images:', error);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [id]);
+
   const fetchAllData = useCallback(async () => {
     if (!id) return;
 
@@ -139,6 +165,24 @@ export default function DatasetDetail() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+
+
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) {
+      setSearchResults([]);
+      setSearchHasMore(false);
+      setSearchPage(1);
+      return;
+    }
+
+    const debounceHandle = setTimeout(() => {
+      fetchGlobalSearch(term, 1, false);
+    }, 300);
+
+    return () => clearTimeout(debounceHandle);
+  }, [searchTerm, fetchGlobalSearch]);
 
   const handleUpload = async (files, labelId, datasetId) => {
     if (datasetLocked) return;
@@ -456,6 +500,75 @@ export default function DatasetDetail() {
             <dd className="mt-1 text-sm text-gray-900">{labels.length} categories</dd>
           </div>
         </dl>
+      </div>
+
+
+
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
+        <div className="sm:flex sm:items-end sm:justify-between gap-3">
+          <div className="sm:w-2/3">
+            <label className="block text-sm font-medium text-gray-700">Search images by file name</label>
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className={`${theme.classes.input} mt-1.5`}
+              placeholder="Example: shark_tooth_2026"
+            />
+            <p className="mt-1 text-xs text-gray-500">Supports partial names and searches across all classes.</p>
+          </div>
+          {searchTerm && (
+            <button className={theme.classes.btnSecondary} onClick={() => setSearchTerm()}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        {searchTerm && (
+          <div className="mt-4">
+            {searchLoading && searchResults.length === 0 ? (
+              <p className="text-sm text-gray-500">Searching...</p>
+            ) : searchResults.length === 0 ? (
+              <p className="text-sm text-gray-500">No images match this file name.</p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-gray-600">{searchResults.length} result(s)</p>
+                <div className="flex flex-wrap gap-3">
+                  {searchResults.map((image) => {
+                    const label = labels.find((item) => item.id === image.label);
+                    return (
+                      <button
+                        key={`search-${image.id}`}
+                        type="button"
+                        className="relative group"
+                        onClick={() => setActiveImage(image)}
+                      >
+                        <img
+                          src={image.image}
+                          alt={label?.name || 'search result'}
+                          className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200 hover:ring-teal-400"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent rounded-b-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-[10px] text-white truncate">{image.file_name || image.image.split('/').pop()}</p>
+                          <p className="text-[10px] text-gray-200 truncate">{label?.name || 'Unknown class'}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {searchHasMore && (
+                  <button
+                    className="mt-3 text-sm font-medium text-teal-600 hover:text-teal-500"
+                    onClick={() => fetchGlobalSearch(searchTerm, searchPage + 1, true)}
+                    disabled={searchLoading}
+                  >
+                    {searchLoading ? 'Loading...' : 'Load more results...'}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="space-y-6">

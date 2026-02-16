@@ -23,6 +23,7 @@ from feature_extractor.models import Study
 from .models import Dataset, Image, Label
 from .serializers import DatasetSerializer, ImageSerializer, LabelSerializer
 from .tasks import create_dataset_archive
+from .image_resize import resize_to_dataset, get_target_resolution
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +127,12 @@ class ImageViewSet(viewsets.ModelViewSet):
             label = Label.objects.get(id=request.data.get('label'))
             images = request.FILES.getlist('image')
 
+            target_resolution = get_target_resolution(dataset)
             new_images = []
             with transaction.atomic():
                 for image in images:
-                    img_instance = Image.objects.create(dataset=dataset, label=label, image=image)
+                    resized_image, _meta = resize_to_dataset(image, target_resolution)
+                    img_instance = Image.objects.create(dataset=dataset, label=label, image=resized_image)
                     new_images.append(img_instance)
 
                 create_dataset_archive.delay(dataset.id)
