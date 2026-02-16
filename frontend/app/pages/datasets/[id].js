@@ -57,6 +57,17 @@ export default function DatasetDetail() {
   const { id } = router.query;
 
   const datasetLocked = Boolean(dataset?.is_locked);
+  const lockDetails = dataset?.lock_details || [];
+  const lockTooltip = datasetLocked
+    ? [
+        'Locked by completed sessions:',
+        ...lockDetails.map((item) => {
+          const date = item.date ? new Date(item.date).toLocaleString() : 'unknown date';
+          const type = item.type === 'training' ? 'Training' : 'Testing';
+          return `- ${type}: ${item.name} (${date})`;
+        }),
+      ].join('\n')
+    : '';
 
   const fetchImages = useCallback(async (labelId, pageNumber) => {
     try {
@@ -398,16 +409,31 @@ export default function DatasetDetail() {
             <h1 className="text-2xl font-bold text-gray-900">{dataset.name}</h1>
             {dataset.description && <p className="mt-1 text-sm text-gray-500">{dataset.description}</p>}
             {datasetLocked && (
-              <p className="mt-2 inline-flex rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/30">
-                Locked - used in completed training/testing session
-              </p>
+              <div className="mt-2">
+                <p
+                  className="inline-flex rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/30"
+                  title={lockTooltip}
+                >
+                  Locked - used in completed sessions
+                </p>
+                {lockDetails.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs text-amber-800">
+                    {lockDetails.slice(0, 3).map((item, idx) => (
+                      <li key={`${item.type}-${item.name}-${idx}`}>
+                        {item.type === 'training' ? 'Training' : 'Testing'}: {item.name}
+                        {item.date ? ` - ${new Date(item.date).toLocaleString()}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
           <button
             onClick={() => setShowBulkUpload(true)}
             className={`${datasetLocked ? theme.classes.btnDisabled : theme.classes.btnPrimary} flex items-center gap-2`}
             disabled={datasetLocked}
-            title={datasetLocked ? 'Dataset is locked and cannot be modified' : 'Upload images in bulk'}
+            title={datasetLocked ? lockTooltip : 'Upload images in bulk'}
           >
             <CloudArrowUpIcon className="h-5 w-5" />
             Bulk Upload
@@ -459,6 +485,7 @@ export default function DatasetDetail() {
                         <button
                           onClick={() => triggerAddImages(label.id)}
                           disabled={datasetLocked}
+                          title={datasetLocked ? lockTooltip : 'Add images'}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
                         >
                           <ArrowUpTrayIcon className="h-4 w-4" /> Add images
@@ -470,6 +497,7 @@ export default function DatasetDetail() {
                             setOpenLabelMenuId(null);
                           }}
                           disabled={datasetLocked}
+                          title={datasetLocked ? lockTooltip : 'Edit class name'}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
                         >
                           <PencilSquareIcon className="h-4 w-4" /> Edit class name
@@ -480,6 +508,7 @@ export default function DatasetDetail() {
                             setOpenLabelMenuId(null);
                           }}
                           disabled={datasetLocked}
+                          title={datasetLocked ? lockTooltip : (selectionMode ? 'Cancel selection' : 'Select images to remove')}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
                         >
                           <TrashIcon className="h-4 w-4" /> {selectionMode ? 'Cancel selection' : 'Select images to remove'}
@@ -489,6 +518,7 @@ export default function DatasetDetail() {
                             setConfirmAction({ type: 'delete-all', labelId: label.id });
                           }}
                           disabled={datasetLocked || currentImages.length === 0}
+                          title={datasetLocked ? lockTooltip : 'Delete all in class'}
                           className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-gray-400"
                         >
                           <TrashIcon className="h-4 w-4" /> Delete all in class

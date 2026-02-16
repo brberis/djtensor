@@ -13,6 +13,7 @@ from .models import Dataset, Image, Label
 
 class DatasetSerializer(serializers.ModelSerializer):
     is_locked = serializers.SerializerMethodField()
+    lock_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Dataset
@@ -23,6 +24,31 @@ class DatasetSerializer(serializers.ModelSerializer):
             obj.training_sessions.filter(status='Completed').exists()
             or obj.tests.filter(status='Completed').exists()
         )
+
+    def get_lock_details(self, obj):
+        details = []
+
+        completed_training = obj.training_sessions.filter(status='Completed').order_by('-updated_at')
+        for session in completed_training[:3]:
+            details.append({
+                'type': 'training',
+                'name': session.name,
+                'date': session.updated_at.isoformat() if session.updated_at else None,
+            })
+
+        completed_tests = obj.tests.filter(status='Completed').order_by('-updated_at')
+        for test in completed_tests[:3]:
+            details.append({
+                'type': 'testing',
+                'name': test.name,
+                'date': test.updated_at.isoformat() if test.updated_at else None,
+            })
+
+        return sorted(
+            details,
+            key=lambda item: item.get('date') or '',
+            reverse=True,
+        )[:5]
 
 
 class ImageSerializer(serializers.ModelSerializer):
