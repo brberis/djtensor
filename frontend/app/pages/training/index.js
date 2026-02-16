@@ -14,6 +14,7 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddSession from '../../components/addTrainingSession';
 import LogViewer from '../../components/LogViewer';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
 import { CpuChipIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';

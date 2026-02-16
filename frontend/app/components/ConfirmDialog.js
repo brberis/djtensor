@@ -9,25 +9,25 @@
  * Copyright (c) 2024
  */
 
-import { Fragment } from react;
-import { Dialog, Transition } from @headlessui/react;
+import { Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 
 export default function ConfirmDialog({
   open,
   title,
   description,
   confirmLabel,
-  confirmTone = primary,
+  confirmTone = 'primary',
   onConfirm,
   onClose,
 }) {
   const confirmClasses =
-    confirmTone === danger
-      ? bg-red-600 hover:bg-red-500 focus-visible:outline-red-600
-      : bg-teal-600 hover:bg-teal-500 focus-visible:outline-teal-600;
+    confirmTone === 'danger'
+      ? 'bg-red-600 hover:bg-red-500 focus-visible:outline-red-600'
+      : 'bg-teal-600 hover:bg-teal-500 focus-visible:outline-teal-600';
 
   return (
-    <Transition.Root show={open} as={Fragment}>
+    <Transition.Root show={Boolean(open)} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
         <Transition.Child
           as={Fragment}
@@ -52,17 +52,11 @@ export default function ConfirmDialog({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                <div>
-                  <Dialog.Title as="h3" className="text-base font-semibold text-gray-900">
-                    {title}
-                  </Dialog.Title>
-                  {description && (
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-500">{description}</p>
-                    </div>
-                  )}
-                </div>
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:w-full sm:max-w-lg sm:p-6">
+                <Dialog.Title as="h3" className="text-base font-semibold text-gray-900">
+                  {title}
+                </Dialog.Title>
+                {description && <p className="mt-2 text-sm text-gray-500">{description}</p>}
 
                 <div className="mt-5 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
                   <button

@@ -5,16 +5,14 @@
  * For academic use only. Commercial use is prohibited without prior written permission.
  * Contact: cristobal@barberis.com
  *
- * File: retest.js
+ * File: bulk-delete.js
  * Copyright (c) 2024
  */
 
-import { createApiClient } from '../../../../../utils/apiProxy';
+import { createApiClient } from '../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
   const api = createApiClient(req);
-  const { id } = req.query;
-  const url = `api/feature_extractor/tests/${id}/retest/`;
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -22,12 +20,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await api.post(url, {});
-    return res.status(response.status).json(response.data);
+    const response = await api.post('api/datasets/image/bulk_delete/', req.body || {});
+    return res.status(200).json(response.data);
   } catch (error) {
-    console.error('Failed to re-test:', error);
-    return res.status(error?.response?.status || 500).json({
-      message: error?.response?.data?.error || 'Failed to re-test',
-    });
+    console.error('Bulk delete failed:', error);
+    const status = error?.response?.status || 500;
+    const message = error?.response?.data?.error || 'Bulk delete failed';
+    return res.status(status).json({ message });
   }
 }
