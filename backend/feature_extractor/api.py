@@ -11,6 +11,7 @@ import random
 import string
 from rest_framework import viewsets, serializers, status
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from django.db import transaction
 from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult
 from datasets.models import Dataset, Image
@@ -19,7 +20,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from random import sample
 from datasets.tasks import create_dataset_archive
 from celery import chain
-from .tasks import train_model
+from .tasks import train_model, test_images
 
 
 
@@ -98,6 +99,21 @@ class EpochViewSet(viewsets.ModelViewSet):
 class TestViewSet(viewsets.ModelViewSet):
     queryset = Test.objects.all()
     serializer_class = TestSerializer
+
+
+    @action(detail=True, methods=["post"])
+    def retest(self, request, pk=None):
+        # Re-run a test against the same dataset and training session.
+        # Delete existing results so the operation is idempotent.
+        test_instance = self.get_object()
+
+        TestResult.objects.filter(test=test_instance).delete()
+
+        test_instance.status = "Pending"
+        test_instance.save(update_fields=["status", "updated_at"])
+
+        test_images.delay(test_instance.id, test_instance.training_session.model.resolution)
+        return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
 
     def create(self, request, *args, **kwargs):
         # Print the request object

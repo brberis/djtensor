@@ -22,7 +22,21 @@ export default function Testing() {
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddTest, setIsOpenAddTest] = useState(false);
   const [refresh, setRefresh] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const menuRef = useRef(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const router = useRouter();
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener(mousedown, handleClickOutside);
+    return () => document.removeEventListener(mousedown, handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchTests = async () => {
@@ -67,6 +81,54 @@ export default function Testing() {
     setRefresh((prevRefresh) => !prevRefresh);
   };
 
+
+
+  const getCsrfToken = () => {
+    return document.cookie.match(/csrftoken=([^;]*)/)?.[1] || ;
+  };
+
+  const handleRetest = async (testId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/tests/${testId}/retest/`, {
+        method: POST,
+        credentials: include,
+        headers: {
+          Content-Type: application/json,
+          X-CSRFToken: getCsrfToken(),
+        },
+      });
+      if (response.ok) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error(Re-test failed:, await response.text());
+      }
+    } catch (error) {
+      console.error(Re-test error:, error);
+    }
+  };
+
+  const handleDelete = async (testId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/tests/${testId}`, {
+        method: DELETE,
+        credentials: include,
+        headers: {
+          Content-Type: application/json,
+          X-CSRFToken: getCsrfToken(),
+        },
+      });
+      if (response.status === 204) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error(Delete failed:, await response.text());
+      }
+    } catch (error) {
+      console.error(Delete error:, error);
+    }
+  };
+
   const incomingAction = (action) => {
     if (action === 'New Test') {
       setIsOpenAddTest(true);
@@ -87,6 +149,30 @@ export default function Testing() {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.type === "delete"
+          ? "Delete this test?"
+          : confirmAction?.type === "retest"
+            ? "Re-test this model?"
+            : "Confirm action"}
+        description={confirmAction?.type === "delete"
+          ? `This will permanently delete the test and its results: "${confirmAction.name}".`
+          : confirmAction?.type === "retest"
+            ? `This will re-run the test and replace existing results for "${confirmAction.name}".`
+            : ""}
+        confirmLabel={confirmAction?.type === "delete" ? "Delete" : "Re-test"}
+        confirmTone={confirmAction?.type === "delete" ? "danger" : "primary"}
+        onConfirm={() => {
+          const action = confirmAction;
+          setConfirmAction(null);
+          if (!action) return;
+          if (action.type === "delete") handleDelete(action.id);
+          if (action.type === "retest") handleRetest(action.id);
+        }}
+        onClose={() => setConfirmAction(null)}
+      />
+
       {/* Tests table */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
@@ -95,14 +181,17 @@ export default function Testing() {
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Test Name</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Date / Time</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+              <th scope="col" className="sticky right-0 bg-gray-50 px-4 py-3.5">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {isLoading ? (
-              <TableSpinnerRow colSpan={3} />
+              <TableSpinnerRow colSpan={4} />
             ) : tests.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-12 text-center">
+                <td colSpan={4} className="px-4 py-12 text-center">
                   <ClipboardDocumentCheckIcon className="mx-auto h-12 w-12 text-gray-300" />
                   <h3 className="mt-2 text-sm font-semibold text-gray-900">No tests yet</h3>
                   <p className="mt-1 text-sm text-gray-500">Create a new test to evaluate your models.</p>
@@ -113,7 +202,7 @@ export default function Testing() {
                 <tr
                   key={test.id}
                   onClick={() => handleTestClick(test)}
-                  className={test.status === 'Completed' ? 'cursor-pointer hover:bg-teal-50 transition-colors' : ''}
+                  className={test.status === 'Completed' ? 'group cursor-pointer hover:bg-teal-50 transition-colors' : 'group'}
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{test.name}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">
@@ -121,6 +210,48 @@ export default function Testing() {
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm">
                     <span className={getStatusBadgeClass(test.status)}>{test.status}</span>
+                  </td>
+
+                  <td className="sticky right-0 bg-white group-hover:bg-teal-50 whitespace-nowrap px-4 py-4 text-right text-sm">
+                    <div className="relative inline-block text-left" ref={openMenuId === test.id ? menuRef : null}>
+                      <button
+                        type="button"
+                        className="rounded-full p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(openMenuId === test.id ? null : test.id);
+                        }}
+                      >
+                        <EllipsisVerticalIcon className="h-5 w-5" />
+                      </button>
+
+                      {openMenuId === test.id && (
+                        <div className="absolute right-0 z-10 mt-1 w-40 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none">
+                          <div className="py-1">
+                            {(test.status === Completed || test.status === Failed) && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setConfirmAction({ type: retest, id: test.id, name: test.name });
+                                }}
+                              >
+                                Re-test
+                              </button>
+                            )}
+                            <button
+                              className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmAction({ type: delete, id: test.id, name: test.name });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

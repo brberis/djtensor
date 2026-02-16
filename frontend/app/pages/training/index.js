@@ -25,6 +25,7 @@ export default function Training() {
   const [refresh, setRefresh] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [logSessionId, setLogSessionId] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
   const menuRef = useRef(null);
   const router = useRouter();
 
@@ -158,6 +159,24 @@ export default function Training() {
         </div>
       </div>
 
+
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.type === "retrain" ? "Re-train this session?" : "Confirm action"}
+        description={confirmAction?.type === "retrain"
+          ? `This will start a new training run for "${confirmAction.name}".`
+          : ""}
+        confirmLabel={confirmAction?.type === "retrain" ? "Re-train" : "Confirm"}
+        onConfirm={() => {
+          const action = confirmAction;
+          setConfirmAction(null);
+          if (!action) return;
+          if (action.type === "retrain") handleRetrain(action.id);
+        }}
+        onClose={() => setConfirmAction(null)}
+      />
+
       {/* Sessions table */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
@@ -238,7 +257,7 @@ export default function Training() {
                                 className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleRetrain(session.id);
+                                  setConfirmAction({ type: retrain, id: session.id, name: session.name });
                                 }}
                               >
                                 Re-train
