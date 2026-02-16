@@ -12,10 +12,11 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState, useCallback } from 'react';
 import Layout from '../../components/Layout';
+import BulkUploadDialog from '../../components/BulkUploadDialog';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
 import theme from '../../theme';
-import { ArrowUpTrayIcon, PhotoIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, PhotoIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 
 export default function DatasetDetail() {
   const [dataset, setDataset] = useState(null);
@@ -24,41 +25,48 @@ export default function DatasetDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState({});
   const [hasMore, setHasMore] = useState({});
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const router = useRouter();
   const { id } = router.query;
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!id) return;
+  const fetchAllData = useCallback(async () => {
+    if (!id) return;
 
-      setIsLoading(true);
-      try {
-        const [datasetData, labelsData] = await Promise.all([
-          fetch(`/api/datasets/dataset/${id}`).then(res => res.json()),
-          fetch(`/api/datasets/label/?datasets__id=${id}`).then(res => res.json())
-        ]);
+    setIsLoading(true);
+    try {
+      const [datasetData, labelsData] = await Promise.all([
+        fetch(`/api/datasets/dataset/${id}`).then(res => res.json()),
+        fetch(`/api/datasets/label/?datasets__id=${id}`).then(res => res.json())
+      ]);
 
-        setDataset(datasetData);
-        setLabels(labelsData);
+      setDataset(datasetData);
+      setLabels(labelsData);
 
-        const initialPages = {};
-        const initialHasMore = {};
-        labelsData.forEach(label => {
-          initialPages[label.id] = 1;
-          initialHasMore[label.id] = true;
-          fetchImages(label.id, 1);
-        });
-        setPage(initialPages);
-        setHasMore(initialHasMore);
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
-      } finally {
-        setIsLoading(false);
+      const initialPages = {};
+      const initialHasMore = {};
+      const initialImages = {};
+      labelsData.forEach(label => {
+        initialPages[label.id] = 1;
+        initialHasMore[label.id] = true;
+      });
+      setPage(initialPages);
+      setHasMore(initialHasMore);
+      setImages({});
+
+      // Fetch first page of images for each label
+      for (const label of labelsData) {
+        fetchImages(label.id, 1);
       }
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setIsLoading(false);
     }
-
-    fetchData();
   }, [id]);
+
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
 
   const fetchImages = useCallback(async (labelId, page) => {
     try {
@@ -102,6 +110,12 @@ export default function DatasetDetail() {
     }
   };
 
+  const handleBulkUploadClose = () => {
+    setShowBulkUpload(false);
+    // Refresh data to show newly uploaded images
+    fetchAllData();
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -124,6 +138,16 @@ export default function DatasetDetail() {
 
   return (
     <Layout>
+      {/* Bulk upload dialog */}
+      {showBulkUpload && (
+        <BulkUploadDialog
+          isOpen={showBulkUpload}
+          onClose={handleBulkUploadClose}
+          datasetId={dataset.id}
+          labels={labels}
+        />
+      )}
+
       {/* Page header */}
       <div className="mb-6">
         <div className="flex items-center gap-x-3">
@@ -136,10 +160,21 @@ export default function DatasetDetail() {
           <span className="text-gray-300">/</span>
           <span className="text-sm font-medium text-gray-900">{dataset.name}</span>
         </div>
-        <h1 className="mt-3 text-2xl font-bold text-gray-900">{dataset.name}</h1>
-        {dataset.description && (
-          <p className="mt-1 text-sm text-gray-500">{dataset.description}</p>
-        )}
+        <div className="mt-3 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{dataset.name}</h1>
+            {dataset.description && (
+              <p className="mt-1 text-sm text-gray-500">{dataset.description}</p>
+            )}
+          </div>
+          <button
+            onClick={() => setShowBulkUpload(true)}
+            className={`${theme.classes.btnPrimary} flex items-center gap-2`}
+          >
+            <CloudArrowUpIcon className="h-5 w-5" />
+            Bulk Upload
+          </button>
+        </div>
       </div>
 
       {/* Dataset info card */}

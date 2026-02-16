@@ -50,6 +50,8 @@ class Image(models.Model):
     dataset = models.ForeignKey(Dataset, related_name='images', on_delete=models.SET_NULL, null=True, blank=True)
     image = models.ImageField(upload_to=get_image_upload_path)
     label = models.ForeignKey(Label, related_name='images', on_delete=models.CASCADE)
+    # SHA-256 hash for deduplication. Nullable so existing rows are not broken.
+    file_hash = models.CharField(max_length=64, blank=True, null=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     used_for_training = models.BooleanField(default=False)
