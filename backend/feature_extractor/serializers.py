@@ -80,6 +80,26 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return super().create(validated_data)
 
+
+class DatasetLightSerializer(serializers.ModelSerializer):
+    """Minimal dataset info for list views - skips lock checks."""
+    class Meta:
+        model = Dataset
+        fields = ['id', 'name', 'resolution', 'base', 'for_testing']
+
+
+class TrainingSessionListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for the training list view. Skips epochs
+    and dataset lock checks to avoid extra queries per row."""
+    model = TFModelSerializer(read_only=True)
+    dataset = DatasetLightSerializer(read_only=True)
+    study = StudySerializer(read_only=True)
+
+    class Meta:
+        model = TrainingSession
+        fields = ['id', 'study', 'name', 'notes', 'status', 'model',
+                  'dataset', 'model_path', 'created_at', 'updated_at']
+
 class TestSerializer(serializers.ModelSerializer):
     training_session_id = serializers.PrimaryKeyRelatedField(
         queryset=TrainingSession.objects.all(),
@@ -93,6 +113,16 @@ class TestSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
+
+
+class TestListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for the test list view."""
+    training_session = TrainingSessionListSerializer(read_only=True)
+
+    class Meta:
+        model = Test
+        fields = '__all__'
 
 
 class TestResultSerializer(serializers.ModelSerializer):

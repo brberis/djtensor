@@ -15,7 +15,7 @@ from rest_framework.decorators import action
 from django.db import transaction
 from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult
 from datasets.models import Dataset, Image
-from .serializers import TFModelSerializer, StudySerializer, TrainingSessionSerializer, EpochSerializer, TestSerializer, TestResultSerializer
+from .serializers import TFModelSerializer, StudySerializer, TrainingSessionSerializer, TrainingSessionListSerializer, EpochSerializer, TestSerializer, TestListSerializer, TestResultSerializer
 from django_filters.rest_framework import DjangoFilterBackend
 from random import sample
 from datasets.tasks import create_dataset_archive
@@ -33,8 +33,13 @@ class StudyViewSet(viewsets.ModelViewSet):
     serializer_class = StudySerializer
 
 class TrainingSessionViewSet(viewsets.ModelViewSet):
-    queryset = TrainingSession.objects.all()
+    queryset = TrainingSession.objects.select_related('model', 'dataset', 'study').prefetch_related('epochs').all()
     serializer_class = TrainingSessionSerializer
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return TrainingSessionListSerializer
+        return TrainingSessionSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status']
 
@@ -97,8 +102,18 @@ class EpochViewSet(viewsets.ModelViewSet):
     filterset_fields = ['training_session']
 
 class TestViewSet(viewsets.ModelViewSet):
-    queryset = Test.objects.all()
+    queryset = Test.objects.select_related(
+        'training_session',
+        'training_session__model',
+        'training_session__dataset',
+        'training_session__study',
+    ).prefetch_related('training_session__epochs').all()
     serializer_class = TestSerializer
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return TestListSerializer
+        return TestSerializer
 
 
     @action(detail=True, methods=["post"])
@@ -131,7 +146,7 @@ class TestViewSet(viewsets.ModelViewSet):
 
 
 class TestResultViewSet(viewsets.ModelViewSet):
-    queryset = TestResult.objects.all()
+    queryset = TestResult.objects.select_related('test', 'label').all()
     serializer_class = TestResultSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['test__id'] 
@@ -141,4 +156,4 @@ class PerformanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         last_session = TrainingSession.objects.filter(status='Completed').last()
-        return TrainingSession.objects.filter(id=last_session.id) if last_session else TrainingSession.objects.none()
+        return TrainingSession.objects.select_related('model', 'dataset', 'study').prefetch_related('epochs').filter(id=last_session.id) if last_session else TrainingSession.objects.none()
