@@ -22,11 +22,11 @@ import {
   ArrowUpTrayIcon,
   PhotoIcon,
   CloudArrowUpIcon,
-  EllipsisVerticalIcon,
   PencilSquareIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return 'Unknown';
@@ -596,7 +596,7 @@ export default function DatasetDetail() {
                     onClick={() => setOpenLabelMenuId(openLabelMenuId === label.id ? null : label.id)}
                     className="rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
                   >
-                    <EllipsisVerticalIcon className="h-5 w-5" />
+                    <EllipsisVerticalIcon className="h-6 w-6" />
                   </button>
                   {openLabelMenuId === label.id && (
                     <div className="absolute right-0 z-10 mt-1 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5">

@@ -17,7 +17,8 @@ import LogViewer from '../../components/LogViewer';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
-import { CpuChipIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { CpuChipIcon } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
 export default function Training() {
   const [sessions, setSessions] = useState([]);
@@ -272,13 +273,13 @@ export default function Training() {
                     <div className="relative inline-block text-left" ref={openMenuId === session.id ? menuRef : null}>
                       <button
                         type="button"
-                        className="rounded-full p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none"
+                        className="rounded-full p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 focus:outline-none"
                         onClick={(e) => {
                           e.stopPropagation();
                           setOpenMenuId(openMenuId === session.id ? null : session.id);
                         }}
                       >
-                        <EllipsisVerticalIcon className="h-5 w-5" />
+                        <EllipsisVerticalIcon className="h-6 w-6" />
                       </button>
 
                       {openMenuId === session.id && (

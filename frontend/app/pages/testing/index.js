@@ -16,7 +16,8 @@ import AddTest from '../../components/addTest';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
-import { ClipboardDocumentCheckIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
+import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
 export default function Testing() {
   const [tests, setTests] = useState([]);
@@ -187,13 +188,13 @@ export default function Testing() {
                     <div className="relative inline-block text-left" ref={openMenuId === test.id ? menuRef : null}>
                       <button
                         type="button"
-                        className="rounded-full p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                        className="rounded-full p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           setOpenMenuId(openMenuId === test.id ? null : test.id);
                         }}
                       >
-                        <EllipsisVerticalIcon className="h-5 w-5" />
+                        <EllipsisVerticalIcon className="h-6 w-6" />
                       </button>
                       {openMenuId === test.id && (
                         <div className="absolute right-0 z-10 mt-1 w-40 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5">
