@@ -308,7 +308,7 @@ export default function Training() {
                             >
                               Logs
                             </button>
-                            {isTerminal(session.status) && (
+                            
                               <button
                                 className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
                                 onClick={(e) => {
@@ -319,7 +319,7 @@ export default function Training() {
                               >
                                 Delete
                               </button>
-                            )}
+
                           </div>
                         </div>
                       )}
