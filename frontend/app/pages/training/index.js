@@ -28,7 +28,13 @@ export default function Training() {
   const [logSessionId, setLogSessionId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const menuRef = useRef(null);
+  const openMenuIdRef = useRef(null);
   const router = useRouter();
+
+  // Keep ref in sync so the fetch interval can read current menu state
+  useEffect(() => {
+    openMenuIdRef.current = openMenuId;
+  }, [openMenuId]);
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -39,7 +45,8 @@ export default function Training() {
           const savedStudy = localStorage.getItem('selectedStudy');
           const filteredData = savedStudy ? data.filter(session => session.study?.id == savedStudy) : data;
           const sortedData = filteredData.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-          setSessions(sortedData);
+          // Skip update while action menu is open to prevent re-render closing it
+          if (!openMenuIdRef.current) setSessions(sortedData);
         } else {
           throw new Error('Data is not an array');
         }
