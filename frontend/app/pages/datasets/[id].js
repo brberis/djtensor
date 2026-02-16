@@ -49,6 +49,11 @@ export default function DatasetDetail() {
   const [activeImage, setActiveImage] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [renameLabel, setRenameLabel] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
 
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
