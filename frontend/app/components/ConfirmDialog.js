@@ -40,7 +40,7 @@ export default function ConfirmDialog({
   const confirmClasses =
     confirmTone === 'danger'
       ? 'bg-red-600 hover:bg-red-500 focus-visible:outline-red-600 disabled:bg-red-300 disabled:cursor-not-allowed'
-      : 'bg-teal-600 hover:bg-teal-500 focus-visible:outline-teal-600 disabled:bg-teal-300 disabled:cursor-not-allowed';
+      : 'bg-blue-600 hover:bg-blue-500 focus-visible:outline-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed';
 
   return (
     <Transition.Root show={Boolean(open)} as={Fragment}>
@@ -83,7 +83,7 @@ export default function ConfirmDialog({
                       type="text"
                       value={typed}
                       onChange={(e) => setTyped(e.target.value)}
-                      className="mt-1.5 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-teal-600 sm:text-sm"
+                      className="mt-1.5 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm"
                       placeholder={requireText}
                       autoFocus
                     />

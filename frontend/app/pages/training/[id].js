@@ -167,7 +167,7 @@ export default function TrainingDetail() {
             <div className="px-5 py-3 sm:grid sm:grid-cols-3 sm:gap-4">
               <dt className="text-sm font-medium text-gray-500">Dataset</dt>
               <dd className="mt-1 text-sm sm:mt-0 sm:col-span-2">
-                <Link href={`/datasets/${session.dataset.id}`} className="text-teal-600 hover:text-teal-500 font-medium">
+                <Link href={`/datasets/${session.dataset.id}`} className="text-blue-600 hover:text-blue-500 font-medium">
                   {session.dataset.name}
                 </Link>
               </dd>

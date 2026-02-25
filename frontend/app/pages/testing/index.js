@@ -179,12 +179,12 @@ export default function Testing() {
                 <tr
                   key={test.id}
                   onClick={() => handleTestClick(test)}
-                  className={test.status === 'Completed' ? 'group cursor-pointer hover:bg-teal-50 transition-colors' : 'group'}
+                  className={test.status === 'Completed' ? 'group cursor-pointer hover:bg-blue-50 transition-colors' : 'group'}
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{test.name}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">{new Date(test.created_at).toLocaleString()}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm"><span className={getStatusBadgeClass(test.status)}>{test.status}</span></td>
-                  <td className="sticky right-0 bg-white group-hover:bg-teal-50 whitespace-nowrap px-4 py-4 text-right text-sm">
+                  <td className="sticky right-0 bg-white group-hover:bg-blue-50 whitespace-nowrap px-4 py-4 text-right text-sm">
                     <div className="relative inline-block text-left" ref={openMenuId === test.id ? menuRef : null}>
                       <button
                         type="button"

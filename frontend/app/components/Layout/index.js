@@ -97,7 +97,7 @@ const Layout = (props) => {
   if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-500 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
       </div>
     );
   }
@@ -108,7 +108,7 @@ const Layout = (props) => {
       <ul role="list" className="flex flex-1 flex-col gap-y-7">
         <li>
           <div className="flex h-16 shrink-0 items-center px-2">
-            <BeakerIcon className="h-8 w-8 text-teal-500" />
+            <BeakerIcon className="h-8 w-8 text-blue-500" />
             <span className="ml-3 text-lg font-bold text-white tracking-tight">Shark AI</span>
           </div>
         </li>
@@ -120,7 +120,7 @@ const Layout = (props) => {
                   href={item.href}
                   className={classNames(
                     isCurrentPath(item.href)
-                      ? 'bg-teal-700 text-white'
+                      ? 'bg-blue-700 text-white'
                       : 'text-gray-300 hover:bg-gray-700 hover:text-white',
                     'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
                   )}
@@ -149,7 +149,7 @@ const Layout = (props) => {
               id="sidebar-study"
               value={selectedStudy}
               onChange={handleStudyChange}
-              className="block w-full rounded-md bg-gray-700 border-0 py-1.5 pl-3 pr-8 text-sm text-white focus:ring-2 focus:ring-teal-500"
+              className="block w-full rounded-md bg-gray-700 border-0 py-1.5 pl-3 pr-8 text-sm text-white focus:ring-2 focus:ring-blue-500"
             >
               <option value="" disabled>Select Study</option>
               {studies.map((study) => (
@@ -285,7 +285,7 @@ const Layout = (props) => {
                   id="topbar-study"
                   value={selectedStudy}
                   onChange={handleStudyChange}
-                  className="rounded-md border-0 py-1 pl-3 pr-8 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-teal-600"
+                  className="rounded-md border-0 py-1 pl-3 pr-8 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600"
                 >
                   <option value="" disabled>Select Study</option>
                   {studies.map((study) => (

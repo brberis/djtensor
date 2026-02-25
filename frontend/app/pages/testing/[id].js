@@ -383,8 +383,8 @@ export default function TestDetail() {
         </div>
         <h1 className="mt-3 text-2xl font-bold text-gray-900">{test.name}</h1>
         <div className="mt-1 flex flex-wrap gap-x-6 text-sm text-gray-500">
-          <span>Dataset: <span className="font-medium text-teal-600">{dataset?.name}</span></span>
-          <span>Training: <span className="font-medium text-teal-600">{trainingSession?.name}</span></span>
+          <span>Dataset: <span className="font-medium text-blue-600">{dataset?.name}</span></span>
+          <span>Training: <span className="font-medium text-blue-600">{trainingSession?.name}</span></span>
         </div>
       </div>
 
@@ -464,7 +464,7 @@ export default function TestDetail() {
                     {confusionMatrix.matrix[rowIndex].map((value, colIndex) => (
                       <td
                         key={colIndex}
-                        className={`px-4 py-3 text-sm font-mono ${rowIndex === colIndex ? 'font-bold text-teal-700 bg-teal-50' : 'text-gray-500'}`}
+                        className={`px-4 py-3 text-sm font-mono ${rowIndex === colIndex ? 'font-bold text-blue-700 bg-blue-50' : 'text-gray-500'}`}
                       >
                         {value}
                       </td>

@@ -240,7 +240,7 @@ export default function Training() {
               sessions.map((session) => (
                 <tr
                   key={session.id}
-                  className={session.status === 'Completed' ? 'group cursor-pointer hover:bg-teal-50 transition-colors' : 'group'}
+                  className={session.status === 'Completed' ? 'group cursor-pointer hover:bg-blue-50 transition-colors' : 'group'}
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm">
                     <span className={getStatusBadgeClass(session.status)}>{session.status}</span>
@@ -269,7 +269,7 @@ export default function Training() {
                   >
                     {session.dataset.name}
                   </td>
-                  <td className="sticky right-0 bg-white group-hover:bg-teal-50 whitespace-nowrap px-4 py-4 text-right text-sm">
+                  <td className="sticky right-0 bg-white group-hover:bg-blue-50 whitespace-nowrap px-4 py-4 text-right text-sm">
                     <div className="relative inline-block text-left" ref={openMenuId === session.id ? menuRef : null}>
                       <button
                         type="button"

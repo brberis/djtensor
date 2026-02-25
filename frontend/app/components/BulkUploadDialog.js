@@ -312,7 +312,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId, labels })
                       onDragOver={handleDragOver}
                       onDragLeave={handleDragLeave}
                       className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-                        dragOver ? 'border-teal-500 bg-teal-50' : 'border-gray-300 hover:border-gray-400'
+                        dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
                       }`}
                       onClick={() => fileInputRef.current?.click()}
                     >
@@ -346,7 +346,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId, labels })
                       {!uploading && (
                         <button
                           onClick={() => fileInputRef.current?.click()}
-                          className="text-sm text-teal-600 hover:text-teal-500 font-medium flex items-center gap-1"
+                          className="text-sm text-blue-600 hover:text-blue-500 font-medium flex items-center gap-1"
                         >
                           <PlusIcon className="h-4 w-4" /> Add more
                         </button>
@@ -422,7 +422,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId, labels })
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className="bg-teal-600 h-2 rounded-full transition-all"
+                          className="bg-blue-600 h-2 rounded-full transition-all"
                           style={{ width: `${Math.round((uploadProgress.current / Math.max(uploadProgress.total, 1)) * 100)}%` }}
                         />
                       </div>

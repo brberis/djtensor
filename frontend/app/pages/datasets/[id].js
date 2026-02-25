@@ -551,7 +551,7 @@ export default function DatasetDetail() {
                         <img
                           src={image.image}
                           alt={label?.name || 'search result'}
-                          className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200 hover:ring-teal-400"
+                          className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200 hover:ring-blue-400"
                           loading="lazy"
                         />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent rounded-b-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -564,7 +564,7 @@ export default function DatasetDetail() {
                 </div>
                 {searchHasMore && (
                   <button
-                    className="mt-3 text-sm font-medium text-teal-600 hover:text-teal-500"
+                    className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-500"
                     onClick={() => fetchGlobalSearch(searchTerm, searchPage + 1, true)}
                     disabled={searchLoading}
                   >
@@ -680,7 +680,7 @@ export default function DatasetDetail() {
                           <button
                             type="button"
                             onClick={() => toggleImageSelection(label.id, image.id)}
-                            className={`absolute left-1 top-1 z-10 h-5 w-5 rounded border ${selected.includes(image.id) ? 'bg-teal-600 border-teal-600' : 'bg-white border-gray-300'}`}
+                            className={`absolute left-1 top-1 z-10 h-5 w-5 rounded border ${selected.includes(image.id) ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'}`}
                           />
                         )}
                         <button
@@ -692,7 +692,7 @@ export default function DatasetDetail() {
                           <img
                             src={image.image}
                             alt={label.name}
-                            className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-teal-600 ring-2' : 'ring-gray-200'} hover:ring-teal-400`}
+                            className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
                             loading="lazy"
                           />
                         </button>
@@ -711,7 +711,7 @@ export default function DatasetDetail() {
                       setPage((prev) => ({ ...prev, [label.id]: nextPage }));
                       fetchImages(label.id, nextPage);
                     }}
-                    className="mt-3 text-sm font-medium text-teal-600 hover:text-teal-500"
+                    className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-500"
                   >
                     Load more images...
                   </button>

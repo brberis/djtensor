@@ -26,7 +26,7 @@ export default function Spinner({ timeOut }) {
   return show ? (
     <div className="flex items-center justify-center min-h-[200px]">
       <div className="flex flex-col items-center gap-3">
-        <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-gray-200 border-t-teal-600"></div>
+        <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-gray-200 border-t-blue-600"></div>
         <p className="text-sm text-gray-500">Loading...</p>
       </div>
     </div>
@@ -39,7 +39,7 @@ export function TableSpinnerRow({ colSpan }) {
       <td colSpan={colSpan} className="px-4 py-10">
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-3">
-            <div className="animate-spin rounded-full h-6 w-6 border-[3px] border-gray-200 border-t-teal-600" />
+            <div className="animate-spin rounded-full h-6 w-6 border-[3px] border-gray-200 border-t-blue-600" />
             <p className="text-sm text-gray-500">Loading...</p>
           </div>
         </div>

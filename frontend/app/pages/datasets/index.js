@@ -104,7 +104,7 @@ export default function Datasets({ base }) {
     const styles = {
       Base: 'bg-purple-50 text-purple-700 ring-purple-700/10',
       Testing: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-      Training: 'bg-teal-50 text-teal-700 ring-teal-600/20',
+      Training: 'bg-blue-50 text-blue-700 ring-blue-600/20',
     };
     return (
       <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${styles[type]}`}>
@@ -155,7 +155,7 @@ export default function Datasets({ base }) {
                 <tr
                   key={dataset.id}
                   onClick={() => handleDatasetClick(dataset)}
-                  className="cursor-pointer hover:bg-teal-50 transition-colors"
+                  className="cursor-pointer hover:bg-blue-50 transition-colors"
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">{dataset.name}</td>
                   <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{dataset.description}</td>
