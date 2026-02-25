@@ -376,9 +376,9 @@ export default function Performance() {
             {/* Cross-Session Comparison Table */}
             <Card title="Cross-Session Comparison">
               {sortedRows.length > 0 ? (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 sticky top-0 z-10">
                       <tr>
                         {[
                           { key: 'sessionName', label: 'Session' },
@@ -449,7 +449,7 @@ export default function Performance() {
                 </div>
               )}
               {confusionGrid ? (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
                   <div className="inline-block">
                     {/* Header row */}
                     <div className="flex">
