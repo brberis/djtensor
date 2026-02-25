@@ -1,16 +1,22 @@
-/** @type {import('next').NextConfig} */
+/** @type {import("next").NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "shark-ai.adaptivecomputing.ai",
+        pathname: "/media/**",
+      },
+    ],
+  },
   webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
-    // Only change the config for client-side and development.
     if (dev && !isServer) {
       config.watchOptions = {
-        poll: 1000,      // Check for changes every second
-        aggregateTimeout: 300,  // Delay the rebuild after the first change
+        poll: 1000,
+        aggregateTimeout: 300,
       };
     }
-
-    // Important: return the modified config
     return config;
   },
 };

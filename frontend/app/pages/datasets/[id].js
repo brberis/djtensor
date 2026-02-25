@@ -17,6 +17,7 @@ import BulkUploadDialog from '../../components/BulkUploadDialog';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
+import Image from 'next/image';
 import theme from '../../theme';
 import {
   ArrowUpTrayIcon,
@@ -373,7 +374,7 @@ export default function DatasetDetail() {
       )}
 
       <ConfirmDialog
-        open={confirmAction?.type === 'delete-selected' || confirmAction?.type === 'delete-all'}
+        isOpen={confirmAction?.type === 'delete-selected' || confirmAction?.type === 'delete-all'}
         title={confirmAction?.type === 'delete-all' ? 'Delete all images in this class?' : 'Delete selected images?'}
         description={confirmAction?.type === 'delete-all'
           ? 'This will remove every image in this class. This cannot be undone.'
@@ -548,11 +549,13 @@ export default function DatasetDetail() {
                         className="relative group"
                         onClick={() => setActiveImage(image)}
                       >
-                        <img
+                        <Image
                           src={image.image}
                           alt={label?.name || 'search result'}
+                          width={96}
+                          height={96}
+                          quality={60}
                           className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200 hover:ring-blue-400"
-                          loading="lazy"
                         />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent rounded-b-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <p className="text-[10px] text-white truncate">{image.file_name || image.image.split('/').pop()}</p>
@@ -689,11 +692,13 @@ export default function DatasetDetail() {
                           className="block"
                           title="View image details"
                         >
-                          <img
+                          <Image
                             src={image.image}
                             alt={label.name}
+                            width={96}
+                            height={96}
+                            quality={60}
                             className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
-                            loading="lazy"
                           />
                         </button>
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity p-1">
