@@ -146,7 +146,7 @@ class TestViewSet(viewsets.ModelViewSet):
 
 
 class TestResultViewSet(viewsets.ModelViewSet):
-    queryset = TestResult.objects.select_related('test', 'label').all()
+    queryset = TestResult.objects.select_related('test', 'image').all()
     serializer_class = TestResultSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['test__id'] 
