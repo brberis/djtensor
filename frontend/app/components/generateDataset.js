@@ -26,6 +26,7 @@ export default function GenerateDataset({ isOpen, onClose }) {
   const [alert, setAlert] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [labels, setLabels] = useState([]);
+  const [selectedLabels, setSelectedLabels] = useState([]);
   const [base, setBase] = useState(false);
   const [forTesting, setForTesting] = useState(false);
 
@@ -39,7 +40,7 @@ export default function GenerateDataset({ isOpen, onClose }) {
       setIsLoading(true);
       try {
         const [labelsData] = await Promise.all([
-          fetch(`/api/datasets/label/`).then(res => res.json()),
+          fetch(\`/api/datasets/label/\`).then(res => res.json()),
         ]);
         setLabels(labelsData);
       } catch (error) {
@@ -57,16 +58,37 @@ export default function GenerateDataset({ isOpen, onClose }) {
     onClose(result);
   };
 
+  const toggleLabel = (labelId) => {
+    setSelectedLabels(prev =>
+      prev.includes(labelId)
+        ? prev.filter(id => id !== labelId)
+        : [...prev, labelId]
+    );
+  };
+
+  const toggleAll = () => {
+    if (selectedLabels.length === labels.length) {
+      setSelectedLabels([]);
+    } else {
+      setSelectedLabels(labels.map(l => l.id.toString()));
+    }
+  };
+
   const formHandler = async (e) => {
     e.preventDefault();
 
     const formData = new FormData(e.target);
     const selectedStudy = localStorage.getItem('selectedStudy');
 
+    if (selectedLabels.length === 0) {
+      setAlert('Please select at least one label.');
+      return;
+    }
+
     const newDataset = {
       study: selectedStudy,
       name: formData.get('name'),
-      labels: formData.getAll('labels'),
+      labels: selectedLabels,
       description: formData.get('description'),
       resolution: formData.get('resolution'),
       base: false,
@@ -103,7 +125,7 @@ export default function GenerateDataset({ isOpen, onClose }) {
 
   return (
     <Transition.Root show={open} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={handleClose}>
+      <Dialog as="div" className="relative z-50" onClose={() => handleClose(false)}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -115,65 +137,95 @@ export default function GenerateDataset({ isOpen, onClose }) {
         >
           <div className="fixed inset-0 bg-gray-500/75 transition-opacity" />
         </Transition.Child>
-        <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+
+        <div className="fixed inset-0 z-10 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
-              enterFrom="opacity-0 translate-y-4 sm:scale-95"
+              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
               enterTo="opacity-100 translate-y-0 sm:scale-100"
               leave="ease-in duration-200"
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-              leaveTo="opacity-0 translate-y-4 sm:scale-95"
+              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                <div className="flex items-start justify-between">
-                  <Dialog.Title as="h3" className="text-lg font-semibold text-gray-900">
-                    Generate Dataset
-                  </Dialog.Title>
+              <Dialog.Panel className="relative w-full max-w-lg transform rounded-lg bg-white px-6 pb-6 pt-5 shadow-xl transition-all">
+                {/* Close button */}
+                <div className="absolute right-4 top-4">
                   <button
                     type="button"
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none"
-                    onClick={handleClose}
+                    className="rounded-md bg-white text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    onClick={() => handleClose(false)}
                   >
-                    <XMarkIcon className="h-6 w-6" />
+                    <span className="sr-only">Close</span>
+                    <XMarkIcon className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </div>
 
-                <div className="mt-4">
-                  {alert && (
-                    <div className="mb-4 rounded-md bg-red-50 p-4">
-                      <div className="flex">
-                        <ExclamationCircleIcon className="h-5 w-5 text-red-400" />
-                        <p className="ml-3 text-sm font-medium text-red-800">{alert}</p>
+                <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900">
+                  Generate Dataset
+                </Dialog.Title>
+
+                {/* Alert */}
+                {alert && (
+                  <div className="mt-4 rounded-md bg-red-50 p-4">
+                    <div className="flex">
+                      <ExclamationCircleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
+                      <div className="ml-3">
+                        <p className="text-sm text-red-700">{alert}</p>
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
+
+                <div className="mt-4">
                   <form id="generate-dataset-form" onSubmit={formHandler}>
-                    <div className="space-y-5">
+                    <div className="space-y-4">
                       <div>
                         <label htmlFor="name" className={theme.classes.label}>Name</label>
-                        <input id="name" name="name" type="text" required className={`mt-1.5 ${theme.classes.input}`} />
+                        <input id="name" name="name" type="text" required className={\`mt-1.5 ${theme.classes.input}\`} />
                       </div>
 
                       <div>
                         <label htmlFor="resolution" className={theme.classes.label}>Resolution</label>
-                        <select id="resolution" name="resolution" required className={`mt-1.5 ${theme.classes.select}`}>
-                          <option disabled>Select resolution...</option>
-                          {resolutions.map((resolution) => (
-                            <option key={resolution.res} value={resolution.res}>{resolution.des}</option>
+                        <select id="resolution" name="resolution" required className={\`mt-1.5 ${theme.classes.select}\`}>
+                          {resolutions.map((r) => (
+                            <option key={r.res} value={r.res}>{r.des}</option>
                           ))}
                         </select>
                       </div>
 
+                      {/* Checkbox-based label selector */}
                       <div>
-                        <label htmlFor="labels" className={theme.classes.label}>Labels</label>
-                        <select id="labels" name="labels" multiple required className={`mt-1.5 ${theme.classes.select}`} size={4}>
+                        <div className="flex items-center justify-between">
+                          <label className={theme.classes.label}>Labels</label>
+                          <button
+                            type="button"
+                            onClick={toggleAll}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-500"
+                          >
+                            {selectedLabels.length === labels.length ? 'Deselect All' : 'Select All'}
+                          </button>
+                        </div>
+                        <div className="mt-1.5 max-h-[200px] overflow-y-auto rounded-md border border-gray-300 bg-white">
+                          {labels.length === 0 && (
+                            <p className="px-3 py-2 text-sm text-gray-500">No labels available</p>
+                          )}
                           {labels.map((label) => (
-                            <option key={label.id} value={label.id}>{label.name}</option>
+                            <label
+                              key={label.id}
+                              className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedLabels.includes(label.id.toString())}
+                                onChange={() => toggleLabel(label.id.toString())}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700">{label.name}</span>
+                            </label>
                           ))}
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">Hold Ctrl/Cmd to select multiple labels.</p>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-x-3">
@@ -196,21 +248,21 @@ export default function GenerateDataset({ isOpen, onClose }) {
                           name="sampleNumber"
                           type="number"
                           required
-                          className={`mt-1.5 ${theme.classes.input}`}
+                          className={\`mt-1.5 ${theme.classes.input}\`}
                           placeholder="e.g. 200"
                         />
                       </div>
 
                       <div>
                         <label htmlFor="description" className={theme.classes.label}>Description</label>
-                        <textarea id="description" name="description" rows={3} className={`mt-1.5 ${theme.classes.textarea}`} />
+                        <textarea id="description" name="description" rows={3} className={\`mt-1.5 ${theme.classes.textarea}\`} />
                       </div>
                     </div>
                   </form>
                 </div>
 
                 <div className="mt-6 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
-                  <button type="button" onClick={handleClose} className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0">
+                  <button type="button" onClick={() => handleClose(false)} className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:col-start-1 sm:mt-0">
                     Cancel
                   </button>
                   <button type="submit" form="generate-dataset-form" className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 sm:col-start-2">

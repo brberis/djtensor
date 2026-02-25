@@ -24,241 +24,160 @@ import {
   PlusIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
+import Spinner from './Spinner';
 import theme from '../theme';
 
-const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff'];
-const ARCHIVE_TYPES = ['application/zip', 'application/x-tar', 'application/gzip', 'application/x-gzip'];
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'];
-const ARCHIVE_EXTENSIONS = ['.zip', '.tar', '.tar.gz', '.tgz'];
-const CHUNK_SIZE = 50; // images per upload request
-const MAX_PREVIEW_COUNT = 500; // only generate thumbnails for the first N to avoid browser freeze
+const CHUNK_SIZE = 50;
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff'];
+const ACCEPTED_ARCHIVE_TYPES = [
+  'application/zip', 'application/x-zip-compressed',
+  'application/gzip', 'application/x-gzip',
+  'application/x-tar', 'application/x-compressed-tar',
+];
+const ACCEPTED_EXTENSIONS = ['.zip', '.tar.gz', '.tgz', '.tar'];
 
-function getFileExtension(name) {
-  const lower = name.toLowerCase();
-  if (lower.endsWith('.tar.gz')) return '.tar.gz';
-  const dot = lower.lastIndexOf('.');
-  return dot >= 0 ? lower.slice(dot) : '';
-}
-
-function isImageFile(file) {
-  if (IMAGE_TYPES.includes(file.type)) return true;
-  return IMAGE_EXTENSIONS.includes(getFileExtension(file.name));
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 function isArchiveFile(file) {
-  if (ARCHIVE_TYPES.includes(file.type)) return true;
-  return ARCHIVE_EXTENSIONS.includes(getFileExtension(file.name));
+  if (ACCEPTED_ARCHIVE_TYPES.includes(file.type)) return true;
+  return ACCEPTED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
 }
 
-export default function BulkUploadDialog({ isOpen, onClose, datasetId, labels }) {
+export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
   const [open, setOpen] = useState(isOpen);
-  const [selectedLabel, setSelectedLabel] = useState(labels.length > 0 ? labels[0].id : '');
-  const [files, setFiles] = useState([]);          // { file, preview, id }
-  const [archives, setArchives] = useState([]);     // { file, id }
+  const [imageFiles, setImageFiles] = useState([]);
+  const [archiveFiles, setArchiveFiles] = useState([]);
+  const [labels, setLabels] = useState([]);
+  const [selectedLabel, setSelectedLabel] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(null); // { current, total, phase }
-  const [results, setResults] = useState(null);     // { created, duplicates, errors }
-  const [archiveTaskId, setArchiveTaskId] = useState(null);
-  const [archiveStatus, setArchiveStatus] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, currentFile: '' });
+  const [results, setResults] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-  const nextIdRef = useRef(0);
+  const archiveInputRef = useRef(null);
 
-  // Clean up blob URLs on unmount
   useEffect(() => {
-    return () => {
-      files.forEach(f => {
-        if (f.preview) URL.revokeObjectURL(f.preview);
-      });
-    };
-  }, []);
+    async function fetchLabels() {
+      try {
+        const res = await fetch('/api/datasets/label/');
+        const data = await res.json();
+        setLabels(data);
+      } catch (err) {
+        console.error('Failed to fetch labels:', err);
+      }
+    }
+    if (isOpen) fetchLabels();
+  }, [isOpen]);
 
-  const handleClose = () => {
+  const handleClose = (result) => {
+    if (uploading) return;
     setOpen(false);
-    onClose();
+    setImageFiles([]);
+    setArchiveFiles([]);
+    setSelectedLabel('');
+    setResults(null);
+    setProgress({ current: 0, total: 0, currentFile: '' });
+    onClose(result || false);
   };
 
   const addFiles = useCallback((newFiles) => {
-    const imageItems = [];
-    const archiveItems = [];
+    const fileArray = Array.from(newFiles);
+    const images = fileArray.filter(f => ACCEPTED_IMAGE_TYPES.includes(f.type));
+    const archives = fileArray.filter(f => isArchiveFile(f));
+    if (images.length) setImageFiles(prev => [...prev, ...images]);
+    if (archives.length) setArchiveFiles(prev => [...prev, ...archives]);
+  }, []);
 
-    Array.from(newFiles).forEach(file => {
-      const id = nextIdRef.current++;
-      if (isArchiveFile(file)) {
-        archiveItems.push({ file, id });
-      } else if (isImageFile(file)) {
-        // Only create previews for the first MAX_PREVIEW_COUNT images
-        const currentCount = files.length + imageItems.length;
-        const preview = currentCount < MAX_PREVIEW_COUNT ? URL.createObjectURL(file) : null;
-        imageItems.push({ file, preview, id });
-      }
-      // Skip non-image, non-archive files silently
-    });
-
-    if (imageItems.length > 0) {
-      setFiles(prev => [...prev, ...imageItems]);
-    }
-    if (archiveItems.length > 0) {
-      setArchives(prev => [...prev, ...archiveItems]);
-    }
-  }, [files.length]);
-
-  const removeFile = (id) => {
-    setFiles(prev => {
-      const item = prev.find(f => f.id === id);
-      if (item?.preview) URL.revokeObjectURL(item.preview);
-      return prev.filter(f => f.id !== id);
-    });
-  };
-
-  const removeArchive = (id) => {
-    setArchives(prev => prev.filter(a => a.id !== id));
-  };
-
-  const handleDrop = (e) => {
+  const handleDrag = useCallback((e) => {
     e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files?.length > 0) {
-      addFiles(e.dataTransfer.files);
-    }
-  };
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+    else if (e.type === 'dragleave') setDragActive(false);
+  }, []);
 
-  const handleDragOver = (e) => {
+  const handleDrop = useCallback((e) => {
     e.preventDefault();
-    setDragOver(true);
-  };
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
+  }, [addFiles]);
 
-  const handleDragLeave = () => setDragOver(false);
+  const removeImage = (index) => setImageFiles(prev => prev.filter((_, i) => i !== index));
+  const removeArchive = (index) => setArchiveFiles(prev => prev.filter((_, i) => i !== index));
+  const clearAll = () => { setImageFiles([]); setArchiveFiles([]); };
 
-  const handleFileSelect = (e) => {
-    if (e.target.files?.length > 0) {
-      addFiles(e.target.files);
-      e.target.value = ''; // reset so same files can be re-selected
-    }
-  };
-
-  // Upload images in chunks
-  const uploadImages = async () => {
-    if (!selectedLabel) return;
-    setUploading(true);
-    setResults(null);
-    setArchiveStatus(null);
-
-    const allCreated = [];
-    const allDuplicates = [];
-    const allErrors = [];
-
-    // Upload individual images in chunks
-    if (files.length > 0) {
-      const totalChunks = Math.ceil(files.length / CHUNK_SIZE);
-      for (let i = 0; i < totalChunks; i++) {
-        const chunk = files.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-        setUploadProgress({
-          current: i * CHUNK_SIZE,
-          total: files.length,
-          phase: `Uploading chunk ${i + 1}/${totalChunks}...`,
-        });
-
-        const formData = new FormData();
-        formData.append('dataset_id', datasetId);
-        formData.append('label_id', selectedLabel);
-        chunk.forEach(item => formData.append('image', item.file));
-
-        try {
-          const res = await fetch('/api/datasets/image/bulk-upload', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (data.created) allCreated.push(...data.created);
-          if (data.duplicates) allDuplicates.push(...data.duplicates);
-          if (data.errors) allErrors.push(...data.errors);
-        } catch (err) {
-          // If a chunk fails entirely, record errors for each file in it
-          chunk.forEach(item => allErrors.push({ file: item.file.name, reason: err.message }));
-        }
-      }
-    }
-
-    // Upload archives one at a time
-    for (const archive of archives) {
-      setUploadProgress({
-        current: files.length,
-        total: files.length + archives.length,
-        phase: `Uploading archive: ${archive.file.name}...`,
-      });
-
-      const formData = new FormData();
-      formData.append('dataset_id', datasetId);
-      formData.append('label_id', selectedLabel);
-      formData.append('archive', archive.file);
-
-      try {
-        const res = await fetch('/api/datasets/image/bulk-upload', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        if (data.task_id) {
-          setArchiveTaskId(data.task_id);
-          // Start polling for archive processing status
-          pollArchiveStatus(data.task_id);
-        }
-      } catch (err) {
-        allErrors.push({ file: archive.file.name, reason: err.message });
-      }
-    }
-
-    setResults({
-      created: allCreated,
-      duplicates: allDuplicates,
-      errors: allErrors,
-    });
-    setUploadProgress(null);
-    if (archives.length === 0) {
-      setUploading(false);
-    }
-  };
-
-  const pollArchiveStatus = async (taskId) => {
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/datasets/image/upload-status?task_id=${taskId}`);
-        const data = await res.json();
-        setArchiveStatus(data);
-
-        if (data.status === 'completed' || data.status === 'failed' || data.status === 'SUCCESS' || data.status === 'FAILURE') {
-          setUploading(false);
-          // Merge archive results if available
-          if (data.result) {
-            setResults(prev => {
-              if (!prev) return data.result;
-              return {
-                created: [...(prev.created || []), ...(data.result.created || [])],
-                duplicates: [...(prev.duplicates || []), ...(data.result.duplicates || [])],
-                errors: [...(prev.errors || []), ...(data.result.errors || [])],
-              };
-            });
-          }
-          return;
-        }
-        // Keep polling
-        setTimeout(poll, 2000);
-      } catch (err) {
-        console.error('Polling error:', err);
-        setTimeout(poll, 5000);
-      }
-    };
-    poll();
-  };
-
-  const totalFileCount = files.length + archives.length;
+  const totalFileCount = imageFiles.length + archiveFiles.length;
+  const totalSize = [...imageFiles, ...archiveFiles].reduce((acc, f) => acc + f.size, 0);
   const hasFiles = totalFileCount > 0;
+
+  const uploadImages = async () => {
+    if (!hasFiles || !selectedLabel) return;
+    setUploading(true);
+    const allResults = { success: 0, failed: 0, errors: [] };
+
+    // Upload archives first
+    for (let i = 0; i < archiveFiles.length; i++) {
+      const file = archiveFiles[i];
+      setProgress({ current: i + 1, total: archiveFiles.length + Math.ceil(imageFiles.length / CHUNK_SIZE), currentFile: file.name });
+      const formData = new FormData();
+      formData.append('archive', file);
+      formData.append('label_id', selectedLabel);
+      if (datasetId) formData.append('dataset_id', datasetId);
+      try {
+        const res = await fetch('/api/datasets/image/bulk-upload-archive/', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          allResults.success += data.success_count || 0;
+          allResults.failed += data.error_count || 0;
+        } else {
+          allResults.failed++;
+          allResults.errors.push(`Archive ${file.name}: upload failed`);
+        }
+      } catch {
+        allResults.failed++;
+        allResults.errors.push(`Archive ${file.name}: network error`);
+      }
+    }
+
+    // Upload image chunks
+    const archiveCount = archiveFiles.length;
+    for (let i = 0; i < imageFiles.length; i += CHUNK_SIZE) {
+      const chunk = imageFiles.slice(i, i + CHUNK_SIZE);
+      const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+      const totalChunks = Math.ceil(imageFiles.length / CHUNK_SIZE);
+      setProgress({ current: archiveCount + chunkNum, total: archiveCount + totalChunks, currentFile: `Chunk ${chunkNum}/${totalChunks}` });
+      const formData = new FormData();
+      chunk.forEach(file => formData.append('images', file));
+      formData.append('label_id', selectedLabel);
+      if (datasetId) formData.append('dataset_id', datasetId);
+      try {
+        const res = await fetch('/api/datasets/image/bulk-upload/', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          allResults.success += data.success_count || chunk.length;
+        } else {
+          allResults.failed += chunk.length;
+        }
+      } catch {
+        allResults.failed += chunk.length;
+      }
+    }
+
+    setResults(allResults);
+    setUploading(false);
+  };
 
   return (
     <Transition.Root show={open} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={handleClose}>
+      <Dialog as="div" className="relative z-50" onClose={() => !uploading && handleClose(false)}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100"
@@ -266,227 +185,192 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId, labels })
         >
           <div className="fixed inset-0 bg-gray-500/75 transition-opacity" />
         </Transition.Child>
+
         <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
             <Transition.Child
               as={Fragment}
-              enter="ease-out duration-300" enterFrom="opacity-0 translate-y-4 sm:scale-95" enterTo="opacity-100 translate-y-0 sm:scale-100"
-              leave="ease-in duration-200" leaveFrom="opacity-100 translate-y-0 sm:scale-100" leaveTo="opacity-0 translate-y-4 sm:scale-95"
+              enter="ease-out duration-300" enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" enterTo="opacity-100 translate-y-0 sm:scale-100"
+              leave="ease-in duration-200" leaveFrom="opacity-100 translate-y-0 sm:scale-100" leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl">
+              <Dialog.Panel className="relative w-full max-w-2xl transform rounded-lg bg-white shadow-xl transition-all">
                 {/* Header */}
-                <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-gray-100">
-                  <div>
-                    <Dialog.Title as="h3" className="text-lg font-semibold text-gray-900">
-                      Bulk Upload Images
-                    </Dialog.Title>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Drag and drop images or archives. Duplicates are automatically skipped.
-                    </p>
-                  </div>
-                  <button type="button" className="rounded-md bg-white text-gray-400 hover:text-gray-500" onClick={handleClose}>
+                <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                  <Dialog.Title className="text-lg font-semibold text-gray-900">
+                    Bulk Upload Images
+                  </Dialog.Title>
+                  <button
+                    type="button"
+                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    onClick={() => handleClose(false)}
+                    disabled={uploading}
+                  >
                     <XMarkIcon className="h-6 w-6" />
                   </button>
                 </div>
 
-                <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* Body */}
+                <div className="px-6 py-5">
+                  {/* Alert */}
+                  {results && (
+                    <div className={`mb-4 rounded-md p-4 ${results.failed > 0 ? 'bg-yellow-50' : 'bg-green-50'}`}>
+                      <div className="flex">
+                        {results.failed > 0 ? (
+                          <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400" />
+                        ) : (
+                          <CheckCircleIcon className="h-5 w-5 text-green-400" />
+                        )}
+                        <div className="ml-3">
+                          <p className={`text-sm font-medium ${results.failed > 0 ? 'text-yellow-800' : 'text-green-800'}`}>
+                            {results.success} uploaded successfully{results.failed > 0 ? `, ${results.failed} failed` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Label selector */}
-                  <div>
-                    <label className={theme.classes.label}>Target Label</label>
+                  <div className="mb-4">
+                    <label htmlFor="upload-label" className={theme.classes.label}>Target Label</label>
                     <select
+                      id="upload-label"
                       value={selectedLabel}
                       onChange={(e) => setSelectedLabel(e.target.value)}
                       className={`mt-1.5 ${theme.classes.select}`}
                       disabled={uploading}
                     >
-                      {labels.map(label => (
-                        <option key={label.id} value={label.id}>{label.name} ({label.image_count} images)</option>
+                      <option value="">Select a label...</option>
+                      {labels.map((label) => (
+                        <option key={label.id} value={label.id}>{label.name}</option>
                       ))}
                     </select>
                   </div>
 
                   {/* Drop zone */}
-                  {!uploading && !results && (
+                  {!results && (
                     <div
+                      onDragEnter={handleDrag}
+                      onDragLeave={handleDrag}
+                      onDragOver={handleDrag}
                       onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-                        dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-                      }`}
-                      onClick={() => fileInputRef.current?.click()}
+                      className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+                        dragActive
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-300 hover:border-gray-400'
+                      } ${uploading ? 'pointer-events-none opacity-50' : ''}`}
                     >
                       <ArrowUpTrayIcon className="mx-auto h-10 w-10 text-gray-400" />
-                      <p className="mt-2 text-sm font-medium text-gray-900">
-                        Drop files here or click to browse
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        JPEG, PNG, WebP, BMP, TIFF images or ZIP/TAR.GZ archives
-                      </p>
+                      <p className="mt-2 text-sm text-gray-600">Drag and drop images or archives here, or</p>
+                      <div className="mt-3 flex justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        >
+                          <PhotoIcon className="h-4 w-4" /> Images
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => archiveInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        >
+                          <ArchiveBoxIcon className="h-4 w-4" /> Archives
+                        </button>
+                      </div>
                       <input
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept=".jpg,.jpeg,.png,.webp,.bmp,.tiff,.tif,.zip,.tar,.tar.gz,.tgz"
-                        className="sr-only"
-                        onChange={handleFileSelect}
+                        accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                        className="hidden"
+                        onChange={(e) => addFiles(e.target.files)}
+                      />
+                      <input
+                        ref={archiveInputRef}
+                        type="file"
+                        multiple
+                        accept=".zip,.tar.gz,.tgz,.tar"
+                        className="hidden"
+                        onChange={(e) => addFiles(e.target.files)}
                       />
                     </div>
                   )}
 
-                  {/* File count summary */}
+                  {/* File list */}
                   {hasFiles && !results && (
-                    <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-2">
-                      <span className="text-sm text-gray-700">
-                        <strong>{files.length}</strong> image{files.length !== 1 ? 's' : ''}
-                        {archives.length > 0 && (
-                          <> + <strong>{archives.length}</strong> archive{archives.length !== 1 ? 's' : ''}</>
-                        )}
-                      </span>
-                      {!uploading && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-gray-700">
+                          {totalFileCount} file{totalFileCount !== 1 ? 's' : ''} ({formatFileSize(totalSize)})
+                        </p>
                         <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-sm text-blue-600 hover:text-blue-500 font-medium flex items-center gap-1"
+                          type="button"
+                          onClick={clearAll}
+                          disabled={uploading}
+                          className="text-sm text-red-600 hover:text-red-500"
                         >
-                          <PlusIcon className="h-4 w-4" /> Add more
+                          Clear all
                         </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Archive list */}
-                  {archives.length > 0 && !results && (
-                    <div className="space-y-2">
-                      {archives.map(a => (
-                        <div key={a.id} className="flex items-center justify-between bg-amber-50 rounded-lg px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <ArchiveBoxIcon className="h-5 w-5 text-amber-600" />
-                            <span className="text-sm text-gray-900">{a.file.name}</span>
-                            <span className="text-xs text-gray-500">({(a.file.size / (1024 * 1024)).toFixed(1)} MB)</span>
-                          </div>
-                          {!uploading && (
-                            <button onClick={() => removeArchive(a.id)} className="text-gray-400 hover:text-red-500">
+                      </div>
+                      <div className="max-h-48 overflow-y-auto rounded-md border border-gray-200">
+                        {archiveFiles.map((file, idx) => (
+                          <div key={`a-${idx}`} className="flex items-center justify-between px-3 py-2 border-b border-gray-100 last:border-b-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <ArchiveBoxIcon className="h-4 w-4 text-amber-500 shrink-0" />
+                              <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                              <span className="text-xs text-gray-400 shrink-0">{formatFileSize(file.size)}</span>
+                            </div>
+                            <button onClick={() => removeArchive(idx)} disabled={uploading} className="text-gray-400 hover:text-red-500">
                               <TrashIcon className="h-4 w-4" />
                             </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Thumbnail preview grid */}
-                  {files.length > 0 && !results && (
-                    <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto">
-                      {files.slice(0, MAX_PREVIEW_COUNT).map(item => (
-                        <div key={item.id} className="relative group aspect-square">
-                          {item.preview ? (
-                            <img
-                              src={item.preview}
-                              alt={item.file.name}
-                              className="h-full w-full object-cover rounded ring-1 ring-gray-200"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="h-full w-full bg-gray-100 rounded flex items-center justify-center">
-                              <PhotoIcon className="h-5 w-5 text-gray-400" />
-                            </div>
-                          )}
-                          {!uploading && (
-                            <button
-                              onClick={() => removeFile(item.id)}
-                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <XMarkIcon className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      {files.length > MAX_PREVIEW_COUNT && (
-                        <div className="aspect-square bg-gray-100 rounded flex items-center justify-center">
-                          <span className="text-xs text-gray-500 text-center">
-                            +{files.length - MAX_PREVIEW_COUNT} more
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Upload progress */}
-                  {uploading && uploadProgress && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{uploadProgress.phase}</span>
-                        <span className="text-gray-500">
-                          {uploadProgress.current}/{uploadProgress.total}
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all"
-                          style={{ width: `${Math.round((uploadProgress.current / Math.max(uploadProgress.total, 1)) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Archive processing progress */}
-                  {uploading && archiveStatus && archiveStatus.status === 'PROGRESS' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{archiveStatus.message}</span>
-                        <span className="text-gray-500">{archiveStatus.progress}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-amber-500 h-2 rounded-full transition-all"
-                          style={{ width: `${archiveStatus.progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Results summary */}
-                  {results && (
-                    <div className="space-y-3">
-                      <div className="rounded-lg bg-green-50 p-4">
-                        <div className="flex items-center gap-2">
-                          <CheckCircleIcon className="h-5 w-5 text-green-600" />
-                          <span className="text-sm font-medium text-green-800">Upload Complete</span>
-                        </div>
-                        <ul className="mt-2 text-sm text-green-700 space-y-1">
-                          <li>{results.created?.length || 0} images created</li>
-                          {(results.duplicates?.length || 0) > 0 && (
-                            <li>{results.duplicates.length} duplicates skipped</li>
-                          )}
-                          {(results.errors?.length || 0) > 0 && (
-                            <li className="text-amber-700">{results.errors.length} errors</li>
-                          )}
-                        </ul>
-                      </div>
-
-                      {results.errors?.length > 0 && (
-                        <div className="rounded-lg bg-red-50 p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <ExclamationTriangleIcon className="h-5 w-5 text-red-600" />
-                            <span className="text-sm font-medium text-red-800">Errors</span>
                           </div>
-                          <ul className="text-xs text-red-700 space-y-1 max-h-32 overflow-y-auto">
-                            {results.errors.slice(0, 20).map((err, i) => (
-                              <li key={i}>{err.file}: {err.reason}</li>
-                            ))}
-                            {results.errors.length > 20 && (
-                              <li>...and {results.errors.length - 20} more</li>
-                            )}
-                          </ul>
-                        </div>
-                      )}
+                        ))}
+                        {imageFiles.slice(0, 100).map((file, idx) => (
+                          <div key={`i-${idx}`} className="flex items-center justify-between px-3 py-2 border-b border-gray-100 last:border-b-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <PhotoIcon className="h-4 w-4 text-blue-500 shrink-0" />
+                              <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                              <span className="text-xs text-gray-400 shrink-0">{formatFileSize(file.size)}</span>
+                            </div>
+                            <button onClick={() => removeImage(idx)} disabled={uploading} className="text-gray-400 hover:text-red-500">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                        {imageFiles.length > 100 && (
+                          <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                            ... and {imageFiles.length - 100} more images
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Progress bar */}
+                  {uploading && (
+                    <div className="mt-4">
+                      <div className="flex justify-between text-sm text-gray-600 mb-1">
+                        <span>{progress.currentFile}</span>
+                        <span>{progress.current}/{progress.total}</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-gray-200">
+                        <div
+                          className="h-2 rounded-full bg-blue-600 transition-all"
+                          style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Footer buttons */}
-                <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-                  <button type="button" onClick={handleClose} className={theme.classes.btnSecondary}>
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => handleClose(results ? true : false)}
+                    disabled={uploading}
+                    className={theme.classes.btnSecondary}
+                  >
                     {results ? 'Done' : 'Cancel'}
                   </button>
                   {!results && (
