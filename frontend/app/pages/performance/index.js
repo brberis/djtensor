@@ -493,66 +493,6 @@ export default function Performance() {
                   </div>
                 )}
 
-                {/* Cross-Session Comparison Table */}
-                <Card title="Cross-Session Comparison">
-                  {sortedRows.length > 0 ? (
-                    <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50 sticky top-0 z-10">
-                          <tr>
-                            {[
-                              { key: 'testName', label: 'Test' },
-                              { key: 'sessionName', label: 'Session' },
-                              { key: 'model', label: 'Model' },
-                              { key: 'dataset', label: 'Dataset' },
-                              { key: 'resolution', label: 'Resolution' },
-                              { key: 'avgImgPerClass', label: 'Avg Img/Class' },
-                              { key: 'accuracy', label: 'Accuracy' },
-                              { key: 'confidence', label: 'Confidence' },
-                              { key: 'f1', label: 'F1' },
-                            ].map((col) => (
-                              <th
-                                key={col.key}
-                                className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:text-blue-600"
-                                onClick={() => handleSort(col.key)}
-                              >
-                                {col.label}{sortArrow(col.key)}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {sortedRows.map((row, i) => (
-                            <tr
-                              key={`${row.sessionId}-${i}`}
-                              className="cursor-pointer hover:bg-blue-50 transition-colors"
-                              onClick={() => router.push(`/training/${row.sessionId}`)}
-                            >
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.testName}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.sessionName}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.model}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.dataset}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.resolution}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.avgImgPerClass}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
-                                {row.accuracy != null ? `${(row.accuracy * 100).toFixed(1)}%` : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                {row.confidence != null ? `${(row.confidence * 100).toFixed(1)}%` : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                {row.f1 != null ? row.f1.toFixed(3) : '-'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 text-center py-8">No session data available</p>
-                  )}
-                </Card>
-
                 {/* Aggregated Confusion Matrix + Per-Class Performance side by side */}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <Card title="Aggregated Confusion Matrix">
@@ -641,6 +581,67 @@ export default function Performance() {
                     </ResponsiveContainer>
                   </Card>
                 )}
+
+                {/* Cross-Session Comparison Table */}
+                <Card title="Cross-Session Comparison">
+                  {sortedRows.length > 0 ? (
+                    <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0 z-10">
+                          <tr>
+                            {[
+                              { key: 'testName', label: 'Test' },
+                              { key: 'sessionName', label: 'Session' },
+                              { key: 'model', label: 'Model' },
+                              { key: 'dataset', label: 'Dataset' },
+                              { key: 'resolution', label: 'Resolution' },
+                              { key: 'avgImgPerClass', label: 'Avg Img/Class' },
+                              { key: 'accuracy', label: 'Accuracy' },
+                              { key: 'confidence', label: 'Confidence' },
+                              { key: 'f1', label: 'F1' },
+                            ].map((col) => (
+                              <th
+                                key={col.key}
+                                className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer select-none hover:text-blue-600"
+                                onClick={() => handleSort(col.key)}
+                              >
+                                {col.label}{sortArrow(col.key)}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {sortedRows.map((row, i) => (
+                            <tr
+                              key={`${row.sessionId}-${i}`}
+                              className="cursor-pointer hover:bg-blue-50 transition-colors"
+                              onClick={() => router.push(`/training/${row.sessionId}`)}
+                            >
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.testName}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.sessionName}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.model}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.dataset}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.resolution}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.avgImgPerClass}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
+                                {row.accuracy != null ? `${(row.accuracy * 100).toFixed(1)}%` : '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                {row.confidence != null ? `${(row.confidence * 100).toFixed(1)}%` : '-'}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                {row.f1 != null ? row.f1.toFixed(3) : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 text-center py-8">No session data available</p>
+                  )}
+                </Card>
+
               </>
             )}
 
