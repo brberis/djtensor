@@ -28,8 +28,56 @@ import tensorflow.keras.backend as K
 import gc
 import shutil
 import os
+import tarfile
 import logging
+
 logger = logging.getLogger(__name__)
+
+
+def is_gpu_busy():
+    """Check if any training or testing task is currently using the GPU.
+    Auto-fails tasks stuck for over 2 hours to prevent queue deadlocks."""
+    from django.utils import timezone
+    from datetime import timedelta
+    from .models import TrainingSession, Test
+    stale_cutoff = timezone.now() - timedelta(hours=2)
+    # Auto-fail stale tasks
+    TrainingSession.objects.filter(status='Training', updated_at__lt=stale_cutoff).update(status='Failed')
+    Test.objects.filter(status='Testing', updated_at__lt=stale_cutoff).update(status='Failed')
+    return (
+        TrainingSession.objects.filter(status='Training').exists()
+        or Test.objects.filter(status='Testing').exists()
+    )
+
+
+def process_next_pending():
+    """Dispatch the next pending training or test task if the GPU is free."""
+    from django.db import transaction
+    from .models import TrainingSession, Test
+    with transaction.atomic():
+        if is_gpu_busy():
+            return
+        next_session = (
+            TrainingSession.objects
+            .select_for_update(skip_locked=True)
+            .filter(status='Pending')
+            .order_by('created_at')
+            .first()
+        )
+        if next_session:
+            train_model.apply_async((next_session.id,))
+            return
+        next_test = (
+            Test.objects
+            .select_for_update(skip_locked=True)
+            .filter(status='Pending')
+            .order_by('created_at')
+            .first()
+        )
+        if next_test:
+            resolution = next_test.training_session.model.resolution
+            test_images.apply_async((next_test.id, int(resolution)))
+
 
 def convert_alpha_to_white(image_path):
     """Converts an image with alpha transparency to a white background and saves it in the same location."""
@@ -168,15 +216,19 @@ def train_model(training_session_id, *args, **kwargs):
         file_name = session_instance.dataset.name.replace(' ', '_').lower()
         logger.info(f"Dataset NAME: {file_name}")
 
-        base_media_url = urljoin(settings.BASE_URL, settings.MEDIA_URL)
-        logger.info(f"Dataset NAME: " + base_media_url)
-        tar_path = urljoin(base_media_url, 'archive/' + file_name + '.tar.gz')    
-        logger.info(f"Dataset PATH: {tar_path}")
+        # Use local archive file instead of downloading through Cloudflare
+        local_tar = os.path.join(settings.MEDIA_ROOT, 'archive', file_name + '.tar.gz')
+        cache_dir = os.path.join('/root/.keras/datasets')
+        data_dir = os.path.join(cache_dir, file_name)
+        logger.info(f"Local archive: {local_tar}")
 
-        data_dir = tf.keras.utils.get_file(
-        file_name,
-        tar_path,
-        untar=True)
+        if not os.path.isdir(data_dir):
+            os.makedirs(cache_dir, exist_ok=True)
+            logger.info(f"Extracting archive to {cache_dir}...")
+            with tarfile.open(local_tar, 'r:gz') as tar:
+                tar.extractall(path=cache_dir)
+        else:
+            logger.info(f"Dataset already cached at {data_dir}")
 
         logger.info(f"Dataset data_dir: {data_dir}")
 
@@ -507,6 +559,7 @@ def train_model(training_session_id, *args, **kwargs):
         gc.collect()  
 
     session_instance.save()
+    process_next_pending()
 
 
 # Predict the label of an image
@@ -630,4 +683,5 @@ def test_images(test_id, image_size=224):
     finally:
         test_instance.save()
         K.clear_session()  
-        gc.collect()  
+        gc.collect()
+    process_next_pending()  

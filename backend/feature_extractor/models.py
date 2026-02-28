@@ -8,10 +8,11 @@
 # Copyright (c) 2024
 
 from django.db import models
+from django.contrib.auth.models import User
 from datasets.models import Dataset, Image
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .tasks import train_model, test_images
+from .tasks import train_model, test_images, is_gpu_busy
 
 STATUS = [
     ('Pending', 'Pending'),
@@ -121,14 +122,38 @@ class TFModel(models.Model):
     def __str__(self):
         return f"{self.name} {self.default}"
     
+STUDY_ROLES = [
+    ('owner', 'Owner'),
+    ('editor', 'Editor'),
+    ('viewer', 'Viewer'),
+]
+
+STUDY_MODES = [
+    ('experiment', 'Experiment'),
+    ('review', 'Review'),
+]
+
 class Study(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
+    mode = models.CharField(max_length=12, choices=STUDY_MODES, default='experiment')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name
+
+class StudyMembership(models.Model):
+    study = models.ForeignKey(Study, related_name='memberships', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, related_name='study_memberships', on_delete=models.CASCADE)
+    role = models.CharField(max_length=10, choices=STUDY_ROLES, default='viewer')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('study', 'user')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.study.name} ({self.role})"
     
 class TrainingSession(models.Model):
     study = models.ForeignKey(Study, related_name='training_sessions', blank=True, null=True, on_delete=models.CASCADE)
@@ -139,6 +164,9 @@ class TrainingSession(models.Model):
     class_names = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=30, choices=STATUS, default='Pending')
     model_path = models.CharField(max_length=100, blank=True, null=True)
+    created_by = models.ForeignKey(User, related_name='training_sessions', null=True, blank=True, on_delete=models.SET_NULL)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(User, related_name='archived_training_sessions', null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -159,6 +187,9 @@ class Test(models.Model):
     dataset = models.ForeignKey(Dataset, related_name='tests', on_delete=models.CASCADE)
     training_session = models.ForeignKey(TrainingSession, related_name='tests', on_delete=models.CASCADE)
     status = models.CharField(max_length=30, choices=STATUS, default='Pending')
+    created_by = models.ForeignKey(User, related_name='tests', null=True, blank=True, on_delete=models.SET_NULL)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(User, related_name='archived_tests', null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -183,4 +214,5 @@ class TestResult(models.Model):
 @receiver(post_save, sender=Test)
 def test_images_on_save(sender, instance, created, **kwargs):
     if created:
-        test_images.delay(instance.id, instance.training_session.model.resolution)
+        if not is_gpu_busy():
+            test_images.delay(instance.id, instance.training_session.model.resolution)

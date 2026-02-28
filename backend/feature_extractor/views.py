@@ -20,7 +20,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 from .models import TrainingSession
-from .tasks import train_model
+from .tasks import train_model, is_gpu_busy, process_next_pending
+from .permissions import effective_role
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,11 @@ def retrain_session(request, session_id):
     except TrainingSession.DoesNotExist:
         return JsonResponse({"error": "Session not found"}, status=404)
 
+    # Check permissions
+    role = effective_role(request.user, session.study)
+    if role not in ('owner', 'editor'):
+        return JsonResponse({"error": "Permission denied"}, status=403)
+
     if session.status not in ('Completed', 'Failed'):
         return JsonResponse(
             {"error": f"Cannot retrain session with status '{session.status}'"},
@@ -150,6 +156,11 @@ def stop_training(request, session_id):
         session = TrainingSession.objects.get(pk=session_id)
     except TrainingSession.DoesNotExist:
         return JsonResponse({"error": "Session not found"}, status=404)
+
+    # Check permissions
+    role = effective_role(request.user, session.study)
+    if role not in ('owner', 'editor'):
+        return JsonResponse({"error": "Permission denied"}, status=403)
 
     if session.status not in ('Training', 'Pending'):
         return JsonResponse(
@@ -183,6 +194,7 @@ def stop_training(request, session_id):
     # Update session status regardless of whether we found the task
     session.status = 'Failed'
     session.save()
+    process_next_pending()
 
     return JsonResponse({
         "success": True,

@@ -10,7 +10,7 @@
  */
 
 import { Fragment, useState, useEffect } from 'react';
-import { Dialog, Transition } from '@headlessui/react';
+import { Dialog, Transition, Listbox } from '@headlessui/react';
 import {
   Bars3Icon,
   XMarkIcon,
@@ -22,11 +22,20 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   UserCircleIcon,
+  ChevronUpDownIcon,
 } from '@heroicons/react/24/outline';
+import { CheckIcon } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import theme from '../../theme';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 // Sidebar navigation items
 const navigation = [
@@ -47,6 +56,7 @@ const Layout = (props) => {
   const [studies, setStudies] = useState([]);
   const [selectedStudy, setSelectedStudy] = useState('');
   const { user, loading, logout } = useAuth();
+  const { canMutate } = usePermissions();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -60,24 +70,33 @@ const Layout = (props) => {
     fetch('/api/feature_extractor/studies/')
       .then((response) => response.json())
       .then((data) => {
-        setStudies(data);
-        const savedStudy = localStorage.getItem('selectedStudy');
-        if (savedStudy) {
+        const sorted = [...data].reverse();
+        setStudies(sorted);
+        const storageKey = `selectedStudy_${user.id}`;
+        const savedStudy = localStorage.getItem(storageKey) || localStorage.getItem('selectedStudy');
+        if (savedStudy && sorted.some(s => String(s.id) === String(savedStudy))) {
           setSelectedStudy(savedStudy);
-        } else if (data.length > 0) {
-          const lastStudy = data[data.length - 1].id;
-          setSelectedStudy(lastStudy);
-          localStorage.setItem('selectedStudy', lastStudy);
+        } else if (sorted.length > 0) {
+          const latestStudy = sorted[0].id;
+          setSelectedStudy(latestStudy);
+          localStorage.setItem(storageKey, latestStudy);
+          localStorage.setItem('selectedStudy', latestStudy);
         }
       })
       .catch((error) => console.error('Error fetching studies:', error));
   }, [user]);
 
-  const handleStudyChange = (e) => {
-    const studyId = e.target.value;
-    setSelectedStudy(studyId);
-    localStorage.setItem('selectedStudy', studyId);
+  const handleStudySelect = (studyId) => {
+    const nextStudyId = String(studyId);
+    setSelectedStudy(nextStudyId);
+    localStorage.setItem(`selectedStudy_${user.id}`, nextStudyId);
+    localStorage.setItem('selectedStudy', nextStudyId);
+    // Keep body + dropdown perfectly in sync by reloading context
     window.location.assign('/');
+  };
+
+  const handleStudyChange = (e) => {
+    handleStudySelect(e.target.value);
   };
 
   const isCurrentPath = (href) => {
@@ -103,7 +122,7 @@ const Layout = (props) => {
   }
 
   // Sidebar content reused for both mobile and desktop
-  const SidebarContent = () => (
+  const sidebarContent = (
     <nav className="flex flex-1 flex-col">
       <ul role="list" className="flex flex-1 flex-col gap-y-7">
         <li>
@@ -142,22 +161,70 @@ const Layout = (props) => {
         {/* Study selector */}
         <li>
           <div className="px-2">
-            <label htmlFor="sidebar-study" className="block text-xs font-medium text-gray-400 mb-1">
-              Active Study
-            </label>
-            <select
-              id="sidebar-study"
-              value={selectedStudy}
-              onChange={handleStudyChange}
-              className="block w-full rounded-md bg-gray-700 border-0 py-1.5 pl-3 pr-8 text-sm text-white focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="" disabled>Select Study</option>
-              {studies.map((study) => (
-                <option key={study.id} value={study.id}>
-                  {study.name}
-                </option>
-              ))}
-            </select>
+            <Listbox value={selectedStudy} onChange={handleStudySelect}>
+              <div className="relative">
+                <Listbox.Label className="block text-xs font-medium text-gray-400 mb-1">
+                  Active Study
+                  {(() => {
+                    const st = studies.find(st => String(st.id) === String(selectedStudy));
+                    return st && st.mode === 'review' ? (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">Review</span>
+                    ) : null;
+                  })()}
+                </Listbox.Label>
+                <Listbox.Button className="relative w-full cursor-pointer rounded-md bg-gray-700 py-2 pl-3 pr-10 text-left text-sm text-white ring-1 ring-inset ring-gray-600 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+                  <span className="block truncate">
+                    {studies.find(s => String(s.id) === String(selectedStudy))?.name || 'Select Study'}
+                  </span>
+                  <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                    <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                  </span>
+                </Listbox.Button>
+                <Transition
+                  as={Fragment}
+                  leave="transition ease-in duration-100"
+                  leaveFrom="opacity-100"
+                  leaveTo="opacity-0"
+                >
+                  <Listbox.Options className="absolute z-50 mt-1 max-h-72 w-72 overflow-auto rounded-lg bg-gray-800 py-1 text-sm shadow-xl ring-1 ring-black/20 focus:outline-none">
+                    {studies.map((study) => (
+                      <Listbox.Option
+                        key={study.id}
+                        value={study.id}
+                        className={({ active }) =>
+                          `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${
+                            active ? 'bg-blue-600 text-white' : 'text-gray-200'
+                          }`
+                        }
+                      >
+                        {({ selected, active }) => (
+                          <>
+                            <div className="flex flex-col">
+                              <span className={`block truncate font-medium ${selected ? 'text-white' : ''}`}>
+                                {study.name}
+                              </span>
+                              <span className={`block text-xs mt-0.5 ${active ? 'text-blue-200' : 'text-gray-500'}`}>
+                                {formatDate(study.created_at)}
+                              </span>
+                              {study.description && (
+                                <span className={`block text-xs mt-0.5 truncate ${active ? 'text-blue-100' : 'text-gray-400'}`}>
+                                  {study.description}
+                                </span>
+                              )}
+                            </div>
+                            {selected && (
+                              <span className={`absolute inset-y-0 left-0 flex items-center pl-3 ${active ? 'text-white' : 'text-blue-400'}`}>
+                                <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </Listbox.Option>
+                    ))}
+                  </Listbox.Options>
+                </Transition>
+              </div>
+            </Listbox>
           </div>
         </li>
 
@@ -239,8 +306,8 @@ const Layout = (props) => {
                     </button>
                   </div>
                 </Transition.Child>
-                <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4">
-                  <SidebarContent />
+                <div className="flex grow flex-col gap-y-5 overflow-y-visible bg-gray-900 px-6 pb-4">
+                  {sidebarContent}
                 </div>
               </Dialog.Panel>
             </Transition.Child>
@@ -250,8 +317,8 @@ const Layout = (props) => {
 
       {/* Static sidebar for desktop */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-gray-900 px-6 pb-4">
-          <SidebarContent />
+        <div className="flex grow flex-col gap-y-5 overflow-y-visible bg-gray-900 px-6 pb-4">
+          {sidebarContent}
         </div>
       </div>
 
@@ -278,32 +345,84 @@ const Layout = (props) => {
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               {/* Study selector in top bar for quick access */}
               <div className="hidden sm:flex items-center gap-x-2">
-                <label htmlFor="topbar-study" className="text-sm font-medium text-gray-500">
-                  Study:
-                </label>
-                <select
-                  id="topbar-study"
-                  value={selectedStudy}
-                  onChange={handleStudyChange}
-                  className="rounded-md border-0 py-1 pl-3 pr-8 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600"
-                >
-                  <option value="" disabled>Select Study</option>
-                  {studies.map((study) => (
-                    <option key={study.id} value={study.id}>
-                      {study.name}
-                    </option>
-                  ))}
-                </select>
+                <Listbox value={selectedStudy} onChange={handleStudySelect}>
+                  <div className="relative">
+                    <Listbox.Label className="text-sm font-medium text-gray-500 mr-2">
+                      Study:
+                      {(() => {
+                        const st = studies.find(st => String(st.id) === String(selectedStudy));
+                        return st && st.mode === 'review' ? (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Review</span>
+                        ) : null;
+                      })()}
+                    </Listbox.Label>
+                    <Listbox.Button className="relative inline-flex items-center cursor-pointer rounded-md bg-white py-1.5 pl-3 pr-10 text-left text-sm text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors min-w-[180px]">
+                      <span className="block truncate">
+                        {studies.find(s => String(s.id) === String(selectedStudy))?.name || 'Select Study'}
+                      </span>
+                      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                        <ChevronUpDownIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                      </span>
+                    </Listbox.Button>
+                    <Transition
+                      as={Fragment}
+                      leave="transition ease-in duration-100"
+                      leaveFrom="opacity-100"
+                      leaveTo="opacity-0"
+                    >
+                      <Listbox.Options className="absolute right-0 z-50 mt-1 max-h-72 w-80 overflow-auto rounded-lg bg-white py-1 text-sm shadow-xl ring-1 ring-black/10 focus:outline-none">
+                        {studies.map((study) => (
+                          <Listbox.Option
+                            key={study.id}
+                            value={study.id}
+                            className={({ active }) =>
+                              `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${
+                                active ? 'bg-blue-50 text-blue-900' : 'text-gray-900'
+                              }`
+                            }
+                          >
+                            {({ selected, active }) => (
+                              <>
+                                <div className="flex flex-col">
+                                  <span className={`block truncate ${selected ? 'font-semibold' : 'font-medium'}`}>
+                                    {study.name}
+                                  </span>
+                                  <span className={`block text-xs mt-0.5 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    {formatDate(study.created_at)}
+                                  </span>
+                                  {study.description && (
+                                    <span className={`block text-xs mt-0.5 truncate ${active ? 'text-blue-500' : 'text-gray-400'}`}>
+                                      {study.description}
+                                    </span>
+                                  )}
+                                </div>
+                                {selected && (
+                                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-blue-600">
+                                    <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </Listbox.Option>
+                        ))}
+                      </Listbox.Options>
+                    </Transition>
+                  </div>
+                </Listbox>
               </div>
-              {action && (
-                <button
-                  type="button"
-                  onClick={actionHandler}
-                  className={theme.classes.btnPrimary}
-                >
-                  {action}
-                </button>
-              )}
+              {action && (() => {
+                const currentStudyObj = studies.find(st => String(st.id) === String(selectedStudy));
+                const studyMode = currentStudyObj?.mode || 'experiment';
+                return canMutate(selectedStudy, studyMode) ? (
+                  <button
+                    type="button"
+                    onClick={actionHandler}
+                    className={theme.classes.btnPrimary}
+                  >
+                    {action}
+                  </button>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>

@@ -8,19 +8,23 @@
 # Copyright (c) 2024
 
 import random
+import re
 import string
 from rest_framework import viewsets, serializers, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db import transaction
-from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult
+from django.utils import timezone
+from django.db.models import Count, Avg, Case, When, FloatField, F, Q
+from .models import TFModel, Study, TrainingSession, Epoch, Test, TestResult, StudyMembership
 from datasets.models import Dataset, Image
-from .serializers import TFModelSerializer, StudySerializer, TrainingSessionSerializer, TrainingSessionListSerializer, EpochSerializer, TestSerializer, TestListSerializer, TestResultSerializer
+from .serializers import TFModelSerializer, StudySerializer, TrainingSessionSerializer, TrainingSessionListSerializer, EpochSerializer, TestSerializer, TestListSerializer, TestResultSerializer, StudyMembershipSerializer
+from .permissions import effective_role, CanCreateInStudy
 from django_filters.rest_framework import DjangoFilterBackend
 from random import sample
 from datasets.tasks import create_dataset_archive
 from celery import chain
-from .tasks import train_model, test_images
+from .tasks import train_model, test_images, is_gpu_busy, process_next_pending
 
 
 
@@ -29,8 +33,26 @@ class TFModelViewSet(viewsets.ModelViewSet):
     serializer_class = TFModelSerializer
 
 class StudyViewSet(viewsets.ModelViewSet):
-    queryset = Study.objects.all()
     serializer_class = StudySerializer
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return Study.objects.all()
+        user_studies = StudyMembership.objects.filter(
+            user=self.request.user
+        ).values_list('study_id', flat=True)
+        return Study.objects.filter(id__in=user_studies)
+
+    def perform_create(self, serializer):
+        study = serializer.save()
+        StudyMembership.objects.create(study=study, user=self.request.user, role='owner')
+
+    def destroy(self, request, *args, **kwargs):
+        study = self.get_object()
+        role = effective_role(request.user, study)
+        if role != 'owner':
+            return Response({'error': 'Only the study owner can delete a study'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):
@@ -200,8 +222,19 @@ class StudyViewSet(viewsets.ModelViewSet):
 
 
 class TrainingSessionViewSet(viewsets.ModelViewSet):
-    queryset = TrainingSession.objects.select_related('model', 'dataset', 'study').prefetch_related('epochs').all()
     serializer_class = TrainingSessionSerializer
+    permission_classes_by_action = {}  # Handled inline
+
+    def get_queryset(self):
+        qs = TrainingSession.objects.select_related('model', 'dataset', 'study').prefetch_related('epochs')
+        if not self.request.user.is_superuser:
+            user_studies = StudyMembership.objects.filter(
+                user=self.request.user
+            ).values_list('study_id', flat=True)
+            qs = qs.filter(study__in=user_studies)
+        if self.request.query_params.get('show_archived') != 'true':
+            qs = qs.filter(archived_at__isnull=True)
+        return qs.all()
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -249,17 +282,98 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
                             image=image.image,
                             label=label
                         )
-                training_session = serializer.save(dataset=new_dataset)
+                training_session = serializer.save(dataset=new_dataset, created_by=self.request.user)
                 # Delay the task until the transaction is committed
-                transaction.on_commit(lambda: chain(
-                    create_dataset_archive.s(new_dataset.id),
-                    train_model.s(training_session.id)
-                ).apply_async())
+                if is_gpu_busy():
+                    # GPU busy: only create archive, training will be picked up by queue
+                    transaction.on_commit(lambda: create_dataset_archive.apply_async((new_dataset.id,)))
+                else:
+                    transaction.on_commit(lambda: chain(
+                        create_dataset_archive.s(new_dataset.id),
+                        train_model.s(training_session.id)
+                    ).apply_async())
             else:
                 raise serializers.ValidationError("Base dataset not found.")
         else:
-            training_session = serializer.save()
-            transaction.on_commit(lambda: train_model.apply_async((training_session.id,)))  # Adding a delay
+            training_session = serializer.save(created_by=self.request.user)
+            if not is_gpu_busy():
+                transaction.on_commit(lambda: train_model.apply_async((training_session.id,)))
+
+
+    @action(detail=True, methods=['post'])
+    def clone(self, request, pk=None):
+        """Clone a training session with auto-incremented suffix."""
+        source = self.get_object()
+        base_name = source.name
+        # Strip existing T-N suffix to get base name
+        match = re.match(r'^(.*?)\s+T-(\d+)$', base_name)
+        if match:
+            base_name = match.group(1)
+        # Find the highest existing suffix
+        existing = TrainingSession.objects.filter(
+            name__regex=r'^' + re.escape(base_name) + r'\s+T-\d+$'
+        ).values_list('name', flat=True)
+        max_num = 0
+        for name in existing:
+            m = re.search(r'T-(\d+)$', name)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+        # Also count the source itself if it has no suffix
+        if max_num == 0:
+            max_num = 1
+        new_name = f"{base_name} T-{max_num + 1}"
+        # Check permissions
+        role = effective_role(request.user, source.study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        new_session = TrainingSession.objects.create(
+            study=source.study,
+            name=new_name,
+            notes=source.notes,
+            dataset=source.dataset,
+            model=source.model,
+            status='Pending',
+            created_by=request.user,
+        )
+        if not is_gpu_busy():
+            train_model.apply_async((new_session.id,))
+        serializer = self.get_serializer(new_session)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        role = effective_role(request.user, obj.study)
+        if role == 'owner':
+            return super().destroy(request, *args, **kwargs)
+        elif role == 'editor':
+            obj.archived_at = timezone.now()
+            obj.archived_by = request.user
+            obj.save(update_fields=['archived_at', 'archived_by'])
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        obj = self.get_object()
+        role = effective_role(request.user, obj.study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        obj.archived_at = timezone.now()
+        obj.archived_by = request.user
+        obj.save(update_fields=['archived_at', 'archived_by'])
+        return Response({'status': 'archived'})
+
+    @action(detail=True, methods=['post'])
+    def unarchive(self, request, pk=None):
+        obj = self.get_object()
+        role = effective_role(request.user, obj.study)
+        if role != 'owner':
+            return Response({'error': 'Only the owner can unarchive'}, status=status.HTTP_403_FORBIDDEN)
+        obj.archived_at = None
+        obj.archived_by = None
+        obj.save(update_fields=['archived_at', 'archived_by'])
+        return Response({'status': 'unarchived'})
 
             
 class EpochViewSet(viewsets.ModelViewSet):
@@ -269,13 +383,32 @@ class EpochViewSet(viewsets.ModelViewSet):
     filterset_fields = ['training_session']
 
 class TestViewSet(viewsets.ModelViewSet):
-    queryset = Test.objects.select_related(
-        'training_session',
-        'training_session__model',
-        'training_session__dataset',
-        'training_session__study',
-    ).prefetch_related('training_session__epochs').all()
     serializer_class = TestSerializer
+
+    def get_queryset(self):
+        qs = Test.objects.select_related(
+            'training_session', 'training_session__model',
+            'training_session__dataset', 'training_session__study',
+            'created_by',
+        ).prefetch_related('training_session__epochs')
+        if not self.request.user.is_superuser:
+            user_studies = StudyMembership.objects.filter(
+                user=self.request.user
+            ).values_list('study_id', flat=True)
+            qs = qs.filter(training_session__study__in=user_studies)
+        if self.request.query_params.get('show_archived') != 'true':
+            qs = qs.filter(archived_at__isnull=True)
+        # Annotate aggregate stats for list view (avoids N+1 queries)
+        if self.action == 'list':
+            qs = qs.annotate(
+                _num_images=Count('results'),
+                _avg_confidence=Avg('results__confidence'),
+                _num_correct=Count(
+                    'results',
+                    filter=Q(results__prediction=F('results__true_label'))
+                ),
+            )
+        return qs.all()
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -294,8 +427,59 @@ class TestViewSet(viewsets.ModelViewSet):
         test_instance.status = "Pending"
         test_instance.save(update_fields=["status", "updated_at"])
 
+        role = effective_role(request.user, test_instance.training_session.study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
         test_images.delay(test_instance.id, test_instance.training_session.model.resolution)
         return Response({"status": "queued"}, status=status.HTTP_202_ACCEPTED)
+
+
+    @action(detail=True, methods=['post'])
+    def stop(self, request, pk=None):
+        test_instance = self.get_object()
+        role = effective_role(request.user, test_instance.training_session.study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        if test_instance.status not in ('Testing', 'Pending'):
+            return Response({'error': f'Cannot stop test with status {test_instance.status}'}, status=status.HTTP_400_BAD_REQUEST)
+        test_instance.status = 'Failed'
+        test_instance.save()
+        process_next_pending()
+        return Response({'status': 'stopped'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def clone(self, request, pk=None):
+        source = self.get_object()
+        base_name = source.name
+        match = re.match(r'^(.*?)\s+T-(\d+)$', base_name)
+        if match:
+            base_name = match.group(1)
+        existing = Test.objects.filter(
+            name__regex=r'^' + re.escape(base_name) + r'\s+T-\d+$'
+        ).values_list('name', flat=True)
+        max_num = 0
+        for name in existing:
+            m = re.search(r'T-(\d+)$', name)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+        if max_num == 0:
+            max_num = 1
+        new_name = f"{base_name} T-{max_num + 1}"
+        role = effective_role(request.user, source.training_session.study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        new_test = Test.objects.create(
+            name=new_name,
+            notes=source.notes,
+            dataset=source.dataset,
+            training_session=source.training_session,
+            status='Pending',
+            created_by=request.user,
+        )
+        if not is_gpu_busy():
+            test_images.delay(new_test.id, new_test.training_session.model.resolution)
+        serializer = self.get_serializer(new_test)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def create(self, request, *args, **kwargs):
         # Print the request object
@@ -311,6 +495,46 @@ class TestViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        study = obj.training_session.study
+        role = effective_role(request.user, study)
+        if role == 'owner':
+            return super().destroy(request, *args, **kwargs)
+        elif role == 'editor':
+            obj.archived_at = timezone.now()
+            obj.archived_by = request.user
+            obj.save(update_fields=['archived_at', 'archived_by'])
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        obj = self.get_object()
+        study = obj.training_session.study
+        role = effective_role(request.user, study)
+        if role not in ('owner', 'editor'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        obj.archived_at = timezone.now()
+        obj.archived_by = request.user
+        obj.save(update_fields=['archived_at', 'archived_by'])
+        return Response({'status': 'archived'})
+
+    @action(detail=True, methods=['post'])
+    def unarchive(self, request, pk=None):
+        obj = self.get_object()
+        study = obj.training_session.study
+        role = effective_role(request.user, study)
+        if role != 'owner':
+            return Response({'error': 'Only the owner can unarchive'}, status=status.HTTP_403_FORBIDDEN)
+        obj.archived_at = None
+        obj.archived_by = None
+        obj.save(update_fields=['archived_at', 'archived_by'])
+        return Response({'status': 'unarchived'})
+
 
 class TestResultViewSet(viewsets.ModelViewSet):
     queryset = TestResult.objects.select_related('test', 'image').all()
@@ -324,3 +548,39 @@ class PerformanceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         last_session = TrainingSession.objects.filter(status='Completed').last()
         return TrainingSession.objects.select_related('model', 'dataset', 'study').prefetch_related('epochs').filter(id=last_session.id) if last_session else TrainingSession.objects.none()
+
+
+class StudyMembershipViewSet(viewsets.ModelViewSet):
+    serializer_class = StudyMembershipSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['study']
+
+    def get_queryset(self):
+        return StudyMembership.objects.select_related('user', 'study').all()
+
+    def create(self, request, *args, **kwargs):
+        study_id = request.data.get('study')
+        try:
+            study = Study.objects.get(pk=study_id)
+        except Study.DoesNotExist:
+            return Response({'error': 'Study not found'}, status=status.HTTP_404_NOT_FOUND)
+        role = effective_role(request.user, study)
+        if role != 'owner':
+            return Response({'error': 'Only the study owner can manage members'}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        membership = self.get_object()
+        role = effective_role(request.user, membership.study)
+        if role != 'owner':
+            return Response({'error': 'Only the study owner can remove members'}, status=status.HTTP_403_FORBIDDEN)
+        if membership.role == 'owner':
+            return Response({'error': 'Cannot remove the study owner'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        membership = self.get_object()
+        role = effective_role(request.user, membership.study)
+        if role != 'owner':
+            return Response({'error': 'Only the study owner can change roles'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)

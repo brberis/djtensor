@@ -57,6 +57,7 @@ class ImageSerializer(serializers.ModelSerializer):
     file_size = serializers.SerializerMethodField()
     image_width = serializers.SerializerMethodField()
     image_height = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Image
@@ -86,6 +87,20 @@ class ImageSerializer(serializers.ModelSerializer):
             return obj.image.height if obj.image else None
         except Exception:
             return None
+
+    def get_image(self, obj):
+        from django.conf import settings
+        import os
+        if not obj.image:
+            return None
+        base = getattr(settings, "BASE_URL", "").rstrip("/")
+        url = base + obj.image.url
+        try:
+            mtime = int(os.path.getmtime(obj.image.path))
+            url += "?v=" + str(mtime)
+        except Exception:
+            pass
+        return url
 
 
 class LabelSerializer(serializers.ModelSerializer):

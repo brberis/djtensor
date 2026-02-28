@@ -55,8 +55,19 @@ class ImagePagination(PageNumberPagination):
 
 
 class DatasetViewSet(viewsets.ModelViewSet):
-    queryset = Dataset.objects.all()
     serializer_class = DatasetSerializer
+
+    def get_queryset(self):
+        qs = Dataset.objects.all()
+        if not self.request.user.is_superuser:
+            from feature_extractor.models import StudyMembership
+            user_studies = StudyMembership.objects.filter(
+                user=self.request.user
+            ).values_list('study_id', flat=True)
+            qs = qs.filter(study__in=user_studies)
+        return qs
+    filter_backends = (DjangoFilterBackend,)
+    filterset_fields = ['study', 'for_testing']
 
     def update(self, request, *args, **kwargs):
         dataset = self.get_object()
