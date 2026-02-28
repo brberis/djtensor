@@ -17,7 +17,8 @@ import LogViewer from '../../components/LogViewer';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { TableSpinnerRow } from '../../components/Spinner';
 import { getStatusBadgeClass } from '../../theme';
-import { CpuChipIcon } from '@heroicons/react/24/outline';
+import { CpuChipIcon, PencilIcon, ArchiveBoxIcon } from '@heroicons/react/24/outline';
+import { usePermissions } from '../../hooks/usePermissions';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
 export default function Training() {
@@ -28,7 +29,11 @@ export default function Training() {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [logSessionId, setLogSessionId] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const menuRef = useRef(null);
+  const { canMutate, canDelete, isOwner } = usePermissions();
   const openMenuIdRef = useRef(null);
   const router = useRouter();
 
@@ -40,7 +45,8 @@ export default function Training() {
   useEffect(() => {
     const fetchSessions = async () => {
       try {
-        const response = await fetch('/api/feature_extractor/trainingsession/');
+        const url = '/api/feature_extractor/trainingsession/' + (showArchived ? '?show_archived=true' : '');
+        const response = await fetch(url);
         const data = await response.json();
         if (Array.isArray(data)) {
           const savedStudy = localStorage.getItem('selectedStudy');
@@ -64,7 +70,7 @@ export default function Training() {
     const intervalId = setInterval(fetchSessions, refreshInterval);
 
     return () => clearInterval(intervalId);
-  }, [refresh]);
+  }, [refresh, showArchived]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -166,6 +172,66 @@ export default function Training() {
     setLogSessionId(sessionId);
   };
 
+  const handleClone = async (sessionId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}/clone/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+      });
+      if (response.ok) {
+        setRefresh((prev) => !prev);
+      } else {
+        console.error('Clone failed:', await response.text());
+      }
+    } catch (error) {
+      console.error('Clone error:', error);
+    }
+  };
+
+  const handleArchive = async (sessionId) => {
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}/archive`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      });
+      if (response.ok) setRefresh(prev => !prev);
+    } catch (error) { console.error('Archive error:', error); }
+  };
+
+  const handleSaveName = async (sessionId, newName) => {
+    setEditingSessionId(null);
+    const session = sessions.find(s => s.id === sessionId);
+    if (!newName.trim() || newName === session?.name) return;
+    try {
+      const response = await fetch(`/api/feature_extractor/trainingsession/${sessionId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      if (response.ok) {
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, name: newName.trim() } : s));
+        setRefresh(prev => !prev);
+      }
+    } catch (error) {
+      console.error('Rename error:', error);
+    }
+  };
+
+  const selectedStudy = typeof window !== 'undefined' ? localStorage.getItem('selectedStudy') : null;
+  const studyMode = sessions[0]?.study?.mode || 'experiment';
+  const userCanMutate = canMutate(selectedStudy, studyMode);
+  const userCanDelete = canDelete(selectedStudy);
+
   const isTerminal = (status) => status === 'Completed' || status === 'Failed';
   const isActive = (status) => status === 'Training' || status === 'Pending';
 
@@ -192,7 +258,7 @@ export default function Training() {
 
 
       <ConfirmDialog
-        open={!!confirmAction}
+        isOpen={!!confirmAction}
         title={confirmAction?.type === "retrain" ? "Re-train this session?" : "Delete this training session?"}
         description={confirmAction?.type === "retrain"
           ? `This will start a new training run for "${confirmAction?.name}".`
@@ -200,7 +266,13 @@ export default function Training() {
         confirmLabel={confirmAction?.type === "retrain" ? "Re-train" : "Delete"}
         confirmTone={confirmAction?.type === "delete" ? "danger" : "primary"}
         requireText={confirmAction?.type === "delete" ? confirmAction?.name : undefined}
-        onConfirm={() => {
+        reasons={confirmAction?.type === "retrain" ? [
+          { value: 'config_fix', label: 'Configuration fix' },
+          { value: 'seed_check', label: 'Seed/reproducibility check' },
+          { value: 'data_update', label: 'Dataset was updated' },
+          { value: 'reproduce', label: 'Reproduce previous results' },
+        ] : undefined}
+        onConfirm={({ reason } = {}) => {
           const action = confirmAction;
           setConfirmAction(null);
           if (!action) return;
@@ -209,6 +281,19 @@ export default function Training() {
         }}
         onClose={() => setConfirmAction(null)}
       />
+
+      {/* Show Archived toggle */}
+      <div className="flex items-center justify-end mb-3">
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          Show archived
+        </label>
+      </div>
 
       {/* Sessions table */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-visible">
@@ -240,16 +325,40 @@ export default function Training() {
               sessions.map((session) => (
                 <tr
                   key={session.id}
-                  className={session.status === 'Completed' ? 'group cursor-pointer hover:bg-blue-50 transition-colors' : 'group'}
+                  className={`group ${session.status === 'Completed' ? 'cursor-pointer hover:bg-blue-50 transition-colors' : ''} ${session.archived_at ? 'opacity-50' : ''}`}
                 >
                   <td className="whitespace-nowrap px-4 py-4 text-sm">
                     <span className={getStatusBadgeClass(session.status)}>{session.status}</span>
                   </td>
-                  <td
-                    className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900"
-                    onClick={() => handleSessionClick(session)}
-                  >
-                    {session.name}
+                  <td className="whitespace-nowrap px-4 py-4 text-sm font-medium text-gray-900">
+                    {editingSessionId === session.id ? (
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveName(session.id, editingName);
+                          if (e.key === 'Escape') setEditingSessionId(null);
+                        }}
+                        onBlur={() => handleSaveName(session.id, editingName)}
+                        autoFocus
+                        className="w-full rounded border border-blue-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    ) : (
+                      <span className="flex items-center gap-1.5" onClick={() => handleSessionClick(session)}>
+                        {session.name}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSessionId(session.id);
+                            setEditingName(session.name);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200"
+                        >
+                          <PencilIcon className="h-3.5 w-3.5 text-gray-400" />
+                        </button>
+                      </span>
+                    )}
                   </td>
                   <td
                     className="whitespace-nowrap px-4 py-4 text-sm text-gray-500"
@@ -285,7 +394,7 @@ export default function Training() {
                       {openMenuId === session.id && (
                         <div className="absolute right-0 z-10 mt-1 w-36 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5 focus:outline-none">
                           <div className="py-1">
-                            {isTerminal(session.status) && (
+                            {userCanMutate && isTerminal(session.status) && (
                               <button
                                 className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                                 onClick={(e) => {
@@ -296,7 +405,7 @@ export default function Training() {
                                 Re-train
                               </button>
                             )}
-                            {isActive(session.status) && (
+                            {userCanMutate && isActive(session.status) && (
                               <button
                                 className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
                                 onClick={(e) => {
@@ -305,6 +414,17 @@ export default function Training() {
                                 }}
                               >
                                 Stop
+                              </button>
+                            )}
+                            {userCanMutate && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClone(session.id);
+                                }}
+                              >
+                                Clone
                               </button>
                             )}
                             <button
@@ -317,6 +437,7 @@ export default function Training() {
                               Logs
                             </button>
                             
+                            {userCanDelete && (
                               <button
                                 className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 hover:text-red-700"
                                 onClick={(e) => {
@@ -327,6 +448,18 @@ export default function Training() {
                               >
                                 Delete
                               </button>
+                            )}
+                            {!userCanDelete && userCanMutate && !session.archived_at && (
+                              <button
+                                className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleArchive(session.id);
+                                }}
+                              >
+                                Archive
+                              </button>
+                            )}
 
                           </div>
                         </div>

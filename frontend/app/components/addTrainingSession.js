@@ -29,7 +29,7 @@ export default function AddSession({ isOpen, onClose }) {
         const selectedStudy = localStorage.getItem('selectedStudy');
         const [datasetsData, modelsData] = await Promise.all([
           fetch(`/api/datasets/dataset/?study=${selectedStudy}`).then(res => res.json()),
-          fetch(`/api/models/`).then(res => res.json()),
+          fetch(`/api/feature_extractor/tfmodel/`).then(res => res.json()),
         ]);
         setDatasets(datasetsData);
         setModels(modelsData);
@@ -53,19 +53,16 @@ export default function AddSession({ isOpen, onClose }) {
     const selectedStudy = localStorage.getItem('selectedStudy');
 
     const newSession = {
-      study: selectedStudy,
+      study_id: selectedStudy,
       name: formData.get('name'),
-      dataset: formData.get('dataset'),
-      model: formData.get('model'),
-      description: formData.get('description'),
-      batch_size: formData.get('batchSize'),
-      epochs: formData.get('epochs'),
-      learning_rate: formData.get('learningRate'),
+      dataset_id: formData.get('dataset'),
+      model_id: formData.get('model'),
+      notes: formData.get('description'),
     };
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/training/', {
+      const response = await fetch('/api/feature_extractor/trainingsession/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSession),
@@ -75,7 +72,8 @@ export default function AddSession({ isOpen, onClose }) {
         handleClose(true);
       } else {
         const data = await response.json();
-        setAlert(data.detail);
+        const msg = data.detail || Object.entries(data).map(([k,v]) => k + ': ' + (Array.isArray(v) ? v.join(', ') : v)).join('; ');
+        setAlert(msg);
       }
     } catch (error) {
       console.error('Failed to create training session:', error);

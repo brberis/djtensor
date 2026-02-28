@@ -17,7 +17,8 @@ export default async function handler(req, res) {
     case 'GET':
       try {
 
-        const response = await api.get(`api/datasets/dataset/`);
+        const { study, for_testing } = req.query;
+        const response = await api.get(`api/datasets/dataset/`, { params: { study, for_testing } });
         const data = response.data;
 
         res.status(200).json(data);

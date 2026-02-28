@@ -40,7 +40,7 @@ export default function GenerateDataset({ isOpen, onClose }) {
       setIsLoading(true);
       try {
         const [labelsData] = await Promise.all([
-          fetch(\`/api/datasets/label/\`).then(res => res.json()),
+          fetch(`/api/datasets/label/`).then(res => res.json()),
         ]);
         setLabels(labelsData);
       } catch (error) {
@@ -183,12 +183,12 @@ export default function GenerateDataset({ isOpen, onClose }) {
                     <div className="space-y-4">
                       <div>
                         <label htmlFor="name" className={theme.classes.label}>Name</label>
-                        <input id="name" name="name" type="text" required className={\`mt-1.5 ${theme.classes.input}\`} />
+                        <input id="name" name="name" type="text" required className={`mt-1.5 ${theme.classes.input}`} />
                       </div>
 
                       <div>
                         <label htmlFor="resolution" className={theme.classes.label}>Resolution</label>
-                        <select id="resolution" name="resolution" required className={\`mt-1.5 ${theme.classes.select}\`}>
+                        <select id="resolution" name="resolution" required className={`mt-1.5 ${theme.classes.select}`}>
                           {resolutions.map((r) => (
                             <option key={r.res} value={r.res}>{r.des}</option>
                           ))}
@@ -248,14 +248,14 @@ export default function GenerateDataset({ isOpen, onClose }) {
                           name="sampleNumber"
                           type="number"
                           required
-                          className={\`mt-1.5 ${theme.classes.input}\`}
+                          className={`mt-1.5 ${theme.classes.input}`}
                           placeholder="e.g. 200"
                         />
                       </div>
 
                       <div>
                         <label htmlFor="description" className={theme.classes.label}>Description</label>
-                        <textarea id="description" name="description" rows={3} className={\`mt-1.5 ${theme.classes.textarea}\`} />
+                        <textarea id="description" name="description" rows={3} className={`mt-1.5 ${theme.classes.textarea}`} />
                       </div>
                     </div>
                   </form>

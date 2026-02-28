@@ -29,6 +29,41 @@ import {
 } from '@heroicons/react/24/outline';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
+// Wrapper that shows an Archived placeholder when the image file is missing
+function ArchivedImage({ src, alt, width, height, className, ...rest }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed || !src) {
+    return (
+      <div
+        className={className}
+        style={{ width, height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', borderRadius: '0.5rem' }}
+      >
+        <span className="text-xs text-gray-400 font-medium">Archived</span>
+      </div>
+    );
+  }
+
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      unoptimized
+      className={className}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+}
+
+const normalizeMediaUrl = (value) => {
+  if (!value) return null;
+  if (value.startsWith("http") || value.startsWith("/")) return value;
+  return "/media/" + value;
+};
+
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return 'Unknown';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -430,13 +465,19 @@ export default function DatasetDetail() {
                   {activeImage && (
                     <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
                       <div className="rounded-lg bg-gray-100 p-3">
-                        <img src={activeImage.image} alt={activeImage.file_name || 'dataset image'} className="mx-auto max-h-[420px] rounded-lg object-contain" />
+                        <ArchivedImage
+                          src={normalizeMediaUrl(activeImage.image)}
+                          alt={activeImage.file_name || "dataset image"}
+                          width={420}
+                          height={420}
+                          className="mx-auto max-h-[420px] rounded-lg object-contain"
+                        />
                       </div>
                       <dl className="space-y-3 text-sm">
                         <div><dt className="font-medium text-gray-500">File name</dt><dd className="text-gray-900 break-all">{activeImage.file_name || activeImage.image?.split('/').pop()}</dd></div>
                         <div><dt className="font-medium text-gray-500">Format</dt><dd className="text-gray-900 uppercase">{activeImage.file_extension || 'Unknown'}</dd></div>
-                        <div><dt className="font-medium text-gray-500">Resolution</dt><dd className="text-gray-900">{activeImage.image_width && activeImage.image_height ? `${activeImage.image_width} x ${activeImage.image_height}` : 'Unknown'}</dd></div>
-                        <div><dt className="font-medium text-gray-500">Size</dt><dd className="text-gray-900">{formatBytes(activeImage.file_size)}</dd></div>
+                        <div><dt className="font-medium text-gray-500">Resolution</dt><dd className="text-gray-900">{activeImage.image_width && activeImage.image_height ? `${activeImage.image_width} x ${activeImage.image_height}` : (dataset?.resolution ? `${dataset.resolution} x ${dataset.resolution}` : "Unknown")}</dd></div>
+                        {activeImage.file_size ? (<div><dt className="font-medium text-gray-500">Size</dt><dd className="text-gray-900">{formatBytes(activeImage.file_size)}</dd></div>) : null}
                         <div><dt className="font-medium text-gray-500">Label</dt><dd className="text-gray-900">{labels.find((l) => l.id === activeImage.label)?.name || activeImage.label}</dd></div>
                         <div><dt className="font-medium text-gray-500">Created</dt><dd className="text-gray-900">{new Date(activeImage.created_at).toLocaleString()}</dd></div>
                       </dl>
@@ -549,8 +590,8 @@ export default function DatasetDetail() {
                         className="relative group"
                         onClick={() => setActiveImage(image)}
                       >
-                        <Image
-                          src={image.image}
+                        <ArchivedImage
+                          src={normalizeMediaUrl(image.image)}
                           alt={label?.name || 'search result'}
                           width={96}
                           height={96}
@@ -692,8 +733,8 @@ export default function DatasetDetail() {
                           className="block"
                           title="View image details"
                         >
-                          <Image
-                            src={image.image}
+                          <ArchivedImage
+                            src={normalizeMediaUrl(image.image)}
                             alt={label.name}
                             width={96}
                             height={96}

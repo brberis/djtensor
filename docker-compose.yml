@@ -63,16 +63,12 @@ services:
 
   frontend:
     build: ./frontend
-    command: npm run dev
-    volumes:
-      - ./frontend:/usr/src/app
-      - /app/node_modules
+    command: npm run start
     ports:
       - 3000:3000
     restart: always
     environment:
-      - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:3000
       - DJANGO_API_BASE_URL=http://backend:8000
 

@@ -516,7 +516,7 @@ export default function TestDetail() {
           {filteredResults?.length > 0 ? pagedResults.map(result => {
             const isCorrect = result.prediction === result.true_label;
             return (
-              <div key={result.id} className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl overflow-hidden">
+              <div key={result.id} className={`bg-white shadow-sm ring-1 rounded-xl overflow-hidden transition-shadow hover:shadow-md ${isCorrect ? 'ring-green-200' : 'ring-red-200'}`}>
                 {result.grad_cam && (() => {
                   const src = normalizeMediaUrl(result.grad_cam);
                   if (!src) return null;
@@ -527,28 +527,35 @@ export default function TestDetail() {
                     <button
                       type="button"
                       onClick={() => setSelectedImage({ src, title })}
-                      className="block w-full focus:outline-none"
+                      className="block w-full focus:outline-none group"
                       aria-label="Open Grad-CAM image"
                     >
-                      <img src={src} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50 hover:bg-gray-100" />
+                      <div className="relative">
+                        <img src={src} alt="Grad-CAM visualization" className="w-full h-48 object-contain bg-gray-50 group-hover:bg-gray-100 transition-colors" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs bg-black/60 text-white px-2 py-1 rounded">Click to enlarge</span>
+                        </div>
+                      </div>
                     </button>
                   );
                 })()}
-                <div className="p-4">
+                <div className={`px-4 py-3 border-t ${isCorrect ? 'border-green-100 bg-green-50/30' : 'border-red-100 bg-red-50/30'}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${isCorrect ? 'bg-green-50 text-green-700 ring-green-600/20' : 'bg-red-50 text-red-700 ring-red-600/10'}`}>
-                      {isCorrect ? 'Correct' : 'Incorrect'}
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      {isCorrect ? 'Correctly Classified' : 'Misclassified'}
                     </span>
-                    <span className="text-sm font-mono text-gray-500">
+                    <span className={`text-sm font-semibold tabular-nums ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
                       {(result.confidence * 100).toFixed(1)}%
                     </span>
                   </div>
-                  <p className="text-sm text-gray-900">
-                    <span className="font-medium">Predicted:</span> {formatLabel(result.prediction)}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    <span className="font-medium">Actual:</span> {formatLabel(result.true_label)}
-                  </p>
+                  <div className="space-y-0.5">
+                    <p className="text-sm text-gray-900">
+                      <span className="text-gray-500">Predicted:</span> <span className="font-medium">{formatLabel(result.prediction)}</span>
+                    </p>
+                    <p className="text-sm text-gray-900">
+                      <span className="text-gray-500">Actual:</span> <span className="font-medium">{formatLabel(result.true_label)}</span>
+                    </p>
+                  </div>
                 </div>
               </div>
             );

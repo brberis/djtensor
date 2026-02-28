@@ -15,7 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { BeakerIcon } from '@heroicons/react/24/outline';
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -34,7 +34,7 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
 
-    const result = await login(username, password);
+    const result = await login(email, password);
     if (result.success) {
       router.push('/');
     } else {
@@ -78,17 +78,17 @@ export default function LoginPage() {
           )}
           <div>
             <label htmlFor="username" className="block text-sm font-medium leading-6 text-gray-200">
-              Username
+              Email
             </label>
             <div className="mt-2">
               <input
                 id="username"
                 name="username"
                 type="text"
-                autoComplete="username"
+                autoComplete="email"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="block w-full rounded-md border-0 bg-gray-800 px-3 py-1.5 text-white shadow-sm ring-1 ring-inset ring-gray-700 placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
               />
             </div>

@@ -9,7 +9,7 @@
  * Copyright (c) 2024
  */
 
-import { Fragment } from 'react';
+import React, { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -18,13 +18,24 @@ export default function ConfirmDialog({
   onClose,
   onConfirm,
   title = 'Confirm Action',
-  message = 'Are you sure?',
+  message,
+  description,
   confirmLabel = 'Confirm',
-  variant = 'danger',
+  variant,
+  confirmTone,
+  requireText,
+  reasons,
 }) {
-  const confirmClasses = variant === 'danger'
+  const tone = confirmTone || variant || 'danger';
+  const displayMessage = description || message || 'Are you sure?';
+  const confirmClasses = tone === 'danger'
     ? 'bg-red-600 hover:bg-red-500 focus-visible:outline-red-600'
     : 'bg-blue-600 hover:bg-blue-500 focus-visible:outline-blue-600';
+
+  const [confirmText, setConfirmText] = React.useState('');
+  const [selectedReason, setSelectedReason] = React.useState('');
+  const requireMatch = requireText ? confirmText === requireText : true;
+  const reasonMatch = reasons?.length > 0 ? !!selectedReason : true;
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -74,8 +85,34 @@ export default function ConfirmDialog({
                       {title}
                     </Dialog.Title>
                     <div className="mt-2">
-                      <p className="text-sm text-gray-500">{message}</p>
+                      <p className="text-sm text-gray-500">{displayMessage}</p>
                     </div>
+                    {requireText && (
+                      <div className="mt-3">
+                        <p className="text-sm text-gray-600">Type <span className="font-semibold">{requireText}</span> to confirm:</p>
+                        <input
+                          value={confirmText}
+                          onChange={(e) => setConfirmText(e.target.value)}
+                          className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm"
+                          placeholder={requireText}
+                        />
+                      </div>
+                    )}
+                    {reasons && reasons.length > 0 && (
+                      <div className="mt-3">
+                        <label className="text-sm text-gray-600 font-medium">Reason:</label>
+                        <select
+                          value={selectedReason}
+                          onChange={(e) => setSelectedReason(e.target.value)}
+                          className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm"
+                        >
+                          <option value="">Select a reason...</option>
+                          {reasons.map(r => (
+                            <option key={r.value} value={r.value}>{r.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -83,7 +120,8 @@ export default function ConfirmDialog({
                   <button
                     type="button"
                     className={`inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:ml-3 sm:w-auto ${confirmClasses}`}
-                    onClick={onConfirm}
+                    onClick={() => { const reason = selectedReason; setConfirmText(''); setSelectedReason(''); onConfirm({ reason }); }}
+                    disabled={!requireMatch || !reasonMatch}
                   >
                     {confirmLabel}
                   </button>

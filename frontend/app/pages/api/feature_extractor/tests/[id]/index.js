@@ -9,7 +9,7 @@
  * Copyright (c) 2024
  */
 
-import { createApiClient } from '../../../../utils/apiProxy';
+import { createApiClient } from '../../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
   const api = createApiClient(req);
@@ -43,8 +43,18 @@ export default async function handler(req, res) {
       }
       break;
 
+    case 'PATCH':
+      try {
+        const response = await api.patch(url + '/', req.body);
+        res.status(200).json(response.data);
+      } catch (error) {
+        console.error('Failed to update test:', error);
+        res.status(error?.response?.status || 500).json({ message: 'Failed to update test' });
+      }
+      break;
+
     default:
-      res.setHeader('Allow', ['GET', 'DELETE']);
+      res.setHeader('Allow', ['GET', 'DELETE', 'PATCH']);
       res.status(405).end(`Method ${req.method} Not Allowed`);
   }
 }
