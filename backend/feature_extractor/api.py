@@ -102,6 +102,7 @@ class StudyViewSet(viewsets.ModelViewSet):
 
             best_val_acc = max((e.val_accuracy for e in epochs), default=0)
 
+            session_tests = []
             for test in tests:
                 results = list(test.results.all())
                 if not results:
@@ -164,6 +165,7 @@ class StudyViewSet(viewsets.ModelViewSet):
                     'confusion': confusion_list,
                     'labels': all_labels,
                 }
+                session_tests.append(test_entry)
                 all_tests.append(test_entry)
                 model_accuracies[sess.model.name].append(accuracy)
 
@@ -180,10 +182,7 @@ class StudyViewSet(viewsets.ModelViewSet):
                 'num_epochs': len(epochs),
                 'epochs': epoch_data,
                 'best_val_accuracy': round(best_val_acc, 4),
-                'tests': [t for t in all_tests if any(
-                    test.training_session_id == sess.id
-                    for test in sess.tests.all()
-                )],
+                'tests': session_tests,
                 'created_at': sess.created_at.isoformat(),
             }
             session_data.append(sess_entry)
@@ -219,6 +218,75 @@ class StudyViewSet(viewsets.ModelViewSet):
             'all_tests': all_tests,
             'model_comparison': model_comparison,
         })
+
+
+    @action(detail=False, methods=['get'])
+    def compare(self, request):
+        """Compare metrics across multiple studies side by side."""
+        from collections import defaultdict
+
+        study_ids = request.query_params.getlist('ids')
+        if not study_ids:
+            return Response({'error': 'Provide study IDs via ?ids=1&ids=2'}, status=400)
+
+        studies = self.get_queryset().filter(id__in=study_ids)
+        results = []
+
+        for study in studies:
+            sessions = (
+                TrainingSession.objects
+                .filter(study=study, status='Completed')
+                .select_related('model', 'dataset')
+                .prefetch_related('tests__results')
+            )
+
+            models_used = set()
+            datasets_used = set()
+            all_accuracies = []
+            all_confidences = []
+            total_tests = 0
+            sample_sizes = []
+
+            for sess in sessions:
+                models_used.add(sess.model.name)
+                datasets_used.add(sess.dataset.name)
+
+                for test in sess.tests.all():
+                    test_results = list(test.results.all())
+                    if not test_results:
+                        continue
+                    total_tests += 1
+                    correct = sum(1 for r in test_results if r.true_label == r.prediction)
+                    acc = correct / len(test_results)
+                    avg_conf = sum(r.confidence for r in test_results) / len(test_results)
+                    all_accuracies.append(acc)
+                    all_confidences.append(avg_conf)
+
+                # Avg images per class for this session
+                label_counts = (
+                    Image.objects
+                    .filter(dataset=sess.dataset)
+                    .values('label__name')
+                    .annotate(count=Count('id'))
+                )
+                total_images = sum(lc['count'] for lc in label_counts)
+                num_classes = len(label_counts) or 1
+                sample_sizes.append(total_images / num_classes)
+
+            results.append({
+                'study_id': study.id,
+                'study_name': study.name,
+                'total_sessions': sessions.count(),
+                'total_tests': total_tests,
+                'best_accuracy': round(max(all_accuracies), 4) if all_accuracies else 0,
+                'avg_accuracy': round(sum(all_accuracies) / len(all_accuracies), 4) if all_accuracies else 0,
+                'avg_confidence': round(sum(all_confidences) / len(all_confidences), 4) if all_confidences else 0,
+                'avg_sample_size': round(sum(sample_sizes) / len(sample_sizes), 1) if sample_sizes else 0,
+                'models_used': sorted(models_used),
+                'datasets_used': sorted(datasets_used),
+            })
+
+        return Response(results)
 
 
 class TrainingSessionViewSet(viewsets.ModelViewSet):
