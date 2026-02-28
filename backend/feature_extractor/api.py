@@ -210,6 +210,54 @@ class StudyViewSet(viewsets.ModelViewSet):
             },
         }
 
+        # Aggregated confusion matrix across all tests
+        agg_confusion = defaultdict(int)
+        agg_labels = set()
+        for t in all_tests:
+            for c in t.get('confusion', []):
+                agg_confusion[(c['true_label'], c['predicted'])] += c['count']
+                agg_labels.add(c['true_label'])
+                agg_labels.add(c['predicted'])
+
+        agg_confusion_list = [
+            {'true_label': tl, 'predicted': p, 'count': c}
+            for (tl, p), c in agg_confusion.items()
+        ]
+
+        # Aggregated per-class metrics across all tests
+        agg_class_tp = defaultdict(int)
+        agg_class_fp = defaultdict(int)
+        agg_class_fn = defaultdict(int)
+        for t in all_tests:
+            for c in t.get('confusion', []):
+                if c['true_label'] == c['predicted']:
+                    agg_class_tp[c['true_label']] += c['count']
+                else:
+                    agg_class_fp[c['predicted']] += c['count']
+                    agg_class_fn[c['true_label']] += c['count']
+
+        agg_per_class = []
+        for label in sorted(agg_labels):
+            tp = agg_class_tp.get(label, 0)
+            fp = agg_class_fp.get(label, 0)
+            fn = agg_class_fn.get(label, 0)
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+            agg_per_class.append({
+                'label': label,
+                'precision': round(precision, 4),
+                'recall': round(recall, 4),
+                'f1': round(f1, 4),
+            })
+
+        # Count unique models and datasets across sessions
+        unique_models = set(s['model_name'] for s in session_data)
+        unique_datasets = set(s['dataset_name'] for s in session_data)
+        # Check if sample sizes vary across sessions
+        sample_sizes = [s['avg_images_per_class'] for s in session_data]
+        has_varying_sample_sizes = len(set(sample_sizes)) > 1
+
         return Response({
             'study_id': study.id,
             'study_name': study.name,
@@ -217,6 +265,14 @@ class StudyViewSet(viewsets.ModelViewSet):
             'sessions': session_data,
             'all_tests': all_tests,
             'model_comparison': model_comparison,
+            'aggregated_confusion': {
+                'confusion': agg_confusion_list,
+                'labels': sorted(agg_labels),
+                'per_class': agg_per_class,
+            },
+            'unique_models': sorted(unique_models),
+            'unique_datasets': sorted(unique_datasets),
+            'has_varying_sample_sizes': has_varying_sample_sizes,
         })
 
 

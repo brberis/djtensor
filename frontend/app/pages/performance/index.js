@@ -16,7 +16,7 @@ import Spinner from '../../components/Spinner';
 import theme from '../../theme';
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  Legend, ResponsiveContainer, BarChart, Bar, Cell,
+  Legend, ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line,
 } from 'recharts';
 
 const COLORS = [
@@ -28,7 +28,13 @@ function getColor(idx) {
   return COLORS[idx % COLORS.length];
 }
 
-// Card wrapper used throughout the page
+// Extract T-N number from test name for sorting
+function extractTestNumber(name) {
+  const match = name.match(/T-(\d+)/i);
+  return match ? parseInt(match[1], 10) : 9999;
+}
+
+// Card wrapper
 function Card({ title, children, className = '' }) {
   return (
     <div className={`bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6 ${className}`}>
@@ -38,7 +44,7 @@ function Card({ title, children, className = '' }) {
   );
 }
 
-// Stat card for the summary row
+// Stat card
 function StatCard({ label, value, sub }) {
   return (
     <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5 text-center">
@@ -54,9 +60,8 @@ export default function Performance() {
   const [selectedStudyId, setSelectedStudyId] = useState(null);
   const [perfData, setPerfData] = useState(null);
   const [isPerfLoading, setIsPerfLoading] = useState(false);
-  const [sortCol, setSortCol] = useState('accuracy');
-  const [sortDir, setSortDir] = useState('desc');
-  const [selectedTestIdx, setSelectedTestIdx] = useState(0);
+  const [sortCol, setSortCol] = useState(null); // null = natural T-N order
+  const [sortDir, setSortDir] = useState('asc');
 
   // Tab state
   const [activeTab, setActiveTab] = useState('study');
@@ -74,7 +79,6 @@ export default function Performance() {
     const stored = localStorage.getItem('selectedStudy');
     if (stored) setSelectedStudyId(Number(stored));
 
-    // Listen for sidebar study changes (same tab updates)
     const interval = setInterval(() => {
       const current = localStorage.getItem('selectedStudy');
       if (current && Number(current) !== selectedStudyId) {
@@ -82,7 +86,6 @@ export default function Performance() {
       }
     }, 500);
 
-    // Listen for cross-tab storage changes
     const onStorage = (e) => {
       if (e.key === 'selectedStudy' && e.newValue) {
         setSelectedStudyId(Number(e.newValue));
@@ -95,7 +98,7 @@ export default function Performance() {
     };
   }, [selectedStudyId]);
 
-  // Fetch studies list (needed for Compare tab)
+  // Fetch studies list (for Compare tab)
   useEffect(() => {
     const fetchStudies = async () => {
       try {
@@ -118,7 +121,6 @@ export default function Performance() {
         const res = await fetch(`/api/feature_extractor/studies/${selectedStudyId}/performance`);
         const data = await res.json();
         setPerfData(data);
-        setSelectedTestIdx(0);
       } catch (err) {
         console.error('Failed to fetch performance:', err);
         setPerfData(null);
@@ -146,45 +148,9 @@ export default function Performance() {
     }
   };
 
-  // Build scatter data for accuracy vs sample size
-  const accuracyScatterData = useMemo(() => {
-    if (!perfData) return [];
-    const points = [];
-    const modelSet = new Set();
-    (perfData.sessions || []).forEach((sess) => {
-      (sess.tests || []).forEach((t) => {
-        modelSet.add(sess.model_name);
-        points.push({
-          x: sess.avg_images_per_class,
-          y: t.accuracy,
-          model: sess.model_name,
-          session: sess.session_name,
-        });
-      });
-    });
-    return { points, models: [...modelSet] };
-  }, [perfData]);
+  // -- Study Performance data --
 
-  // Confidence vs sample size
-  const confidenceScatterData = useMemo(() => {
-    if (!perfData) return [];
-    const points = [];
-    const modelSet = new Set();
-    (perfData.sessions || []).forEach((sess) => {
-      (sess.tests || []).forEach((t) => {
-        modelSet.add(sess.model_name);
-        points.push({
-          x: sess.avg_images_per_class,
-          y: t.avg_confidence,
-          model: sess.model_name,
-          session: sess.session_name,
-        });
-      });
-    });
-    return { points, models: [...modelSet] };
-  }, [perfData]);
-
-  // Flat rows for cross-session comparison table
+  // Flat rows for cross-session comparison table, sorted by T-N by default
   const tableRows = useMemo(() => {
     if (!perfData) return [];
     const rows = [];
@@ -194,6 +160,7 @@ export default function Performance() {
         rows.push({
           sessionId: sess.session_id,
           sessionName: sess.session_name,
+          testName: sess.session_name,
           model: sess.model_name,
           dataset: sess.dataset_name,
           resolution: sess.model_resolution,
@@ -201,12 +168,14 @@ export default function Performance() {
           accuracy: sess.best_val_accuracy,
           confidence: null,
           f1: null,
+          _testNum: extractTestNumber(sess.session_name),
         });
       } else {
         tests.forEach((t) => {
           rows.push({
             sessionId: sess.session_id,
             sessionName: sess.session_name,
+            testName: t.test_name,
             model: sess.model_name,
             dataset: sess.dataset_name,
             resolution: sess.model_resolution,
@@ -214,6 +183,7 @@ export default function Performance() {
             accuracy: t.accuracy,
             confidence: t.avg_confidence,
             f1: t.macro_f1,
+            _testNum: extractTestNumber(t.test_name),
           });
         });
       }
@@ -221,46 +191,72 @@ export default function Performance() {
     return rows;
   }, [perfData]);
 
-  // Sorted table rows
+  // Sorted table rows — default by T-N number
   const sortedRows = useMemo(() => {
     const sorted = [...tableRows];
-    sorted.sort((a, b) => {
-      const aVal = a[sortCol] ?? -1;
-      const bVal = b[sortCol] ?? -1;
-      if (typeof aVal === 'string') {
-        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-      }
-      return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
-    });
+    if (!sortCol) {
+      // Default: sort by T-N number
+      sorted.sort((a, b) => a._testNum - b._testNum);
+    } else {
+      sorted.sort((a, b) => {
+        const aVal = a[sortCol] ?? -1;
+        const bVal = b[sortCol] ?? -1;
+        if (typeof aVal === 'string') {
+          return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        }
+        return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+    }
     return sorted;
   }, [tableRows, sortCol, sortDir]);
 
-  // Collect all tests for confusion matrix selector
-  const allTests = useMemo(() => {
+  // Accuracy per iteration (line chart) — sorted by T-N
+  const iterationAccuracyData = useMemo(() => {
     if (!perfData) return [];
-    const tests = [];
+    const points = [];
     (perfData.sessions || []).forEach((sess) => {
       (sess.tests || []).forEach((t) => {
-        tests.push({ ...t, sessionName: sess.session_name });
+        points.push({
+          name: t.test_name.replace(/.*?(T-\d+)/, '$1'),
+          fullName: t.test_name,
+          accuracy: +(t.accuracy * 100).toFixed(1),
+          confidence: +(t.avg_confidence * 100).toFixed(1),
+          _testNum: extractTestNumber(t.test_name),
+        });
       });
     });
-    return tests;
+    points.sort((a, b) => a._testNum - b._testNum);
+    return points;
   }, [perfData]);
 
-  const selectedTest = allTests[selectedTestIdx] || null;
+  // Aggregated confusion matrix from backend
+  const aggConfusionGrid = useMemo(() => {
+    if (!perfData || !perfData.aggregated_confusion) return null;
+    const { confusion, labels } = perfData.aggregated_confusion;
+    if (!labels || labels.length === 0) return null;
 
-  // Per-class bar chart data from selected test
-  const perClassData = useMemo(() => {
-    if (!selectedTest || !selectedTest.per_class) return [];
-    return selectedTest.per_class.map((c) => ({
+    const lookup = {};
+    let maxCount = 1;
+    confusion.forEach((c) => {
+      const key = `${c.true_label}__${c.predicted}`;
+      lookup[key] = c.count;
+      if (c.count > maxCount) maxCount = c.count;
+    });
+    return { labels, lookup, maxCount };
+  }, [perfData]);
+
+  // Aggregated per-class data
+  const aggPerClassData = useMemo(() => {
+    if (!perfData || !perfData.aggregated_confusion) return [];
+    return (perfData.aggregated_confusion.per_class || []).map((c) => ({
       label: c.label,
       Precision: +(c.precision * 100).toFixed(1),
       Recall: +(c.recall * 100).toFixed(1),
       F1: +(c.f1 * 100).toFixed(1),
     }));
-  }, [selectedTest]);
+  }, [perfData]);
 
-  // Model comparison bar data
+  // Model comparison — only show if multiple models
   const modelCompData = useMemo(() => {
     if (!perfData || !perfData.model_comparison) return [];
     return perfData.model_comparison.map((m) => ({
@@ -270,32 +266,10 @@ export default function Performance() {
     }));
   }, [perfData]);
 
-  // Training efficiency scatter
-  const efficiencyData = useMemo(() => {
-    if (!perfData) return [];
-    return (perfData.sessions || []).map((sess) => ({
-      x: sess.num_epochs,
-      y: sess.best_val_accuracy,
-      name: sess.session_name,
-      model: sess.model_name,
-    }));
-  }, [perfData]);
+  const hasMultipleModels = (perfData?.unique_models || []).length > 1;
+  const hasVaryingSampleSizes = perfData?.has_varying_sample_sizes || false;
 
-  // Confusion matrix grid data
-  const confusionGrid = useMemo(() => {
-    if (!selectedTest || !selectedTest.confusion || !selectedTest.labels) return null;
-    const labels = selectedTest.labels;
-    const lookup = {};
-    let maxCount = 1;
-    selectedTest.confusion.forEach((c) => {
-      const key = `${c.true_label}__${c.predicted}`;
-      lookup[key] = c.count;
-      if (c.count > maxCount) maxCount = c.count;
-    });
-    return { labels, lookup, maxCount };
-  }, [selectedTest]);
-
-  // Compare tab: sorted rows
+  // -- Compare Studies data --
   const sortedCompareData = useMemo(() => {
     if (!compareData) return [];
     const sorted = [...compareData];
@@ -310,7 +284,6 @@ export default function Performance() {
     return sorted;
   }, [compareData, compareSortCol, compareSortDir]);
 
-  // Compare tab: bar chart data
   const compareBarData = useMemo(() => {
     if (!compareData) return [];
     return compareData.map((s) => ({
@@ -318,6 +291,16 @@ export default function Performance() {
       fullName: s.study_name,
       'Avg Accuracy': +(s.avg_accuracy * 100).toFixed(1),
       'Avg Confidence': +(s.avg_confidence * 100).toFixed(1),
+    }));
+  }, [compareData]);
+
+  // Accuracy vs sample size scatter for compare tab
+  const compareScatterData = useMemo(() => {
+    if (!compareData) return [];
+    return compareData.map((s) => ({
+      x: s.avg_sample_size,
+      y: s.avg_accuracy,
+      name: s.study_name,
     }));
   }, [compareData]);
 
@@ -349,7 +332,6 @@ export default function Performance() {
     return compareSortDir === 'asc' ? ' \u25B2' : ' \u25BC';
   };
 
-  // Compare: toggle study selection
   const toggleCompareStudy = (id) => {
     setSelectedCompareIds((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
@@ -373,8 +355,6 @@ export default function Performance() {
         ? 'border-blue-600 text-blue-600'
         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
     }`;
-
-  const currentStudyName = allStudies.find(s => s.id === selectedStudyId)?.name;
 
   return (
     <Layout>
@@ -421,65 +401,97 @@ export default function Performance() {
                   <StatCard
                     label="Best Accuracy"
                     value={`${((perfData.summary?.best_accuracy ?? 0) * 100).toFixed(1)}%`}
+                    sub="Best single test"
                   />
                   <StatCard
                     label="Avg Accuracy"
                     value={`${((perfData.summary?.avg_accuracy ?? 0) * 100).toFixed(1)}%`}
+                    sub="Across all tests"
                   />
                 </div>
 
-                {/* Charts row 1: Accuracy and Confidence scatter plots */}
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {/* Accuracy vs Sample Size */}
-                  <Card title="Accuracy vs Sample Size">
-                    {accuracyScatterData.points?.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={320}>
-                        <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="x" name="Avg Images/Class" type="number" label={{ value: 'Avg Images per Class', position: 'insideBottom', offset: -10 }} />
-                          <YAxis dataKey="y" name="Accuracy" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                          <RechartsTooltip formatter={(val, name) => name === 'Accuracy' ? `${(val * 100).toFixed(1)}%` : val} />
-                          <Legend />
-                          {(accuracyScatterData.models || []).map((model, i) => (
-                            <Scatter
-                              key={model}
-                              name={model}
-                              data={accuracyScatterData.points.filter((p) => p.model === model)}
-                              fill={getColor(i)}
-                            />
-                          ))}
-                        </ScatterChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-12">No test data available</p>
-                    )}
+                {/* Accuracy per Iteration (line chart) */}
+                {iterationAccuracyData.length > 0 && (
+                  <Card title="Accuracy & Confidence per Iteration">
+                    <ResponsiveContainer width="100%" height={320}>
+                      <LineChart data={iterationAccuracyData} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                        <RechartsTooltip
+                          formatter={(val, name) => `${val}%`}
+                          labelFormatter={(label) => {
+                            const item = iterationAccuracyData.find(d => d.name === label);
+                            return item?.fullName || label;
+                          }}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke="#2563eb" strokeWidth={2} dot={{ r: 4 }} />
+                        <Line type="monotone" dataKey="confidence" name="Confidence" stroke="#16a34a" strokeWidth={2} dot={{ r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </Card>
+                )}
 
-                  {/* Confidence vs Sample Size */}
-                  <Card title="Confidence vs Sample Size">
-                    {confidenceScatterData.points?.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={320}>
-                        <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="x" name="Avg Images/Class" type="number" label={{ value: 'Avg Images per Class', position: 'insideBottom', offset: -10 }} />
-                          <YAxis dataKey="y" name="Confidence" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                          <RechartsTooltip formatter={(val, name) => name === 'Confidence' ? `${(val * 100).toFixed(1)}%` : val} />
-                          <Legend />
-                          {(confidenceScatterData.models || []).map((model, i) => (
-                            <Scatter
-                              key={model}
-                              name={model}
-                              data={confidenceScatterData.points.filter((p) => p.model === model)}
-                              fill={getColor(i)}
-                            />
-                          ))}
-                        </ScatterChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-12">No test data available</p>
-                    )}
-                  </Card>
-                </div>
+                {/* Accuracy/Confidence vs Sample Size — only if varying sample sizes */}
+                {hasVaryingSampleSizes && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <Card title="Accuracy vs Sample Size">
+                      {(() => {
+                        const points = [];
+                        const modelSet = new Set();
+                        (perfData.sessions || []).forEach((sess) => {
+                          (sess.tests || []).forEach((t) => {
+                            modelSet.add(sess.model_name);
+                            points.push({ x: sess.avg_images_per_class, y: t.accuracy, model: sess.model_name });
+                          });
+                        });
+                        const models = [...modelSet];
+                        return points.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={320}>
+                            <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="x" name="Avg Images/Class" type="number" label={{ value: 'Avg Images per Class', position: 'insideBottom', offset: -10 }} />
+                              <YAxis dataKey="y" name="Accuracy" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                              <RechartsTooltip formatter={(val, name) => name === 'Accuracy' ? `${(val * 100).toFixed(1)}%` : val} />
+                              <Legend />
+                              {models.map((model, i) => (
+                                <Scatter key={model} name={model} data={points.filter((p) => p.model === model)} fill={getColor(i)} />
+                              ))}
+                            </ScatterChart>
+                          </ResponsiveContainer>
+                        ) : <p className="text-sm text-gray-400 text-center py-12">No data</p>;
+                      })()}
+                    </Card>
+                    <Card title="Confidence vs Sample Size">
+                      {(() => {
+                        const points = [];
+                        const modelSet = new Set();
+                        (perfData.sessions || []).forEach((sess) => {
+                          (sess.tests || []).forEach((t) => {
+                            modelSet.add(sess.model_name);
+                            points.push({ x: sess.avg_images_per_class, y: t.avg_confidence, model: sess.model_name });
+                          });
+                        });
+                        const models = [...modelSet];
+                        return points.length > 0 ? (
+                          <ResponsiveContainer width="100%" height={320}>
+                            <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="x" name="Avg Images/Class" type="number" label={{ value: 'Avg Images per Class', position: 'insideBottom', offset: -10 }} />
+                              <YAxis dataKey="y" name="Confidence" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                              <RechartsTooltip formatter={(val, name) => name === 'Confidence' ? `${(val * 100).toFixed(1)}%` : val} />
+                              <Legend />
+                              {models.map((model, i) => (
+                                <Scatter key={model} name={model} data={points.filter((p) => p.model === model)} fill={getColor(i)} />
+                              ))}
+                            </ScatterChart>
+                          </ResponsiveContainer>
+                        ) : <p className="text-sm text-gray-400 text-center py-12">No data</p>;
+                      })()}
+                    </Card>
+                  </div>
+                )}
 
                 {/* Cross-Session Comparison Table */}
                 <Card title="Cross-Session Comparison">
@@ -489,6 +501,7 @@ export default function Performance() {
                         <thead className="bg-gray-50 sticky top-0 z-10">
                           <tr>
                             {[
+                              { key: 'testName', label: 'Test' },
                               { key: 'sessionName', label: 'Session' },
                               { key: 'model', label: 'Model' },
                               { key: 'dataset', label: 'Dataset' },
@@ -515,7 +528,8 @@ export default function Performance() {
                               className="cursor-pointer hover:bg-blue-50 transition-colors"
                               onClick={() => router.push(`/training/${row.sessionId}`)}
                             >
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.sessionName}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.testName}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.sessionName}</td>
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.model}</td>
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.dataset}</td>
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.resolution}</td>
@@ -539,140 +553,94 @@ export default function Performance() {
                   )}
                 </Card>
 
-                {/* Confusion Matrix */}
-                <Card title="Confusion Matrix">
-                  {allTests.length > 1 && (
-                    <div className="mb-4">
-                      <select
-                        className="rounded-md border-0 py-1.5 pl-3 pr-8 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600"
-                        value={selectedTestIdx}
-                        onChange={(e) => setSelectedTestIdx(Number(e.target.value))}
-                      >
-                        {allTests.map((t, i) => (
-                          <option key={i} value={i}>
-                            {t.sessionName} - {t.test_name} (Acc: {(t.accuracy * 100).toFixed(1)}%)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {confusionGrid ? (
-                    <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-                      <div className="inline-block">
-                        {/* Header row */}
-                        <div className="flex">
-                          <div className="w-24 h-8 flex items-center justify-center text-xs font-semibold text-gray-500">True \ Pred</div>
-                          {confusionGrid.labels.map((label) => (
-                            <div key={label} className="w-16 h-8 flex items-center justify-center text-xs font-medium text-gray-700 truncate" title={label}>
-                              {label.length > 6 ? label.slice(0, 6) + '..' : label}
+                {/* Aggregated Confusion Matrix + Per-Class Performance side by side */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <Card title="Aggregated Confusion Matrix">
+                    <p className="text-xs text-gray-400 mb-3">Combined across all {perfData.summary?.total_tests ?? 0} tests</p>
+                    {aggConfusionGrid ? (
+                      <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                        <div className="inline-block">
+                          <div className="flex">
+                            <div className="w-24 h-8 flex items-center justify-center text-xs font-semibold text-gray-500">True \ Pred</div>
+                            {aggConfusionGrid.labels.map((label) => (
+                              <div key={label} className="w-16 h-8 flex items-center justify-center text-xs font-medium text-gray-700 truncate" title={label}>
+                                {label.length > 6 ? label.slice(0, 6) + '..' : label}
+                              </div>
+                            ))}
+                          </div>
+                          {aggConfusionGrid.labels.map((trueLabel) => (
+                            <div key={trueLabel} className="flex">
+                              <div className="w-24 h-12 flex items-center justify-end pr-2 text-xs font-medium text-gray-700 truncate" title={trueLabel}>
+                                {trueLabel.length > 10 ? trueLabel.slice(0, 10) + '..' : trueLabel}
+                              </div>
+                              {aggConfusionGrid.labels.map((predLabel) => {
+                                const count = aggConfusionGrid.lookup[`${trueLabel}__${predLabel}`] || 0;
+                                const intensity = count / aggConfusionGrid.maxCount;
+                                const isDiag = trueLabel === predLabel;
+                                const bg = isDiag
+                                  ? `rgba(37, 99, 235, ${0.1 + intensity * 0.8})`
+                                  : count > 0
+                                    ? `rgba(239, 68, 68, ${0.1 + intensity * 0.6})`
+                                    : 'rgba(249, 250, 251, 1)';
+                                const textColor = intensity > 0.5 ? 'white' : 'rgb(55, 65, 81)';
+                                return (
+                                  <div
+                                    key={predLabel}
+                                    className="w-16 h-12 flex items-center justify-center text-xs font-medium border border-gray-100"
+                                    style={{ backgroundColor: bg, color: textColor }}
+                                  >
+                                    {count > 0 ? count : ''}
+                                  </div>
+                                );
+                              })}
                             </div>
                           ))}
                         </div>
-                        {/* Data rows */}
-                        {confusionGrid.labels.map((trueLabel) => (
-                          <div key={trueLabel} className="flex">
-                            <div className="w-24 h-12 flex items-center justify-end pr-2 text-xs font-medium text-gray-700 truncate" title={trueLabel}>
-                              {trueLabel.length > 10 ? trueLabel.slice(0, 10) + '..' : trueLabel}
-                            </div>
-                            {confusionGrid.labels.map((predLabel) => {
-                              const count = confusionGrid.lookup[`${trueLabel}__${predLabel}`] || 0;
-                              const intensity = count / confusionGrid.maxCount;
-                              const isDiag = trueLabel === predLabel;
-                              const bg = isDiag
-                                ? `rgba(37, 99, 235, ${0.1 + intensity * 0.8})`
-                                : count > 0
-                                  ? `rgba(239, 68, 68, ${0.1 + intensity * 0.6})`
-                                  : 'rgba(249, 250, 251, 1)';
-                              const textColor = intensity > 0.5 ? 'white' : 'rgb(55, 65, 81)';
-                              return (
-                                <div
-                                  key={predLabel}
-                                  className="w-16 h-12 flex items-center justify-center text-xs font-medium border border-gray-100"
-                                  style={{ backgroundColor: bg, color: textColor }}
-                                >
-                                  {count > 0 ? count : ''}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
                       </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 text-center py-8">No confusion data available</p>
-                  )}
-                </Card>
+                    ) : (
+                      <p className="text-sm text-gray-400 text-center py-8">No confusion data available</p>
+                    )}
+                  </Card>
 
-                {/* Charts row 2: Per-Class and Model Comparison */}
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {/* Per-Class Performance */}
-                  <Card title="Per-Class Performance">
-                    {perClassData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={Math.max(300, perClassData.length * 40)}>
-                        <BarChart data={perClassData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 80 }}>
+                  {/* Per-Class Performance (aggregated) */}
+                  <Card title="Per-Class Performance (Aggregated)">
+                    {aggPerClassData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={Math.max(300, aggPerClassData.length * 50)}>
+                        <BarChart data={aggPerClassData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 80 }}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
                           <YAxis dataKey="label" type="category" width={75} tick={{ fontSize: 12 }} />
                           <RechartsTooltip formatter={(v) => `${v}%`} />
                           <Legend />
-                          <Bar dataKey="Precision" fill="#2563eb" barSize={10} />
-                          <Bar dataKey="Recall" fill="#16a34a" barSize={10} />
-                          <Bar dataKey="F1" fill="#d97706" barSize={10} />
+                          <Bar dataKey="Precision" fill="#2563eb" barSize={12} />
+                          <Bar dataKey="Recall" fill="#16a34a" barSize={12} />
+                          <Bar dataKey="F1" fill="#d97706" barSize={12} />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
-                      <p className="text-sm text-gray-400 text-center py-12">Select a test to view per-class metrics</p>
-                    )}
-                  </Card>
-
-                  {/* Model Architecture Comparison */}
-                  <Card title="Model Architecture Comparison">
-                    {modelCompData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={320}>
-                        <BarChart data={modelCompData} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="model" tick={{ fontSize: 11, angle: -30 }} textAnchor="end" height={60} />
-                          <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                          <RechartsTooltip formatter={(v) => `${v}%`} />
-                          <Bar dataKey="accuracy" name="Avg Accuracy" barSize={40}>
-                            {modelCompData.map((_, i) => (
-                              <Cell key={i} fill={getColor(i)} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-12">No model comparison data</p>
+                      <p className="text-sm text-gray-400 text-center py-12">No per-class data available</p>
                     )}
                   </Card>
                 </div>
 
-                {/* Training Efficiency */}
-                <Card title="Training Efficiency (Epochs vs Best Validation Accuracy)">
-                  {efficiencyData.length > 0 ? (
+                {/* Model Architecture Comparison — only if multiple models */}
+                {hasMultipleModels && modelCompData.length > 0 && (
+                  <Card title="Model Architecture Comparison">
                     <ResponsiveContainer width="100%" height={320}>
-                      <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
+                      <BarChart data={modelCompData} margin={{ top: 10, right: 20, bottom: 40, left: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="x" name="Epochs" type="number" label={{ value: 'Number of Epochs', position: 'insideBottom', offset: -10 }} />
-                        <YAxis dataKey="y" name="Best Val Accuracy" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
-                        <RechartsTooltip
-                          formatter={(val, name) => {
-                            if (name === 'Best Val Accuracy') return `${(val * 100).toFixed(1)}%`;
-                            return val;
-                          }}
-                          labelFormatter={() => ''}
-                        />
-                        <Scatter name="Sessions" data={efficiencyData} fill="#2563eb">
-                          {efficiencyData.map((_, i) => (
+                        <XAxis dataKey="model" tick={{ fontSize: 11, angle: -30 }} textAnchor="end" height={60} />
+                        <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                        <RechartsTooltip formatter={(v) => `${v}%`} />
+                        <Bar dataKey="accuracy" name="Avg Accuracy" barSize={40}>
+                          {modelCompData.map((_, i) => (
                             <Cell key={i} fill={getColor(i)} />
                           ))}
-                        </Scatter>
-                      </ScatterChart>
+                        </Bar>
+                      </BarChart>
                     </ResponsiveContainer>
-                  ) : (
-                    <p className="text-sm text-gray-400 text-center py-12">No training data available</p>
-                  )}
-                </Card>
+                  </Card>
+                )}
               </>
             )}
 
@@ -691,7 +659,6 @@ export default function Performance() {
               {/* Study selector */}
               <Card title="Select Studies to Compare" className="lg:col-span-1">
                 <div className="space-y-3">
-                  {/* Select All */}
                   <div className="flex items-center gap-3 pb-2 border-b border-gray-200">
                     <input
                       type="checkbox"
@@ -706,7 +673,6 @@ export default function Performance() {
                     )}
                   </div>
 
-                  {/* Study list */}
                   <div className="max-h-80 overflow-y-auto space-y-1">
                     {allStudies.map((study) => (
                       <label
@@ -726,7 +692,6 @@ export default function Performance() {
                     ))}
                   </div>
 
-                  {/* Compare button */}
                   <button
                     type="button"
                     disabled={selectedCompareIds.length < 2}
@@ -795,7 +760,7 @@ export default function Performance() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {sortedCompareData.map((row, i) => (
+                      {sortedCompareData.map((row) => (
                         <tr key={row.study_id} className="hover:bg-blue-50 transition-colors">
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.study_name}</td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 tabular-nums">{row.total_sessions}</td>
@@ -822,7 +787,7 @@ export default function Performance() {
             )}
 
             {/* Accuracy vs Sample Size scatter (cross-study) */}
-            {sortedCompareData.length > 0 && (
+            {compareScatterData.length > 0 && (
               <Card title="Accuracy vs Average Sample Size">
                 <ResponsiveContainer width="100%" height={320}>
                   <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
@@ -836,11 +801,11 @@ export default function Performance() {
                       }}
                     />
                     <Legend />
-                    {sortedCompareData.map((study, i) => (
+                    {compareScatterData.map((study, i) => (
                       <Scatter
-                        key={study.study_id}
-                        name={study.study_name.length > 20 ? study.study_name.slice(0, 20) + '...' : study.study_name}
-                        data={[{ x: study.avg_sample_size, y: study.avg_accuracy }]}
+                        key={study.name}
+                        name={study.name.length > 20 ? study.name.slice(0, 20) + '...' : study.name}
+                        data={[{ x: study.x, y: study.y }]}
                         fill={getColor(i)}
                       />
                     ))}
