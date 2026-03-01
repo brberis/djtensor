@@ -18,6 +18,17 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   Legend, ResponsiveContainer, BarChart, Bar, Cell, LineChart, Line,
 } from 'recharts';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  Tooltip as ChartJSTooltip,
+  Legend as ChartJSLegend,
+} from 'chart.js';
+import { BoxPlotController, BoxAndWiskers } from '@sgratzl/chartjs-chart-boxplot';
+import { Chart } from 'react-chartjs-2';
+
+ChartJS.register(BoxPlotController, BoxAndWiskers, CategoryScale, LinearScale, ChartJSTooltip, ChartJSLegend);
 
 const COLORS = [
   '#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed',
@@ -28,11 +39,45 @@ function getColor(idx) {
   return COLORS[idx % COLORS.length];
 }
 
+// Compute nice Y-axis domain from data, with padding and rounded bounds
+function niceRange(values, { isPercent = false, padFraction = 0.1 } = {}) {
+  if (!values.length) return isPercent ? [0, 100] : [0, 1];
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const span = dataMax - dataMin || (isPercent ? 5 : 0.1);
+  const pad = span * padFraction;
+
+  let lo = dataMin - pad;
+  let hi = dataMax + pad;
+
+  if (isPercent) {
+    // Round to nearest 5% for clean ticks
+    lo = Math.max(0, Math.floor(lo / 5) * 5);
+    hi = Math.min(100, Math.ceil(hi / 5) * 5);
+    // If data is very tight (e.g. 98-100), ensure at least 10% range
+    if (hi - lo < 10) {
+      lo = Math.max(0, hi - 10);
+    }
+  } else {
+    // For loss: round to nearest 0.05
+    lo = Math.max(0, Math.floor(lo / 0.05) * 0.05);
+    hi = Math.ceil(hi / 0.05) * 0.05;
+    // Ensure at least some visible range
+    if (hi - lo < 0.05) {
+      lo = Math.max(0, lo - 0.05);
+      hi = hi + 0.05;
+    }
+  }
+
+  return [+lo.toFixed(4), +hi.toFixed(4)];
+}
+
 // Extract T-N number from test name for sorting
 function extractTestNumber(name) {
   const match = name.match(/T-(\d+)/i);
   return match ? parseInt(match[1], 10) : 9999;
 }
+
 
 // Card wrapper
 function Card({ title, children, className = '' }) {
@@ -229,6 +274,101 @@ export default function Performance() {
     return points;
   }, [perfData]);
 
+  // Averaged epoch data across all sessions (for study tab)
+  const avgEpochData = useMemo(() => {
+    if (!perfData) return [];
+    const sums = {};
+    (perfData.sessions || []).forEach((sess) => {
+      (sess.epochs || []).forEach((e) => {
+        if (!sums[e.number]) {
+          sums[e.number] = { accuracy: 0, loss: 0, val_accuracy: 0, val_loss: 0, count: 0 };
+        }
+        const d = sums[e.number];
+        d.accuracy += (e.accuracy || 0);
+        d.loss += (e.loss || 0);
+        d.val_accuracy += (e.val_accuracy || 0);
+        d.val_loss += (e.val_loss || 0);
+        d.count += 1;
+      });
+    });
+    const epochs = Object.keys(sums).map(Number).sort((a, b) => a - b);
+    return epochs.map((num) => {
+      const d = sums[num];
+      const c = d.count || 1;
+      return {
+        epoch: num,
+        'Train Accuracy': +(d.accuracy / c * 100).toFixed(2),
+        'Val Accuracy': +(d.val_accuracy / c * 100).toFixed(2),
+        'Train Loss': +(d.loss / c).toFixed(4),
+        'Val Loss': +(d.val_loss / c).toFixed(4),
+      };
+    });
+  }, [perfData]);
+
+  // Dynamic Y-axis domains for epoch charts (study tab)
+  const epochAccDomain = useMemo(() => {
+    if (!avgEpochData.length) return [0, 100];
+    const vals = avgEpochData.flatMap((d) => [d['Train Accuracy'], d['Val Accuracy']]).filter(Boolean);
+    return niceRange(vals, { isPercent: true });
+  }, [avgEpochData]);
+
+  const epochLossDomain = useMemo(() => {
+    if (!avgEpochData.length) return [0, 1];
+    const vals = avgEpochData.flatMap((d) => [d['Train Loss'], d['Val Loss']]).filter((v) => v != null);
+    return niceRange(vals);
+  }, [avgEpochData]);
+
+  // Per-class accuracy and confidence distributions (for box plots)
+  const perClassBoxData = useMemo(() => {
+    if (!perfData) return null;
+    const classAccuracies = {};
+    const classConfidences = {};
+
+    (perfData.sessions || []).forEach((sess) => {
+      (sess.tests || []).forEach((test) => {
+        (test.per_class || []).forEach((pc) => {
+          if (!classAccuracies[pc.label]) classAccuracies[pc.label] = [];
+          if (!classConfidences[pc.label]) classConfidences[pc.label] = [];
+          if (pc.accuracy != null) classAccuracies[pc.label].push(pc.accuracy * 100);
+          if (pc.avg_confidence != null) classConfidences[pc.label].push(pc.avg_confidence * 100);
+        });
+      });
+    });
+
+    const labels = Object.keys(classAccuracies).sort();
+    if (!labels.length) return null;
+
+    const accValues = labels.map((l) => classAccuracies[l]);
+    const confValues = labels.map((l) => classConfidences[l]);
+    const allAcc = accValues.flat();
+    const allConf = confValues.flat();
+
+    return {
+      labels,
+      accuracyData: accValues,
+      confidenceData: confValues,
+      accDomain: niceRange(allAcc, { isPercent: true }),
+      confDomain: niceRange(allConf, { isPercent: true }),
+    };
+  }, [perfData]);
+
+  // Misidentification data from backend summary
+  const misidData = useMemo(() => {
+    if (!perfData?.misidentification_summary) return [];
+    return perfData.misidentification_summary
+      .sort((a, b) => b.misidentifications - a.misidentifications);
+  }, [perfData]);
+
+  const misidChartData = useMemo(() => {
+    return misidData
+      .filter((m) => m.misidentifications > 0)
+      .map((m) => ({
+        label: m.label,
+        Misidentifications: m.misidentifications,
+        'Total Samples': m.total_samples,
+      }));
+  }, [misidData]);
+
   // Aggregated confusion matrix from backend
   const aggConfusionGrid = useMemo(() => {
     if (!perfData || !perfData.aggregated_confusion) return null;
@@ -297,12 +437,61 @@ export default function Performance() {
   // Accuracy vs sample size scatter for compare tab
   const compareScatterData = useMemo(() => {
     if (!compareData) return [];
-    return compareData.map((s) => ({
+    return compareData.map((s, i) => ({
       x: s.avg_sample_size,
-      y: s.avg_accuracy,
+      y: +(s.avg_accuracy * 100).toFixed(2),
       name: s.study_name,
+      color: getColor(i),
     }));
   }, [compareData]);
+
+  // Dynamic Y-axis domain for scatter chart
+  const scatterYDomain = useMemo(() => {
+    if (!compareScatterData.length) return [0, 100];
+    return niceRange(compareScatterData.map(d => d.y), { isPercent: true });
+  }, [compareScatterData]);
+
+  // Compare tab: epoch data for val accuracy and val loss per study
+  const compareEpochAccData = useMemo(() => {
+    if (!compareData) return { data: [], studyNames: [] };
+    const allEpochs = new Set();
+    const studyNames = [];
+    compareData.forEach((s) => {
+      if (s.avg_epochs && s.avg_epochs.length > 0) {
+        studyNames.push(s.study_name);
+        s.avg_epochs.forEach((e) => allEpochs.add(e.number));
+      }
+    });
+    const epochs = [...allEpochs].sort((a, b) => a - b);
+    const data = epochs.map((num) => {
+      const point = { epoch: num };
+      compareData.forEach((s) => {
+        if (!s.avg_epochs) return;
+        const e = s.avg_epochs.find((ep) => ep.number === num);
+        if (e) {
+          point[`${s.study_name}_acc`] = +(e.val_accuracy * 100).toFixed(2);
+          point[`${s.study_name}_loss`] = +e.val_loss.toFixed(4);
+        }
+      });
+      return point;
+    });
+    return { data, studyNames };
+  }, [compareData]);
+
+  // Dynamic Y-axis domains for compare tab epoch charts
+  const compareEpochAccDomain = useMemo(() => {
+    const { data, studyNames } = compareEpochAccData;
+    if (!data.length || !studyNames.length) return [0, 100];
+    const vals = data.flatMap((d) => studyNames.map((n) => d[`${n}_acc`])).filter((v) => v != null);
+    return niceRange(vals, { isPercent: true });
+  }, [compareEpochAccData]);
+
+  const compareEpochLossDomain = useMemo(() => {
+    const { data, studyNames } = compareEpochAccData;
+    if (!data.length || !studyNames.length) return [0, 1];
+    const vals = data.flatMap((d) => studyNames.map((n) => d[`${n}_loss`])).filter((v) => v != null);
+    return niceRange(vals);
+  }, [compareEpochAccData]);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -394,20 +583,20 @@ export default function Performance() {
 
             {!isPerfLoading && perfData && (
               <>
-                {/* Summary cards */}
+                {/* Summary cards — Avg Accuracy primary, Best Accuracy secondary */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatCard label="Total Sessions" value={perfData.summary?.total_sessions ?? 0} />
-                  <StatCard label="Total Tests" value={perfData.summary?.total_tests ?? 0} />
-                  <StatCard
-                    label="Best Accuracy"
-                    value={`${((perfData.summary?.best_accuracy ?? 0) * 100).toFixed(1)}%`}
-                    sub="Best single test"
-                  />
                   <StatCard
                     label="Avg Accuracy"
                     value={`${((perfData.summary?.avg_accuracy ?? 0) * 100).toFixed(1)}%`}
                     sub="Across all tests"
                   />
+                  <StatCard
+                    label="Best Accuracy"
+                    value={`${((perfData.summary?.best_accuracy ?? 0) * 100).toFixed(1)}%`}
+                    sub="Best single test"
+                  />
+                  <StatCard label="Total Sessions" value={perfData.summary?.total_sessions ?? 0} />
+                  <StatCard label="Total Tests" value={perfData.summary?.total_tests ?? 0} />
                 </div>
 
                 {/* Accuracy per Iteration (line chart) */}
@@ -431,6 +620,203 @@ export default function Performance() {
                       </LineChart>
                     </ResponsiveContainer>
                   </Card>
+                )}
+
+                {/* Accuracy Over Epochs + Loss Over Epochs (averaged across all iterations) */}
+                {avgEpochData.length > 0 && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <Card title="Accuracy Over Epochs">
+                      <p className="text-xs text-gray-400 mb-3">Averaged across all {perfData.summary?.total_sessions ?? 0} sessions</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <LineChart data={avgEpochData} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="epoch" label={{ value: 'Epoch', position: 'insideBottom', offset: -10 }} />
+                          <YAxis domain={epochAccDomain} tickFormatter={(v) => `${v}%`} />
+                          <RechartsTooltip formatter={(val, name) => name.includes('Accuracy') ? `${val}%` : val} />
+                          <Legend />
+                          <Line type="monotone" dataKey="Train Accuracy" stroke="#2563eb" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="Val Accuracy" stroke="#d97706" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Card>
+
+                    <Card title="Loss Over Epochs">
+                      <p className="text-xs text-gray-400 mb-3">Averaged across all {perfData.summary?.total_sessions ?? 0} sessions</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <LineChart data={avgEpochData} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="epoch" label={{ value: 'Epoch', position: 'insideBottom', offset: -10 }} />
+                          <YAxis domain={epochLossDomain} tickFormatter={(v) => v.toFixed(2)} />
+                          <RechartsTooltip formatter={(val) => val.toFixed(4)} />
+                          <Legend />
+                          <Line type="monotone" dataKey="Train Loss" stroke="#2563eb" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="Val Loss" stroke="#d97706" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Per-Class Accuracy & Confidence Box Plots */}
+                {perClassBoxData && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <Card title="Per-Class Accuracy Distribution">
+                      <p className="text-xs text-gray-400 mb-3">Distribution across {perfData.summary?.total_tests ?? 0} test iterations</p>
+                      <div style={{ height: Math.max(300, perClassBoxData.labels.length * 50) }}>
+                        <Chart
+                          type="boxplot"
+                          data={{
+                            labels: perClassBoxData.labels,
+                            datasets: [{
+                              label: 'Accuracy (%)',
+                              data: perClassBoxData.accuracyData,
+                              backgroundColor: 'rgba(37, 99, 235, 0.25)',
+                              borderColor: '#2563eb',
+                              borderWidth: 1.5,
+                              outlierBackgroundColor: '#2563eb',
+                              outlierRadius: 3,
+                              meanBackgroundColor: '#dc2626',
+                              meanRadius: 4,
+                            }],
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                              legend: { display: false },
+                              tooltip: {
+                                callbacks: {
+                                  label: (ctx) => {
+                                    const v = ctx.parsed;
+                                    if (v && v.whiskerMin != null) {
+                                      return `Min: ${v.whiskerMin.toFixed(1)}%, Q1: ${v.q1.toFixed(1)}%, Med: ${v.median.toFixed(1)}%, Q3: ${v.q3.toFixed(1)}%, Max: ${v.whiskerMax.toFixed(1)}%`;
+                                    }
+                                    return '';
+                                  },
+                                },
+                              },
+                            },
+                            scales: {
+                              x: {
+                                min: perClassBoxData.accDomain[0],
+                                max: perClassBoxData.accDomain[1],
+                                ticks: { callback: (v) => `${v}%` },
+                                title: { display: true, text: 'Accuracy (%)' },
+                              },
+                              y: {
+                                ticks: { font: { size: 11 } },
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+                    </Card>
+
+                    <Card title="Per-Class Confidence Distribution">
+                      <p className="text-xs text-gray-400 mb-3">Distribution across {perfData.summary?.total_tests ?? 0} test iterations</p>
+                      <div style={{ height: Math.max(300, perClassBoxData.labels.length * 50) }}>
+                        <Chart
+                          type="boxplot"
+                          data={{
+                            labels: perClassBoxData.labels,
+                            datasets: [{
+                              label: 'Confidence (%)',
+                              data: perClassBoxData.confidenceData,
+                              backgroundColor: 'rgba(22, 163, 74, 0.25)',
+                              borderColor: '#16a34a',
+                              borderWidth: 1.5,
+                              outlierBackgroundColor: '#16a34a',
+                              outlierRadius: 3,
+                              meanBackgroundColor: '#dc2626',
+                              meanRadius: 4,
+                            }],
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y',
+                            plugins: {
+                              legend: { display: false },
+                              tooltip: {
+                                callbacks: {
+                                  label: (ctx) => {
+                                    const v = ctx.parsed;
+                                    if (v && v.whiskerMin != null) {
+                                      return `Min: ${v.whiskerMin.toFixed(1)}%, Q1: ${v.q1.toFixed(1)}%, Med: ${v.median.toFixed(1)}%, Q3: ${v.q3.toFixed(1)}%, Max: ${v.whiskerMax.toFixed(1)}%`;
+                                    }
+                                    return '';
+                                  },
+                                },
+                              },
+                            },
+                            scales: {
+                              x: {
+                                min: perClassBoxData.confDomain[0],
+                                max: perClassBoxData.confDomain[1],
+                                ticks: { callback: (v) => `${v}%` },
+                                title: { display: true, text: 'Confidence (%)' },
+                              },
+                              y: {
+                                ticks: { font: { size: 11 } },
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Misidentification Analysis */}
+                {misidChartData.length > 0 && (
+                  <>
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                      <Card title="Misidentification Patterns">
+                        <p className="text-xs text-gray-400 mb-3">Total misidentifications per class across all {perfData.summary?.total_tests ?? 0} tests</p>
+                        <ResponsiveContainer width="100%" height={Math.max(300, misidChartData.length * 50)}>
+                          <BarChart data={misidChartData} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 80 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis type="number" />
+                            <YAxis dataKey="label" type="category" width={120} tick={{ fontSize: 11 }} />
+                            <RechartsTooltip />
+                            <Legend />
+                            <Bar dataKey="Misidentifications" fill="#dc2626" barSize={14} />
+                            <Bar dataKey="Total Samples" fill="#93c5fd" barSize={14} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Card>
+
+                      <Card title="Misidentification Details">
+                        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50 sticky top-0 z-10">
+                              <tr>
+                                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-900">Class</th>
+                                <th className="px-3 py-3 text-right text-xs font-semibold text-gray-900">Samples</th>
+                                <th className="px-3 py-3 text-right text-xs font-semibold text-gray-900">Misid.</th>
+                                <th className="px-3 py-3 text-right text-xs font-semibold text-gray-900">Rate</th>
+                                <th className="px-3 py-3 text-left text-xs font-semibold text-gray-900">Most Confused With</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {misidData.map((row) => (
+                                <tr key={row.label} className={row.misidentifications > 0 ? '' : 'opacity-50'}>
+                                  <td className="whitespace-nowrap px-3 py-3 text-sm font-medium text-gray-900">{row.label}</td>
+                                  <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500 text-right tabular-nums">{row.total_samples}</td>
+                                  <td className="whitespace-nowrap px-3 py-3 text-sm text-red-600 font-medium text-right tabular-nums">{row.misidentifications}</td>
+                                  <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500 text-right tabular-nums">{(row.misid_rate * 100).toFixed(1)}%</td>
+                                  <td className="px-3 py-3 text-sm text-gray-500">
+                                    {(row.confused_with || []).slice(0, 3).map((c) => `${c.predicted} (${c.count})`).join(', ') || '-'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    </div>
+                  </>
                 )}
 
                 {/* Accuracy/Confidence vs Sample Size — only if varying sample sizes */}
@@ -591,14 +977,14 @@ export default function Performance() {
                           <tr>
                             {[
                               { key: 'testName', label: 'Test' },
-                              { key: 'sessionName', label: 'Session' },
-                              { key: 'model', label: 'Model' },
-                              { key: 'dataset', label: 'Dataset' },
-                              { key: 'resolution', label: 'Resolution' },
                               { key: 'avgImgPerClass', label: 'Avg Img/Class' },
                               { key: 'accuracy', label: 'Accuracy' },
                               { key: 'confidence', label: 'Confidence' },
                               { key: 'f1', label: 'F1' },
+                              { key: 'resolution', label: 'Resolution' },
+                              { key: 'sessionName', label: 'Session' },
+                              { key: 'model', label: 'Model' },
+                              { key: 'dataset', label: 'Dataset' },
                             ].map((col) => (
                               <th
                                 key={col.key}
@@ -618,10 +1004,6 @@ export default function Performance() {
                               onClick={() => router.push(`/training/${row.sessionId}`)}
                             >
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-blue-600 font-medium">{row.testName}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.sessionName}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.model}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.dataset}</td>
-                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.resolution}</td>
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.avgImgPerClass}</td>
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
                                 {row.accuracy != null ? `${(row.accuracy * 100).toFixed(1)}%` : '-'}
@@ -632,6 +1014,10 @@ export default function Performance() {
                               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                 {row.f1 != null ? row.f1.toFixed(3) : '-'}
                               </td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.resolution}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.sessionName}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.model}</td>
+                              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{row.dataset}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -733,6 +1119,73 @@ export default function Performance() {
               </Card>
             </div>
 
+            {/* Compare: Validation Accuracy & Loss Over Epochs */}
+            {compareEpochAccData.data.length > 0 && (
+              <div className="space-y-6">
+                <Card title="Val Accuracy Over Epochs">
+                  <p className="text-xs text-gray-400 mb-3">Validation accuracy per study (averaged across sessions)</p>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={compareEpochAccData.data} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="epoch" label={{ value: 'Epoch', position: 'insideBottom', offset: -10 }} />
+                      <YAxis domain={compareEpochAccDomain} tickFormatter={(v) => `${v}%`} />
+                      <RechartsTooltip formatter={(val) => `${val}%`} />
+                      {compareEpochAccData.studyNames.map((name, i) => (
+                        <Line
+                          key={name}
+                          type="monotone"
+                          dataKey={`${name}_acc`}
+                          name={name}
+                          stroke={getColor(i)}
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                    {compareEpochAccData.studyNames.map((name, i) => (
+                      <span key={name} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <span className="inline-block w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: getColor(i) }} />
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+
+                <Card title="Val Loss Over Epochs">
+                  <p className="text-xs text-gray-400 mb-3">Validation loss per study (averaged across sessions)</p>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={compareEpochAccData.data} margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="epoch" label={{ value: 'Epoch', position: 'insideBottom', offset: -10 }} />
+                      <YAxis domain={compareEpochLossDomain} tickFormatter={(v) => v.toFixed(2)} />
+                      <RechartsTooltip formatter={(val) => val.toFixed(4)} />
+                      {compareEpochAccData.studyNames.map((name, i) => (
+                        <Line
+                          key={name}
+                          type="monotone"
+                          dataKey={`${name}_loss`}
+                          name={name}
+                          stroke={getColor(i)}
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                    {compareEpochAccData.studyNames.map((name, i) => (
+                      <span key={name} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <span className="inline-block w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: getColor(i) }} />
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            )}
+
             {/* Comparison table */}
             {sortedCompareData.length > 0 && (
               <Card title="Study Comparison Details">
@@ -790,28 +1243,38 @@ export default function Performance() {
             {/* Accuracy vs Sample Size scatter (cross-study) */}
             {compareScatterData.length > 0 && (
               <Card title="Accuracy vs Average Sample Size">
-                <ResponsiveContainer width="100%" height={320}>
-                  <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
+                <ResponsiveContainer width="100%" height={400}>
+                  <ScatterChart margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="x" name="Avg Samples/Class" type="number" label={{ value: 'Avg Samples per Class', position: 'insideBottom', offset: -10 }} />
-                    <YAxis dataKey="y" name="Avg Accuracy" type="number" domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
+                    <YAxis dataKey="y" name="Avg Accuracy" type="number" domain={scatterYDomain} tickFormatter={(v) => `${v}%`} />
                     <RechartsTooltip
-                      formatter={(val, name) => {
-                        if (name === 'Avg Accuracy') return `${(val * 100).toFixed(1)}%`;
-                        return val;
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.[0]) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-white border border-gray-200 shadow-lg rounded-lg px-3 py-2 text-sm">
+                            <p className="font-medium text-gray-900">{d.name}</p>
+                            <p className="text-gray-600">Accuracy: {d.y}%</p>
+                            <p className="text-gray-600">Samples/Class: {d.x}</p>
+                          </div>
+                        );
                       }}
                     />
-                    <Legend />
-                    {compareScatterData.map((study, i) => (
-                      <Scatter
-                        key={study.name}
-                        name={study.name.length > 20 ? study.name.slice(0, 20) + '...' : study.name}
-                        data={[{ x: study.x, y: study.y }]}
-                        fill={getColor(i)}
-                      />
-                    ))}
+                    <Scatter data={compareScatterData} shape={(props) => {
+                      const { cx, cy, payload } = props;
+                      return <circle cx={cx} cy={cy} r={6} fill={payload.color} fillOpacity={0.8} stroke={payload.color} strokeWidth={1} />;
+                    }} />
                   </ScatterChart>
                 </ResponsiveContainer>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                  {compareScatterData.map((d) => (
+                    <span key={d.name} className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                      {d.name}
+                    </span>
+                  ))}
+                </div>
               </Card>
             )}
           </div>

@@ -137,6 +137,7 @@ class Study(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     mode = models.CharField(max_length=12, choices=STUDY_MODES, default='experiment')
+    display_order = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
