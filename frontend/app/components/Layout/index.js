@@ -70,7 +70,7 @@ const Layout = (props) => {
     fetch('/api/feature_extractor/studies/')
       .then((response) => response.json())
       .then((data) => {
-        const sorted = [...data].reverse();
+        const sorted = Array.isArray(data) ? data : data.results || [];
         setStudies(sorted);
         const storageKey = `selectedStudy_${user.id}`;
         const savedStudy = localStorage.getItem(storageKey) || localStorage.getItem('selectedStudy');

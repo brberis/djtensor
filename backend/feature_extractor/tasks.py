@@ -573,6 +573,16 @@ def test_images(test_id, image_size=224):
 
     try:
         test_instance = Test.objects.get(id=test_id)
+
+        # Guard: skip if results already exist (prevents duplicate runs)
+        if TestResult.objects.filter(test=test_instance).exists():
+            logger.warning(f"Test {test_id} already has results, skipping duplicate run")
+            if test_instance.status in ('Pending', 'Testing'):
+                test_instance.status = 'Completed'
+                test_instance.save(update_fields=['status'])
+            process_next_pending()
+            return
+
         test_instance.status = 'Testing'
         test_instance.save()
 
@@ -647,8 +657,11 @@ def test_images(test_id, image_size=224):
             combined_map = saliency_map + edge_map
             combined_map = (combined_map - combined_map.min()) / (combined_map.max() - combined_map.min())
 
+            # Gamma correction for better contrast (darken low activations, brighten high ones)
+            combined_map = np.power(combined_map, 2.0)
+
             # Display the combined map
-            im = axes[1].imshow(combined_map, cmap='viridis')
+            im = axes[1].imshow(combined_map, cmap='inferno', vmin=0, vmax=1)
             axes[1].set_title(f"Predicted: {predicted_label}")
             axes[1].axis('off')
 

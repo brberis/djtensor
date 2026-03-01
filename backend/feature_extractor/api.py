@@ -37,11 +37,11 @@ class StudyViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.request.user.is_superuser:
-            return Study.objects.all()
+            return Study.objects.all().order_by('display_order', '-created_at')
         user_studies = StudyMembership.objects.filter(
             user=self.request.user
         ).values_list('study_id', flat=True)
-        return Study.objects.filter(id__in=user_studies)
+        return Study.objects.filter(id__in=user_studies).order_by('display_order', '-created_at')
 
     def perform_create(self, serializer):
         study = serializer.save()
@@ -53,6 +53,16 @@ class StudyViewSet(viewsets.ModelViewSet):
         if role != 'owner':
             return Response({'error': 'Only the study owner can delete a study'}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """Reorder studies (superuser only)."""
+        if not request.user.is_superuser:
+            return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
+        ordered_ids = request.data.get('order', [])
+        for idx, study_id in enumerate(ordered_ids):
+            Study.objects.filter(pk=study_id).update(display_order=idx + 1)
+        return Response({'status': 'ok'})
 
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):
@@ -130,6 +140,11 @@ class StudyViewSet(viewsets.ModelViewSet):
                     [r.true_label for r in results] + [r.prediction for r in results]
                 ))
 
+                # Group results by true_label for per-class stats
+                class_results = defaultdict(list)
+                for r in results:
+                    class_results[r.true_label].append(r)
+
                 per_class = []
                 for label in all_labels:
                     tp = class_tp.get(label, 0)
@@ -138,11 +153,22 @@ class StudyViewSet(viewsets.ModelViewSet):
                     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
                     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
                     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+                    # Per-class accuracy and confidence
+                    cls_res = class_results.get(label, [])
+                    cls_total = len(cls_res)
+                    cls_correct = [r for r in cls_res if r.prediction == r.true_label]
+
                     per_class.append({
                         'label': label,
                         'precision': round(precision, 4),
                         'recall': round(recall, 4),
                         'f1': round(f1, 4),
+                        'accuracy': round(tp / cls_total, 4) if cls_total > 0 else 0,
+                        'avg_confidence': round(sum(r.confidence for r in cls_res) / cls_total, 4) if cls_total > 0 else 0,
+                        'avg_correct_confidence': round(sum(r.confidence for r in cls_correct) / len(cls_correct), 4) if cls_correct else 0,
+                        'misidentifications': fn,
+                        'total': cls_total,
                     })
 
                 # Macro F1
@@ -258,6 +284,33 @@ class StudyViewSet(viewsets.ModelViewSet):
         sample_sizes = [s['avg_images_per_class'] for s in session_data]
         has_varying_sample_sizes = len(set(sample_sizes)) > 1
 
+        # Misidentification summary per class
+        misidentification_summary = []
+        for label in sorted(agg_labels):
+            misid_count = sum(
+                c for (tl, p), c in agg_confusion.items()
+                if tl == label and p != label
+            )
+            total_samples = sum(
+                c for (tl, p), c in agg_confusion.items()
+                if tl == label
+            )
+            confused_with = sorted(
+                [
+                    {'predicted': p, 'count': c}
+                    for (tl, p), c in agg_confusion.items()
+                    if tl == label and p != label
+                ],
+                key=lambda x: -x['count']
+            )
+            misidentification_summary.append({
+                'label': label,
+                'total_samples': total_samples,
+                'misidentifications': misid_count,
+                'misid_rate': round(misid_count / total_samples, 4) if total_samples else 0,
+                'confused_with': confused_with,
+            })
+
         return Response({
             'study_id': study.id,
             'study_name': study.name,
@@ -270,6 +323,7 @@ class StudyViewSet(viewsets.ModelViewSet):
                 'labels': sorted(agg_labels),
                 'per_class': agg_per_class,
             },
+            'misidentification_summary': misidentification_summary,
             'unique_models': sorted(unique_models),
             'unique_datasets': sorted(unique_datasets),
             'has_varying_sample_sizes': has_varying_sample_sizes,
@@ -293,7 +347,7 @@ class StudyViewSet(viewsets.ModelViewSet):
                 TrainingSession.objects
                 .filter(study=study, status='Completed')
                 .select_related('model', 'dataset')
-                .prefetch_related('tests__results')
+                .prefetch_related('tests__results', 'epochs')
             )
 
             models_used = set()
@@ -329,6 +383,29 @@ class StudyViewSet(viewsets.ModelViewSet):
                 num_classes = len(label_counts) or 1
                 sample_sizes.append(total_images / num_classes)
 
+            # Average epoch curves across all sessions
+            epoch_sums = defaultdict(lambda: {'accuracy': 0, 'loss': 0, 'val_accuracy': 0, 'val_loss': 0, 'count': 0})
+            for sess in sessions:
+                for e in sess.epochs.all():
+                    d = epoch_sums[e.number]
+                    d['accuracy'] += (e.accuracy or 0)
+                    d['loss'] += (e.loss or 0)
+                    d['val_accuracy'] += (e.val_accuracy or 0)
+                    d['val_loss'] += (e.val_loss or 0)
+                    d['count'] += 1
+
+            avg_epochs = []
+            for num in sorted(epoch_sums.keys()):
+                d = epoch_sums[num]
+                c = d['count'] or 1
+                avg_epochs.append({
+                    'number': num,
+                    'accuracy': round(d['accuracy'] / c, 4),
+                    'loss': round(d['loss'] / c, 4),
+                    'val_accuracy': round(d['val_accuracy'] / c, 4),
+                    'val_loss': round(d['val_loss'] / c, 4),
+                })
+
             results.append({
                 'study_id': study.id,
                 'study_name': study.name,
@@ -340,6 +417,7 @@ class StudyViewSet(viewsets.ModelViewSet):
                 'avg_sample_size': round(sum(sample_sizes) / len(sample_sizes), 1) if sample_sizes else 0,
                 'models_used': sorted(models_used),
                 'datasets_used': sorted(datasets_used),
+                'avg_epochs': avg_epochs,
             })
 
         return Response(results)
@@ -600,8 +678,7 @@ class TestViewSet(viewsets.ModelViewSet):
             status='Pending',
             created_by=request.user,
         )
-        if not is_gpu_busy():
-            test_images.delay(new_test.id, new_test.training_session.model.resolution)
+        process_next_pending()
         serializer = self.get_serializer(new_test)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -708,3 +785,41 @@ class StudyMembershipViewSet(viewsets.ModelViewSet):
         if role != 'owner':
             return Response({'error': 'Only the study owner can change roles'}, status=status.HTTP_403_FORBIDDEN)
         return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'])
+    def batch(self, request):
+        """Batch assign users to studies (superuser only)."""
+        if not request.user.is_superuser:
+            return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
+
+        user_ids = request.data.get('user_ids', [])
+        study_ids = request.data.get('study_ids', [])
+        role = request.data.get('role', 'viewer')
+
+        if role not in ('editor', 'viewer'):
+            return Response({'error': 'Role must be editor or viewer'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_ids or not study_ids:
+            return Response({'error': 'user_ids and study_ids are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created = 0
+        updated = 0
+        for study_id in study_ids:
+            for user_id in user_ids:
+                try:
+                    existing = StudyMembership.objects.filter(
+                        study_id=study_id, user_id=user_id
+                    ).first()
+                    if existing:
+                        if existing.role != 'owner':
+                            existing.role = role
+                            existing.save()
+                            updated += 1
+                    else:
+                        StudyMembership.objects.create(
+                            study_id=study_id, user_id=user_id, role=role
+                        )
+                        created += 1
+                except Exception:
+                    pass  # skip invalid ids
+
+        return Response({'created': created, 'updated': updated})
