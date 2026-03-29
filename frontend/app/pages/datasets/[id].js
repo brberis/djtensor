@@ -99,6 +99,9 @@ export default function DatasetDetail() {
   const [syntheticBins, setSyntheticBins] = useState([0.8, 0.6, 0.4]);
   const [syntheticImagesPerBin, setSyntheticImagesPerBin] = useState(10);
   const [generatingSynthetic, setGeneratingSynthetic] = useState(false);
+  const [fractureProfiles, setFractureProfiles] = useState(null);
+  const [profileOverrides, setProfileOverrides] = useState({});
+  const [expandedSpecies, setExpandedSpecies] = useState(null);
 
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
@@ -238,14 +241,19 @@ export default function DatasetDetail() {
   const handleGenerateSynthetic = async () => {
     setGeneratingSynthetic(true);
     try {
+      const payload = {
+        name: syntheticName || `Synthetic from ${dataset?.name}`,
+        completeness_bins: syntheticBins,
+        images_per_bin: syntheticImagesPerBin,
+      };
+      // Only send overrides if any species was customized
+      if (Object.keys(profileOverrides).length > 0) {
+        payload.profile_overrides = profileOverrides;
+      }
       await fetch(`/api/datasets/dataset/${id}/generate-synthetic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: syntheticName || `Synthetic from ${dataset?.name}`,
-          completeness_bins: syntheticBins,
-          images_per_bin: syntheticImagesPerBin,
-        }),
+        body: JSON.stringify(payload),
       });
       setShowSyntheticDialog(false);
     } catch (e) {
@@ -609,6 +617,15 @@ export default function DatasetDetail() {
                   <button
                     onClick={() => {
                       setSyntheticName(`Synthetic from ${dataset?.name}`);
+                      setProfileOverrides({});
+                      setExpandedSpecies(null);
+                      // Load fracture profiles if not loaded
+                      if (!fractureProfiles) {
+                        fetch('/api/datasets/dataset/fracture-profiles')
+                          .then(r => r.json())
+                          .then(data => setFractureProfiles(data))
+                          .catch(console.error);
+                      }
                       setShowSyntheticDialog(true);
                     }}
                     className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center gap-2"
@@ -884,9 +901,9 @@ export default function DatasetDetail() {
           </Transition.Child>
           <div className="fixed inset-0 z-10 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
-              <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
+              <Dialog.Panel className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl p-6 max-h-[90vh] overflow-y-auto">
                 <Dialog.Title className="text-lg font-semibold text-gray-900">Generate Synthetic Fragments</Dialog.Title>
-                <p className="mt-1 text-sm text-gray-500">Create fragmentary tooth images at specified completeness levels.</p>
+                <p className="mt-1 text-sm text-gray-500">Create fragmentary tooth images with species-specific fracture patterns.</p>
 
                 <div className="mt-4 space-y-4">
                   <div>
@@ -934,6 +951,121 @@ export default function DatasetDetail() {
                       className={`mt-1 block w-24 ${theme.classes.input}`}
                     />
                   </div>
+
+                  {/* Per-species fracture profiles */}
+                  {fractureProfiles && labels.length > 0 && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Fracture Profiles by Species</label>
+                      <p className="text-xs text-gray-400 mt-0.5">Click a species to customize fracture type probabilities and edge roughness.</p>
+                      <div className="mt-2 space-y-1">
+                        {labels.map(label => {
+                          const speciesName = label.name;
+                          const isExpanded = expandedSpecies === speciesName;
+                          const defaultProfile = fractureProfiles[speciesName] || fractureProfiles['default'] || {};
+                          const override = profileOverrides[speciesName] || {};
+                          const fracTypes = override.fracture_types || defaultProfile.fracture_types || {};
+                          const edgeParams = override.edge_params || defaultProfile.edge_params || {};
+                          const isCustomized = !!profileOverrides[speciesName];
+
+                          const updateOverride = (section, key, value) => {
+                            setProfileOverrides(prev => {
+                              const current = prev[speciesName] || {};
+                              const currentSection = current[section] || { ...(defaultProfile[section] || {}) };
+                              return {
+                                ...prev,
+                                [speciesName]: {
+                                  ...current,
+                                  [section]: { ...currentSection, [key]: value },
+                                },
+                              };
+                            });
+                          };
+
+                          const resetSpecies = () => {
+                            setProfileOverrides(prev => {
+                              const next = { ...prev };
+                              delete next[speciesName];
+                              return next;
+                            });
+                          };
+
+                          return (
+                            <div key={speciesName} className="border border-gray-200 rounded-lg overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedSpecies(isExpanded ? null : speciesName)}
+                                className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50"
+                              >
+                                <span className="font-medium text-gray-800">
+                                  {speciesName}
+                                  {isCustomized && <span className="ml-2 text-xs text-blue-600">(customized)</span>}
+                                </span>
+                                <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                              {isExpanded && (
+                                <div className="px-3 pb-3 border-t border-gray-100 bg-gray-50">
+                                  <div className="mt-2">
+                                    <p className="text-xs font-semibold text-gray-600 mb-1.5">Fracture Types (probability weights)</p>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                      {['root_loss', 'tip_loss', 'lateral_break', 'edge_chip', 'diagonal_snap'].map(type => (
+                                        <div key={type} className="flex items-center gap-2">
+                                          <label className="text-xs text-gray-600 w-24 truncate" title={type}>{type.replace('_', ' ')}</label>
+                                          <input
+                                            type="number"
+                                            step="0.05"
+                                            min="0"
+                                            max="1"
+                                            value={fracTypes[type] ?? 0}
+                                            onChange={(e) => updateOverride('fracture_types', type, parseFloat(e.target.value) || 0)}
+                                            className="w-16 text-xs rounded border-gray-300 px-1.5 py-0.5"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="mt-3">
+                                    <p className="text-xs font-semibold text-gray-600 mb-1.5">Edge Parameters</p>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                      {[
+                                        { key: 'roughness', label: 'Roughness', min: 0, max: 1, step: 0.1 },
+                                        { key: 'micro_roughness', label: 'Micro roughness', min: 0, max: 1, step: 0.1 },
+                                        { key: 'curvature', label: 'Curvature', min: 0, max: 1, step: 0.1 },
+                                        { key: 'edge_3d_width', label: '3D edge (px)', min: 0, max: 10, step: 1 },
+                                      ].map(param => (
+                                        <div key={param.key} className="flex items-center gap-2">
+                                          <label className="text-xs text-gray-600 w-24 truncate" title={param.label}>{param.label}</label>
+                                          <input
+                                            type="number"
+                                            step={param.step}
+                                            min={param.min}
+                                            max={param.max}
+                                            value={edgeParams[param.key] ?? 0}
+                                            onChange={(e) => updateOverride('edge_params', param.key, parseFloat(e.target.value) || 0)}
+                                            className="w-16 text-xs rounded border-gray-300 px-1.5 py-0.5"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  {isCustomized && (
+                                    <button
+                                      type="button"
+                                      onClick={resetSpecies}
+                                      className="mt-2 text-xs text-blue-600 hover:text-blue-500"
+                                    >
+                                      Reset to defaults
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
                     Estimated output: ~{syntheticBins.length * syntheticImagesPerBin * labels.length} images

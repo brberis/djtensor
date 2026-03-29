@@ -8,16 +8,18 @@
 # Copyright (c) 2024
 
 """
-Synthetic fracture generation for fossil shark teeth.
+Realistic synthetic fracture generation for fossil shark teeth.
 
-Generates realistic fracture masks to simulate fragmentary teeth from complete
-tooth images. Supports species-specific fracture weight maps loaded from JSON.
+Generates physically plausible fracture masks using multi-scale noise for
+jagged edges, contour-following fracture lines, and 3D cross-section effects
+at the break point. Supports species-specific fracture profiles.
 
 Fracture types:
-  - root_loss: Removes the bottom portion (root) of the tooth
-  - tip_loss: Removes the top portion (tip/apex) of the tooth
-  - lateral_break: Removes one side via a diagonal/vertical break line
-  - edge_chip: Removes a small region from an edge
+  - root_loss: Break at/near root-crown junction
+  - tip_loss: Break losing the crown apex
+  - lateral_break: Oblique break removing one side
+  - edge_chip: Chip along blade/serration edge
+  - diagonal_snap: Oblique fracture across the crown
 
 No Django dependency — can be tested standalone.
 """
@@ -31,255 +33,646 @@ from scipy import ndimage
 from .segmentation import segment_tooth, compute_tooth_area, compute_completeness, sanitize_tooth_image
 
 
-# Default fracture profiles path
 PROFILES_DIR = os.path.join(os.path.dirname(__file__), 'fracture_profiles')
 DEFAULT_PROFILE = os.path.join(PROFILES_DIR, 'default.json')
 
 
+# ---------------------------------------------------------------------------
+# Profile loading
+# ---------------------------------------------------------------------------
+
 def load_fracture_profiles(profile_path=None):
-    """Load fracture weight profiles from JSON file."""
+    """Load fracture profiles from JSON file."""
     path = profile_path or DEFAULT_PROFILE
     with open(path, 'r') as f:
         profiles = json.load(f)
-    # Remove metadata keys
     return {k: v for k, v in profiles.items() if not k.startswith('_')}
 
 
-def get_species_weights(species, profiles=None):
-    """Get fracture weights for a species, falling back to 'default'."""
+def get_species_profile(species, profiles=None):
+    """Get full fracture profile for a species, falling back to 'default'."""
     if profiles is None:
         profiles = load_fracture_profiles()
-    weights = profiles.get(species, profiles.get('default', {
-        'root_loss': 0.3, 'tip_loss': 0.3, 'lateral_break': 0.25, 'edge_chip': 0.15,
-    }))
-    return weights
+    profile = profiles.get(species, profiles.get('default', {}))
+    default = profiles.get('default', {})
+    # Merge with defaults for any missing keys
+    result = {
+        'fracture_types': profile.get('fracture_types', default.get('fracture_types', {})),
+        'edge_params': {**default.get('edge_params', {}), **profile.get('edge_params', {})},
+    }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Multi-scale fracture noise generation
+# ---------------------------------------------------------------------------
+
+def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=None):
+    """
+    Generate realistic fracture displacement using multi-scale noise.
+
+    Combines:
+      - Large-scale waviness (geological fracture following grain)
+      - Medium-scale jaggedness (conchoidal fracture of enameloid)
+      - Micro-scale roughness (crystal-level texture)
+
+    Args:
+        length: Number of points along the fracture line.
+        roughness: Overall jaggedness (0=smooth, 1=very jagged).
+        micro_roughness: Fine-scale texture intensity.
+        seed: Optional random seed.
+
+    Returns:
+        1D array of displacement values (perpendicular to fracture line).
+    """
+    if seed is not None:
+        rng = np.random.RandomState(seed)
+    else:
+        rng = np.random
+
+    displacement = np.zeros(length)
+
+    # Scale 1: Large-scale waviness (follows material grain boundaries)
+    # Low frequency, high amplitude
+    large_noise = rng.randn(max(length // 20, 3))
+    large_noise = np.interp(
+        np.linspace(0, 1, length),
+        np.linspace(0, 1, len(large_noise)),
+        large_noise
+    )
+    displacement += large_noise * roughness * 15.0
+
+    # Scale 2: Medium jaggedness (conchoidal fracture steps)
+    # Medium frequency, medium amplitude — creates the characteristic "stepped" look
+    med_noise = rng.randn(max(length // 5, 5))
+    med_noise = np.interp(
+        np.linspace(0, 1, length),
+        np.linspace(0, 1, len(med_noise)),
+        med_noise
+    )
+    displacement += med_noise * roughness * 8.0
+
+    # Scale 3: Micro roughness (crystal-level texture of enameloid)
+    # High frequency, low amplitude — creates the fine-grained edge
+    micro = rng.randn(length) * micro_roughness * 3.0
+    # Slight smoothing to avoid pure pixel noise
+    if length > 5:
+        kernel = np.ones(3) / 3
+        micro = np.convolve(micro, kernel, mode='same')
+    displacement += micro
+
+    # Scale 4: Occasional sharp notches (stress fracture steps)
+    # Rare but significant — creates the occasional deep notch or step
+    n_notches = rng.randint(1, max(2, int(length / 40)))
+    for _ in range(n_notches):
+        pos = rng.randint(0, length)
+        width = rng.randint(2, max(3, length // 30))
+        depth = rng.uniform(5, 15) * roughness
+        sign = rng.choice([-1, 1])
+        start = max(0, pos - width)
+        end = min(length, pos + width)
+        # Create a sharp V-notch
+        for i in range(start, end):
+            dist_from_center = abs(i - pos) / max(width, 1)
+            displacement[i] += sign * depth * (1 - dist_from_center)
+
+    return displacement
+
+
+def _get_tooth_contour(mask):
+    """Extract the contour points of the tooth mask, ordered."""
+    # Use erosion to find boundary
+    eroded = ndimage.binary_erosion(mask, iterations=1)
+    boundary = mask.astype(bool) & ~eroded
+    points = np.argwhere(boundary)  # (row, col) pairs
+    if len(points) == 0:
+        return points
+
+    # Order points by angle from centroid for a continuous contour
+    centroid = points.mean(axis=0)
+    angles = np.arctan2(points[:, 0] - centroid[0], points[:, 1] - centroid[1])
+    order = np.argsort(angles)
+    return points[order]
 
 
 def _get_tooth_bbox(mask):
-    """Get bounding box of the tooth region (rows, cols)."""
+    """Get bounding box of the tooth region."""
     rows = np.any(mask, axis=1)
     cols = np.any(mask, axis=0)
+    if not np.any(rows) or not np.any(cols):
+        return 0, 0, 0, 0
     rmin, rmax = np.where(rows)[0][[0, -1]]
     cmin, cmax = np.where(cols)[0][[0, -1]]
     return rmin, rmax, cmin, cmax
 
 
-def _generate_bezier_line(start, end, num_points=50, noise_std=8.0):
-    """Generate a noisy Bezier-like curve between two points."""
-    t = np.linspace(0, 1, num_points)
-    # Midpoint with random offset for control point
-    mid = ((start[0] + end[0]) / 2 + np.random.normal(0, noise_std),
-           (start[1] + end[1]) / 2 + np.random.normal(0, noise_std))
-
-    # Quadratic Bezier
-    points_r = (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * mid[0] + t ** 2 * end[0]
-    points_c = (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * mid[1] + t ** 2 * end[1]
-
-    # Add noise along the curve
-    points_r += np.random.normal(0, noise_std * 0.3, num_points)
-    points_c += np.random.normal(0, noise_std * 0.3, num_points)
-
-    return np.stack([points_r, points_c], axis=1)
+def _find_contour_at_row(mask, row):
+    """Find left and right contour columns at a given row."""
+    row = int(np.clip(row, 0, mask.shape[0] - 1))
+    cols = np.where(mask[row])[0]
+    if len(cols) == 0:
+        return None, None
+    return cols[0], cols[-1]
 
 
-def _fracture_root_loss(mask, fraction):
-    """Remove the bottom portion of the tooth (root loss)."""
-    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
-    height = rmax - rmin
-    cut_row = int(rmax - height * fraction)
+def _find_contour_at_col(mask, col):
+    """Find top and bottom contour rows at a given column."""
+    col = int(np.clip(col, 0, mask.shape[1] - 1))
+    rows = np.where(mask[:, col])[0]
+    if len(rows) == 0:
+        return None, None
+    return rows[0], rows[-1]
 
-    # Generate noisy horizontal cut line
-    h, w = mask.shape
-    start = (cut_row, cmin - 10)
-    end = (cut_row + np.random.randint(-5, 5), cmax + 10)
-    curve = _generate_bezier_line(start, end, noise_std=height * 0.05)
 
-    # Create fracture mask: keep everything above the curve
-    fracture = np.ones_like(mask)
-    for r, c in curve:
-        r_int = int(np.clip(r, 0, h - 1))
-        fracture[r_int:, :] = 0  # Remove below curve
+# ---------------------------------------------------------------------------
+# Fracture line rasterization
+# ---------------------------------------------------------------------------
 
-    # Only apply within the tooth region for the fill
-    rr, cc = np.meshgrid(range(h), range(w), indexing='ij')
-    for r, c in curve:
-        r_int = int(np.clip(r, 0, h - 1))
-        c_int = int(np.clip(c, 0, w - 1))
-        fracture[r_int:, max(0, c_int - 2):min(w, c_int + 3)] = 0
+def _rasterize_fracture_line(points, mask_shape, keep_side='above'):
+    """
+    Rasterize a fracture line into a binary mask.
+
+    Args:
+        points: Nx2 array of (row, col) points defining the fracture line.
+        mask_shape: (height, width) of the output mask.
+        keep_side: 'above', 'below', 'left', 'right' — which side to keep.
+
+    Returns:
+        Binary mask (1 = keep, 0 = remove).
+    """
+    h, w = mask_shape
+    fracture = np.ones((h, w), dtype=np.uint8)
+
+    if len(points) < 2:
+        return fracture
+
+    if keep_side in ('above', 'below'):
+        # For each column in the fracture line, find the row threshold
+        # Interpolate the fracture line to cover all columns
+        cols = points[:, 1]
+        rows = points[:, 0]
+
+        # Sort by column for interpolation
+        sort_idx = np.argsort(cols)
+        cols_sorted = cols[sort_idx]
+        rows_sorted = rows[sort_idx]
+
+        # Remove duplicate columns
+        _, unique_idx = np.unique(cols_sorted, return_index=True)
+        cols_unique = cols_sorted[unique_idx]
+        rows_unique = rows_sorted[unique_idx]
+
+        if len(cols_unique) < 2:
+            return fracture
+
+        # Interpolate to all integer columns
+        col_range = np.arange(max(0, int(cols_unique[0])), min(w, int(cols_unique[-1]) + 1))
+        row_interp = np.interp(col_range, cols_unique, rows_unique)
+
+        for c, r in zip(col_range, row_interp):
+            r_int = int(np.clip(r, 0, h - 1))
+            c_int = int(np.clip(c, 0, w - 1))
+            if keep_side == 'above':
+                fracture[r_int:, c_int] = 0
+            else:
+                fracture[:r_int, c_int] = 0
+
+    elif keep_side in ('left', 'right'):
+        # For each row in the fracture line, find the column threshold
+        rows = points[:, 0]
+        cols = points[:, 1]
+
+        sort_idx = np.argsort(rows)
+        rows_sorted = rows[sort_idx]
+        cols_sorted = cols[sort_idx]
+
+        _, unique_idx = np.unique(rows_sorted, return_index=True)
+        rows_unique = rows_sorted[unique_idx]
+        cols_unique = cols_sorted[unique_idx]
+
+        if len(rows_unique) < 2:
+            return fracture
+
+        row_range = np.arange(max(0, int(rows_unique[0])), min(h, int(rows_unique[-1]) + 1))
+        col_interp = np.interp(row_range, rows_unique, cols_unique)
+
+        for r, c in zip(row_range, col_interp):
+            r_int = int(np.clip(r, 0, h - 1))
+            c_int = int(np.clip(c, 0, w - 1))
+            if keep_side == 'left':
+                fracture[r_int, c_int:] = 0
+            else:
+                fracture[r_int, :c_int] = 0
 
     return fracture
 
 
-def _fracture_tip_loss(mask, fraction):
-    """Remove the top portion of the tooth (tip loss)."""
-    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
-    height = rmax - rmin
-    cut_row = int(rmin + height * fraction)
+# ---------------------------------------------------------------------------
+# Fracture type implementations
+# ---------------------------------------------------------------------------
 
+def _fracture_root_loss(mask, fraction, edge_params):
+    """Break at/near root-crown junction, losing the root."""
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
-    start = (cut_row, cmin - 10)
-    end = (cut_row + np.random.randint(-5, 5), cmax + 10)
-    curve = _generate_bezier_line(start, end, noise_std=height * 0.05)
-
-    fracture = np.ones_like(mask)
-    for r, c in curve:
-        r_int = int(np.clip(r, 0, h - 1))
-        fracture[:r_int, :] = 0
-
-    for r, c in curve:
-        r_int = int(np.clip(r, 0, h - 1))
-        c_int = int(np.clip(c, 0, w - 1))
-        fracture[:r_int, max(0, c_int - 2):min(w, c_int + 3)] = 0
-
-    return fracture
-
-
-def _fracture_lateral_break(mask, fraction):
-    """Remove one side of the tooth via a diagonal/vertical break."""
-    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    height = rmax - rmin
     width = cmax - cmin
-    height = rmax - rmin
 
-    # Decide left or right side removal
+    # Cut position: from bottom, removing fraction of the tooth
+    cut_row = int(rmax - height * fraction)
+    cut_row = np.clip(cut_row, rmin + 5, rmax - 5)
+
+    # Generate fracture line following the tooth contour with noise
+    n_points = max(width + 20, 50)
+    base_cols = np.linspace(cmin - 10, cmax + 10, n_points)
+
+    # Base fracture line with curvature following the tooth shape
+    curvature = edge_params.get('curvature', 0.3)
+    base_rows = np.full(n_points, float(cut_row))
+
+    # Add curvature: fracture follows the tooth width profile
+    for i, c in enumerate(base_cols):
+        c_int = int(np.clip(c, 0, w - 1))
+        top, bot = _find_contour_at_col(mask, c_int)
+        if top is not None and bot is not None:
+            local_center = (top + bot) / 2
+            base_rows[i] += (local_center - cut_row) * curvature * 0.3
+
+    # Apply multi-scale fracture noise
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+    fracture_rows = base_rows + noise
+
+    points = np.stack([fracture_rows, base_cols], axis=1)
+    return _rasterize_fracture_line(points, mask.shape, keep_side='above')
+
+
+def _fracture_tip_loss(mask, fraction, edge_params):
+    """Break losing the crown apex/tip."""
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    h, w = mask.shape
+    height = rmax - rmin
+    width = cmax - cmin
+
+    cut_row = int(rmin + height * fraction)
+    cut_row = np.clip(cut_row, rmin + 5, rmax - 5)
+
+    n_points = max(width + 20, 50)
+    base_cols = np.linspace(cmin - 10, cmax + 10, n_points)
+
+    curvature = edge_params.get('curvature', 0.3)
+    base_rows = np.full(n_points, float(cut_row))
+
+    for i, c in enumerate(base_cols):
+        c_int = int(np.clip(c, 0, w - 1))
+        top, bot = _find_contour_at_col(mask, c_int)
+        if top is not None and bot is not None:
+            local_center = (top + bot) / 2
+            base_rows[i] += (local_center - cut_row) * curvature * 0.3
+
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+    fracture_rows = base_rows + noise
+
+    points = np.stack([fracture_rows, base_cols], axis=1)
+    return _rasterize_fracture_line(points, mask.shape, keep_side='below')
+
+
+def _fracture_lateral_break(mask, fraction, edge_params):
+    """Oblique/diagonal break removing one side."""
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    h, w = mask.shape
+    height = rmax - rmin
+    width = cmax - cmin
+
     remove_left = np.random.random() < 0.5
-    cut_frac = fraction if remove_left else (1 - fraction)
+    cut_frac = fraction if remove_left else (1.0 - fraction)
     cut_col = int(cmin + width * cut_frac)
 
-    h, w = mask.shape
-    # Diagonal cut line with noise
-    angle = np.random.uniform(-0.15, 0.15)  # slight angle
-    start = (rmin - 10, cut_col + int(height * angle))
-    end = (rmax + 10, cut_col - int(height * angle))
-    curve = _generate_bezier_line(start, end, noise_std=width * 0.05)
+    # Diagonal angle: slight tilt
+    angle = np.random.uniform(0.05, 0.25) * np.random.choice([-1, 1])
 
-    fracture = np.ones_like(mask)
-    for r, c in curve:
+    n_points = max(height + 20, 50)
+    base_rows = np.linspace(rmin - 10, rmax + 10, n_points)
+
+    # Base column with diagonal tilt
+    base_cols = np.full(n_points, float(cut_col))
+    for i, r in enumerate(base_rows):
+        t = (r - rmin) / max(height, 1)
+        base_cols[i] += angle * height * (t - 0.5)
+
+    # Add curvature following the tooth contour
+    curvature = edge_params.get('curvature', 0.3)
+    for i, r in enumerate(base_rows):
         r_int = int(np.clip(r, 0, h - 1))
-        c_int = int(np.clip(c, 0, w - 1))
-        if remove_left:
-            fracture[r_int, :c_int] = 0
-        else:
-            fracture[r_int, c_int:] = 0
+        left, right = _find_contour_at_row(mask, r_int)
+        if left is not None and right is not None:
+            local_center = (left + right) / 2
+            base_cols[i] += (local_center - cut_col) * curvature * 0.2
 
-    return fracture
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+    fracture_cols = base_cols + noise
+
+    points = np.stack([base_rows, fracture_cols], axis=1)
+    keep_side = 'left' if remove_left else 'right'
+    return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
 
 
-def _fracture_edge_chip(mask, fraction):
-    """Remove a small chip from a random edge of the tooth."""
+def _fracture_diagonal_snap(mask, fraction, edge_params):
+    """Oblique fracture across the crown at an angle."""
     rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
     height = rmax - rmin
     width = cmax - cmin
 
-    # Chip size proportional to fraction
-    chip_h = int(height * fraction * 0.6)
-    chip_w = int(width * fraction * 0.6)
+    # Choose an angle for the diagonal (30-60 degrees from horizontal)
+    angle_deg = np.random.uniform(25, 55) * np.random.choice([-1, 1])
+    angle_rad = np.radians(angle_deg)
 
-    # Pick a random edge point on the tooth contour
-    edge_side = np.random.choice(['top', 'bottom', 'left', 'right'])
-    if edge_side == 'top':
-        cr, cc = rmin, np.random.randint(cmin, max(cmin + 1, cmax))
-    elif edge_side == 'bottom':
-        cr, cc = rmax, np.random.randint(cmin, max(cmin + 1, cmax))
-    elif edge_side == 'left':
-        cr, cc = np.random.randint(rmin, max(rmin + 1, rmax)), cmin
+    # Fracture passes through a point at the target fraction height
+    center_row = rmin + height * (1.0 - fraction * 0.7)
+    center_col = cmin + width * np.random.uniform(0.3, 0.7)
+
+    # Generate line endpoints extending beyond tooth
+    half_diag = max(height, width)
+    start = (center_row - half_diag * np.sin(angle_rad),
+             center_col - half_diag * np.cos(angle_rad))
+    end = (center_row + half_diag * np.sin(angle_rad),
+           center_col + half_diag * np.cos(angle_rad))
+
+    n_points = max(int(2 * half_diag), 80)
+    t = np.linspace(0, 1, n_points)
+    base_rows = start[0] + t * (end[0] - start[0])
+    base_cols = start[1] + t * (end[1] - start[1])
+
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+
+    # Apply noise perpendicular to the fracture direction
+    perp_row = -np.cos(angle_rad)
+    perp_col = np.sin(angle_rad)
+    fracture_rows = base_rows + noise * perp_row
+    fracture_cols = base_cols + noise * perp_col
+
+    points = np.stack([fracture_rows, fracture_cols], axis=1)
+
+    # Determine which side to keep based on which has more tooth
+    test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
+    keep_above = np.sum(mask & test_mask)
+    keep_below = np.sum(mask & ~test_mask)
+
+    # Keep the larger piece (closer to target completeness)
+    target_area = compute_tooth_area(mask) * (1.0 - fraction)
+    if abs(keep_above - target_area) < abs(keep_below - target_area):
+        return _rasterize_fracture_line(points, mask.shape, keep_side='above')
     else:
-        cr, cc = np.random.randint(rmin, max(rmin + 1, rmax)), cmax
+        return _rasterize_fracture_line(points, mask.shape, keep_side='below')
 
-    # Create an elliptical chip
+
+def _fracture_edge_chip(mask, fraction, edge_params):
+    """Chip along the blade edge or serration margin."""
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    h, w = mask.shape
+    height = rmax - rmin
+    width = cmax - cmin
+
+    # Find the contour and pick a section to chip
+    contour = _get_tooth_contour(mask)
+    if len(contour) < 10:
+        return np.ones_like(mask)
+
+    # Pick a random contour section (not at the very top or bottom extremes)
+    n = len(contour)
+    start_idx = np.random.randint(n // 6, 5 * n // 6)
+    chip_length = max(int(n * fraction * 0.4), 10)
+    end_idx = min(start_idx + chip_length, n - 1)
+
+    chip_contour = contour[start_idx:end_idx]
+    if len(chip_contour) < 3:
+        return np.ones_like(mask)
+
+    # Create chip by cutting inward from the contour
+    centroid = np.mean(np.argwhere(mask), axis=0)
+    chip_depth = max(height, width) * fraction * 0.3
+
+    noise = _generate_fracture_noise(
+        len(chip_contour),
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+
     fracture = np.ones_like(mask)
-    rr, cc_grid = np.meshgrid(range(h), range(w), indexing='ij')
-    dist = ((rr - cr) / max(chip_h, 1)) ** 2 + ((cc_grid - cc) / max(chip_w, 1)) ** 2
-    chip_mask = dist < 1.0
-    # Add noise to chip boundary
-    noise = np.random.normal(0, 0.15, (h, w))
-    chip_mask = (dist + noise) < 1.0
-    fracture[chip_mask] = 0
+    for i, (r, c) in enumerate(chip_contour):
+        # Direction from contour point toward centroid
+        dr = centroid[0] - r
+        dc = centroid[1] - c
+        dist = max(np.sqrt(dr ** 2 + dc ** 2), 1)
+        dr, dc = dr / dist, dc / dist
+
+        # Chip depth with noise
+        depth = chip_depth * (1.0 + noise[i] / 20.0)
+        depth = max(depth, 2)
+
+        # Remove pixels from contour inward
+        for d in range(int(depth)):
+            pr = int(r + dr * d * 0.3)
+            pc = int(c + dc * d * 0.3)
+            if 0 <= pr < h and 0 <= pc < w:
+                fracture[pr, pc] = 0
+
+    # Dilate the chip slightly for more natural appearance
+    chip_region = fracture == 0
+    chip_region = ndimage.binary_dilation(chip_region, iterations=2)
+    fracture[chip_region] = 0
 
     return fracture
 
 
-# Map fracture type names to functions
 FRACTURE_FUNCTIONS = {
     'root_loss': _fracture_root_loss,
     'tip_loss': _fracture_tip_loss,
     'lateral_break': _fracture_lateral_break,
     'edge_chip': _fracture_edge_chip,
+    'diagonal_snap': _fracture_diagonal_snap,
 }
 
 
-def generate_fracture_mask(mask, target_completeness, species_weights=None):
-    """
-    Generate a fracture mask for a tooth given the segmentation mask.
+# ---------------------------------------------------------------------------
+# 3D cross-section effect
+# ---------------------------------------------------------------------------
 
-    Uses species-specific fracture weights to determine which type of fracture
-    to apply, then adjusts the fraction to approximate the target completeness.
+def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=4):
+    """
+    Add a 3D cross-section effect at the fracture edge.
+
+    Simulates the visible tooth cross-section at the break point:
+      - Outer band: exposed enameloid (slightly lighter, pearly)
+      - Inner band: exposed dentine (slightly darker, fibrous)
 
     Args:
-        mask: Binary tooth segmentation mask (numpy array).
+        img_array: RGB image as numpy array (will be modified in place).
+        tooth_mask: Binary tooth segmentation mask.
+        fracture_mask: Binary fracture mask (1=keep, 0=remove).
+        edge_width: Width of the 3D effect in pixels.
+
+    Returns:
+        Modified image array.
+    """
+    if edge_width <= 0:
+        return img_array
+
+    result = img_array.copy()
+    h, w = tooth_mask.shape
+
+    # Find the fracture boundary: pixels that are tooth AND at the edge of the fracture
+    keep = tooth_mask.astype(bool) & fracture_mask.astype(bool)
+    removed = tooth_mask.astype(bool) & ~fracture_mask.astype(bool)
+
+    if not np.any(removed) or not np.any(keep):
+        return result
+
+    # Distance from each kept tooth pixel to the nearest removed pixel
+    dist_to_fracture = ndimage.distance_transform_edt(~removed)
+
+    # Create bands for the 3D effect
+    # Band 1 (outermost): Enameloid exposure — lighter, slight shine
+    enameloid_band = keep & (dist_to_fracture > 0) & (dist_to_fracture <= edge_width * 0.5)
+    # Band 2 (inner): Dentine exposure — darker, more matte
+    dentine_band = keep & (dist_to_fracture > edge_width * 0.5) & (dist_to_fracture <= edge_width)
+
+    # Sample the average tooth color for relative adjustments
+    tooth_pixels = img_array[tooth_mask.astype(bool)]
+    if len(tooth_pixels) == 0:
+        return result
+    avg_brightness = np.mean(tooth_pixels)
+
+    # Enameloid band: lighten slightly with a warm/pearly tint
+    if np.any(enameloid_band):
+        for c in range(3):
+            channel = result[:, :, c].astype(np.float32)
+            # Lighten by 15-25%
+            lighten = 1.15 + 0.1 * (c == 0)  # slight warm tint (more red)
+            channel[enameloid_band] = np.clip(channel[enameloid_band] * lighten, 0, 255)
+            result[:, :, c] = channel.astype(np.uint8)
+
+    # Dentine band: darken slightly with a cooler tone
+    if np.any(dentine_band):
+        for c in range(3):
+            channel = result[:, :, c].astype(np.float32)
+            # Darken by 10-20%
+            darken = 0.85 - 0.05 * (c == 2)  # slight cool tint (less blue)
+            channel[dentine_band] = np.clip(channel[dentine_band] * darken, 0, 255)
+            result[:, :, c] = channel.astype(np.uint8)
+
+    # Add subtle shadow along the very edge (depth cue)
+    edge_line = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 1.5)
+    if np.any(edge_line):
+        for c in range(3):
+            channel = result[:, :, c].astype(np.float32)
+            channel[edge_line] = np.clip(channel[edge_line] * 0.7, 0, 255)
+            result[:, :, c] = channel.astype(np.uint8)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Main API
+# ---------------------------------------------------------------------------
+
+def generate_fracture_mask(mask, target_completeness, species_weights=None, edge_params=None):
+    """
+    Generate a fracture mask with realistic jagged edges.
+
+    Args:
+        mask: Binary tooth segmentation mask.
         target_completeness: Desired completeness (0.0 to 1.0).
-        species_weights: Dict of {fracture_type: probability}. Uses default if None.
+        species_weights: Dict of {fracture_type: probability}.
+        edge_params: Dict of edge roughness parameters.
 
     Returns:
         Binary fracture mask (1 = keep, 0 = remove).
     """
     if species_weights is None:
-        species_weights = get_species_weights('default')
+        species_weights = {'root_loss': 0.3, 'tip_loss': 0.25, 'lateral_break': 0.2,
+                           'edge_chip': 0.1, 'diagonal_snap': 0.15}
+    if edge_params is None:
+        edge_params = {'roughness': 0.6, 'micro_roughness': 0.4, 'curvature': 0.3,
+                       'edge_3d_width': 4}
 
     # Select fracture type based on weights
     types = list(species_weights.keys())
     probs = np.array([species_weights.get(t, 0) for t in types], dtype=float)
+    if probs.sum() == 0:
+        probs = np.ones(len(types))
     probs = probs / probs.sum()
     fracture_type = np.random.choice(types, p=probs)
 
-    # Fraction to remove = 1 - target_completeness
     fraction_to_remove = 1.0 - target_completeness
 
-    func = FRACTURE_FUNCTIONS.get(fracture_type)
-    if func is None:
-        # Unknown type, fall back to tip_loss
-        func = _fracture_tip_loss
-
-    fracture_mask = func(mask, fraction_to_remove)
+    func = FRACTURE_FUNCTIONS.get(fracture_type, _fracture_tip_loss)
+    fracture_mask = func(mask, fraction_to_remove, edge_params)
     return fracture_mask
 
 
-def apply_fracture(image_path, tooth_mask, fracture_mask, background_color=(255, 255, 255)):
+def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
+                   background_color=(255, 255, 255)):
     """
-    Apply a fracture mask to create a synthetic fragment on white background.
-
-    First sanitizes the image (extracts tooth onto clean white background),
-    then applies the fracture mask to remove part of the tooth.
+    Apply fracture mask with 3D cross-section effect.
 
     Args:
         image_path: Path to the original image.
         tooth_mask: Binary tooth segmentation mask.
-        fracture_mask: Binary fracture mask (1 = keep, 0 = remove).
-        background_color: RGB tuple for background (default white).
+        fracture_mask: Binary fracture mask (1=keep, 0=remove).
+        edge_params: Edge parameters including edge_3d_width.
+        background_color: RGB background color tuple.
 
     Returns:
-        PIL Image of the fractured tooth on clean white background.
+        PIL Image of the fractured tooth.
     """
-    # Step 1: Sanitize — extract tooth onto clean white background
+    if edge_params is None:
+        edge_params = {'edge_3d_width': 4}
+
+    # Step 1: Sanitize onto clean background
     clean_img = sanitize_tooth_image(image_path, background_color=background_color)
     img_array = np.array(clean_img)
 
-    # Step 2: Apply fracture — keep only surviving fragment pixels
+    # Step 2: Apply 3D edge effect before masking
+    edge_width = edge_params.get('edge_3d_width', 4)
+    img_array = _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width)
+
+    # Step 3: Apply fracture mask with sharp edges (no gaussian feathering)
     keep_mask = tooth_mask.astype(bool) & fracture_mask.astype(bool)
 
-    # Feather the fracture edge for natural appearance
-    keep_float = keep_mask.astype(np.float32)
-    keep_float = ndimage.gaussian_filter(keep_float, sigma=1.5)
-    keep_float = np.clip(keep_float * 2, 0.0, 1.0)
+    # Only feather the original tooth boundary (against background), NOT the fracture edge
+    tooth_boundary_alpha = tooth_mask.astype(np.float32)
+    tooth_boundary_alpha = ndimage.gaussian_filter(tooth_boundary_alpha, sigma=1.0)
+    tooth_boundary_alpha = np.clip(tooth_boundary_alpha * 2, 0.0, 1.0)
 
-    # Composite: fragment * alpha + white * (1 - alpha)
+    # Fracture edge stays sharp (no feathering)
+    final_alpha = np.where(keep_mask, tooth_boundary_alpha, 0.0)
+
     bg = np.full_like(img_array, background_color, dtype=np.float32)
-    result = img_array.astype(np.float32) * keep_float[:, :, np.newaxis] + bg * (1.0 - keep_float[:, :, np.newaxis])
+    result = img_array.astype(np.float32) * final_alpha[:, :, np.newaxis] + \
+             bg * (1.0 - final_alpha[:, :, np.newaxis])
 
     return PILImage.fromarray(result.astype(np.uint8))
 
 
-def generate_synthetic_fragment(image_path, target_completeness, reference_area=None, species=None):
+def generate_synthetic_fragment(image_path, target_completeness, reference_area=None,
+                                species=None, profile_override=None):
     """
     Generate a synthetic fragment from a complete tooth image.
 
@@ -287,7 +680,8 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
         image_path: Path to the complete tooth image.
         target_completeness: Desired completeness (0.0 to 1.0).
         reference_area: Optional reference area for completeness verification.
-        species: Species name for loading species-specific fracture weights.
+        species: Species name for loading fracture profile.
+        profile_override: Optional dict to override profile settings.
 
     Returns:
         Tuple of (PIL Image, actual_completeness float).
@@ -298,12 +692,26 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
     if original_area == 0:
         raise ValueError(f"No tooth detected in {image_path}")
 
-    weights = get_species_weights(species) if species else None
-    fracture_mask = generate_fracture_mask(tooth_mask, target_completeness, weights)
+    # Load species profile
+    profile = get_species_profile(species) if species else get_species_profile('default')
+    if profile_override:
+        if 'fracture_types' in profile_override:
+            profile['fracture_types'] = profile_override['fracture_types']
+        if 'edge_params' in profile_override:
+            profile['edge_params'] = {**profile['edge_params'], **profile_override['edge_params']}
 
-    result_img = apply_fracture(image_path, tooth_mask, fracture_mask)
+    fracture_mask = generate_fracture_mask(
+        tooth_mask, target_completeness,
+        species_weights=profile['fracture_types'],
+        edge_params=profile['edge_params'],
+    )
 
-    # Compute actual completeness of the result
+    result_img = apply_fracture(
+        image_path, tooth_mask, fracture_mask,
+        edge_params=profile['edge_params'],
+    )
+
+    # Compute actual completeness
     result_mask = tooth_mask & fracture_mask
     result_area = compute_tooth_area(result_mask)
     ref = reference_area or original_area

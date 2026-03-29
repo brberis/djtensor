@@ -23,6 +23,7 @@ from feature_extractor.models import Study
 from .models import Dataset, Image, Label
 from .serializers import DatasetSerializer, ImageSerializer, LabelSerializer
 from .tasks import create_dataset_archive, compute_completeness_for_dataset, generate_synthetic_dataset
+from .synthetic_fracture import load_fracture_profiles
 from .image_resize import resize_to_dataset, get_target_resolution
 from feature_extractor.permissions import IsSyntheticToolsEnabled
 
@@ -95,13 +96,20 @@ class DatasetViewSet(viewsets.ModelViewSet):
         compute_completeness_for_dataset.delay(dataset.id, reference_dataset_id)
         return Response({'status': 'queued', 'dataset': dataset.name}, status=status.HTTP_202_ACCEPTED)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsSyntheticToolsEnabled])
+    def fracture_profiles(self, request):
+        """Return the fracture profiles JSON for the UI."""
+        profiles = load_fracture_profiles()
+        return Response(profiles)
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
     def generate_synthetic(self, request, pk=None):
         dataset = self.get_object()
         bins = request.data.get('completeness_bins', [0.8, 0.6, 0.4])
         images_per_bin = int(request.data.get('images_per_bin', 10))
         name = request.data.get('name', f"Synthetic from {dataset.name}")
-        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin)
+        profile_overrides = request.data.get('profile_overrides')
+        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin, profile_overrides)
         return Response({'status': 'queued', 'name': name}, status=status.HTTP_202_ACCEPTED)
 
 

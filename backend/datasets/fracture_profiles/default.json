@@ -1,33 +1,127 @@
 {
-  "_description": "Fracture probability weights per tooth region. Values are relative probabilities, summing to 1.0. Edit this file to tune fracture patterns per species. Use the Augmentation Preview UI to visualize the effects.",
+  "_description": "Species-specific fracture profiles for synthetic fragment generation. Each species defines fracture type probabilities and edge roughness parameters. Edit these to tune realism per species.",
   "_fracture_types": {
-    "root_loss": "Remove the root portion of the tooth (bottom section)",
-    "tip_loss": "Remove the tip/apex of the tooth (top section)",
-    "lateral_break": "Break along a vertical/diagonal line, removing one side",
-    "edge_chip": "Remove a small portion from an edge (serrations, blade edge)"
+    "root_loss": "Break at or near the root-crown junction, losing the root/base",
+    "tip_loss": "Break losing the apex/tip of the crown",
+    "lateral_break": "Diagonal/oblique break removing one side of the tooth",
+    "edge_chip": "Chip along the blade edge or serration margin",
+    "diagonal_snap": "Oblique fracture across the crown at an angle"
+  },
+  "_edge_params": {
+    "roughness": "Overall jaggedness of fracture edge (0.0=smooth, 1.0=very jagged)",
+    "micro_roughness": "Fine-scale jaggedness for enameloid texture (0.0-1.0)",
+    "curvature": "How much the fracture follows the tooth's natural curvature (0.0=straight, 1.0=follows contour)",
+    "edge_3d_width": "Width in pixels of the 3D cross-section effect at the fracture edge"
   },
   "default": {
-    "root_loss": 0.30,
-    "tip_loss": 0.30,
-    "lateral_break": 0.25,
-    "edge_chip": 0.15
+    "fracture_types": {
+      "root_loss": 0.30,
+      "tip_loss": 0.25,
+      "lateral_break": 0.20,
+      "edge_chip": 0.10,
+      "diagonal_snap": 0.15
+    },
+    "edge_params": {
+      "roughness": 0.6,
+      "micro_roughness": 0.4,
+      "curvature": 0.3,
+      "edge_3d_width": 4
+    }
   },
-  "Carcharocles megalodon": {
-    "root_loss": 0.40,
-    "tip_loss": 0.25,
-    "lateral_break": 0.20,
-    "edge_chip": 0.15
+  "Otodus Megalodon": {
+    "fracture_types": {
+      "root_loss": 0.35,
+      "tip_loss": 0.20,
+      "lateral_break": 0.15,
+      "edge_chip": 0.10,
+      "diagonal_snap": 0.20
+    },
+    "edge_params": {
+      "roughness": 0.7,
+      "micro_roughness": 0.5,
+      "curvature": 0.4,
+      "edge_3d_width": 5
+    },
+    "_notes": "Large triangular teeth. Thick enameloid produces angular, conchoidal fractures. Root-crown junction is the primary weak point. Bourlette (nutrient groove) area is structurally vulnerable. Serrations chip individually."
   },
-  "Hemipristis serra": {
-    "root_loss": 0.20,
-    "tip_loss": 0.15,
-    "lateral_break": 0.50,
-    "edge_chip": 0.15
+  "Carcharodon Carcharias": {
+    "fracture_types": {
+      "root_loss": 0.30,
+      "tip_loss": 0.25,
+      "lateral_break": 0.15,
+      "edge_chip": 0.15,
+      "diagonal_snap": 0.15
+    },
+    "edge_params": {
+      "roughness": 0.6,
+      "micro_roughness": 0.5,
+      "curvature": 0.3,
+      "edge_3d_width": 4
+    },
+    "_notes": "Similar to megalodon but thinner crown. More prone to tip loss due to narrow apex. Serrations are smaller and chip along the blade edge. Enameloid is thinner so fractures are sharper."
   },
-  "Carcharhinus": {
-    "root_loss": 0.25,
-    "tip_loss": 0.35,
-    "lateral_break": 0.25,
-    "edge_chip": 0.15
+  "Hemipristis Serra": {
+    "fracture_types": {
+      "root_loss": 0.20,
+      "tip_loss": 0.15,
+      "lateral_break": 0.35,
+      "edge_chip": 0.15,
+      "diagonal_snap": 0.15
+    },
+    "edge_params": {
+      "roughness": 0.5,
+      "micro_roughness": 0.6,
+      "curvature": 0.5,
+      "edge_3d_width": 3
+    },
+    "_notes": "Distinctive curved blade with large serrations. The curved shape makes lateral breaks along the blade very common. Large serrations are individually fragile. Thinner crown means less conchoidal fracture."
+  },
+  "Galeocerdo Cuvier": {
+    "fracture_types": {
+      "root_loss": 0.25,
+      "tip_loss": 0.25,
+      "lateral_break": 0.15,
+      "edge_chip": 0.20,
+      "diagonal_snap": 0.15
+    },
+    "edge_params": {
+      "roughness": 0.5,
+      "micro_roughness": 0.4,
+      "curvature": 0.4,
+      "edge_3d_width": 3
+    },
+    "_notes": "Cockscomb/notched shape. The distal notch is a natural stress concentrator. Tip is robust but the notch area and fine serrations along the distal edge are vulnerable. Broad root breaks cleanly."
+  },
+  "Carcharhinus Leucas": {
+    "fracture_types": {
+      "root_loss": 0.25,
+      "tip_loss": 0.35,
+      "lateral_break": 0.15,
+      "edge_chip": 0.10,
+      "diagonal_snap": 0.15
+    },
+    "edge_params": {
+      "roughness": 0.4,
+      "micro_roughness": 0.3,
+      "curvature": 0.2,
+      "edge_3d_width": 3
+    },
+    "_notes": "Small narrow triangular teeth. Very narrow tip is the most fragile point. Root lobes are thin and break easily. Less serration so fewer edge chips. Fractures tend to be cleaner due to smaller size."
+  },
+  "Negaprion Brevirostris": {
+    "fracture_types": {
+      "root_loss": 0.30,
+      "tip_loss": 0.35,
+      "lateral_break": 0.10,
+      "edge_chip": 0.05,
+      "diagonal_snap": 0.20
+    },
+    "edge_params": {
+      "roughness": 0.3,
+      "micro_roughness": 0.3,
+      "curvature": 0.2,
+      "edge_3d_width": 2
+    },
+    "_notes": "Thin, narrow, smooth-edged teeth (no serrations). Extremely prone to tip breakage. Root is relatively large compared to crown. No serrations means virtually no edge chipping. Clean diagonal snaps are common."
   }
 }

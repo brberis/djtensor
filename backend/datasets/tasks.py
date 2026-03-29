@@ -124,7 +124,8 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
 
 
 @shared_task
-def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, images_per_bin):
+def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, images_per_bin,
+                               profile_overrides=None):
     """
     Generate a synthetic dataset of fragmentary tooth images from a source dataset.
 
@@ -133,6 +134,7 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
         name: Name for the new synthetic dataset.
         completeness_bins: List of target completeness values, e.g. [0.8, 0.6, 0.4].
         images_per_bin: Number of images to generate per species per bin.
+        profile_overrides: Optional dict of {species_name: profile_dict} to override defaults.
     """
     from .models import Dataset, Image, Label
     from .synthetic_fracture import generate_synthetic_fragment
@@ -162,6 +164,11 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
         if not source_images:
             continue
 
+        # Get species-specific profile override if provided
+        species_override = None
+        if profile_overrides and label.name in profile_overrides:
+            species_override = profile_overrides[label.name]
+
         for target_compl in completeness_bins:
             for i in range(images_per_bin):
                 src_img = random.choice(source_images)
@@ -170,6 +177,7 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
                         src_img.image.path,
                         target_completeness=target_compl,
                         species=label.name,
+                        profile_override=species_override,
                     )
 
                     # Save the synthetic image
