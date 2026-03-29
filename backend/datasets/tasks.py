@@ -106,6 +106,11 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
     to_update = []
 
     for img in images:
+        # Skip synthetic images that already have completeness from generation
+        # (re-segmenting synthetic images gives wrong results because the dentine
+        # fill gets detected as tooth area)
+        if img.source_image_id is not None and img.completeness is not None:
+            continue
         try:
             mask = segment_tooth(img.image.path)
             area = compute_tooth_area(mask)
