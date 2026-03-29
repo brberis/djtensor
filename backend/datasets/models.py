@@ -91,6 +91,10 @@ def create_dataset_archive_on_delete(sender, instance, **kwargs):
 
 @receiver(post_delete, sender=Dataset)
 def handle_dataset_deletion(sender, instance, **kwargs):
+    # Synthetic dataset images should be deleted, not moved to base
+    if instance.synthetic:
+        Image.objects.filter(dataset=instance).delete()
+        return
     base_dataset = Dataset.objects.filter(base=True, study=instance.study).first()
     if base_dataset:
         related_images = Image.objects.filter(dataset=instance)

@@ -102,6 +102,8 @@ export default function DatasetDetail() {
   const [fractureProfiles, setFractureProfiles] = useState(null);
   const [profileOverrides, setProfileOverrides] = useState({});
   const [expandedSpecies, setExpandedSpecies] = useState(null);
+  const [showDeleteDataset, setShowDeleteDataset] = useState(false);
+  const [deletingDataset, setDeletingDataset] = useState(false);
 
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
@@ -235,6 +237,25 @@ export default function DatasetDetail() {
       console.error('Failed to queue completeness computation:', e);
     } finally {
       setComputingCompleteness(false);
+    }
+  };
+
+  const handleDeleteDataset = async () => {
+    setDeletingDataset(true);
+    try {
+      const res = await fetch(`/api/datasets/dataset/${id}`, { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        router.push('/datasets');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || 'Failed to delete dataset');
+      }
+    } catch (e) {
+      console.error('Failed to delete dataset:', e);
+      alert('Failed to delete dataset');
+    } finally {
+      setDeletingDataset(false);
+      setShowDeleteDataset(false);
     }
   };
 
@@ -645,6 +666,15 @@ export default function DatasetDetail() {
               <CloudArrowUpIcon className="h-5 w-5" />
               Bulk Upload
             </button>
+            {user?.isSuperuser && (
+              <button
+                onClick={() => setShowDeleteDataset(true)}
+                className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 flex items-center gap-2"
+                title="Delete this dataset (admin only)"
+              >
+                <TrashIcon className="h-5 w-5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -892,6 +922,18 @@ export default function DatasetDetail() {
           );
         })}
       </div>
+
+      {/* Delete Dataset Confirmation */}
+      <ConfirmDialog
+        isOpen={showDeleteDataset}
+        title="Delete this dataset?"
+        description={`This will permanently delete "${dataset?.name}" and all its images. This cannot be undone.`}
+        confirmLabel={deletingDataset ? 'Deleting...' : 'Delete dataset'}
+        requireText={dataset?.name}
+        confirmTone="danger"
+        onConfirm={handleDeleteDataset}
+        onClose={() => setShowDeleteDataset(false)}
+      />
 
       {/* Synthetic Fragment Generation Dialog */}
       <Transition.Root show={showSyntheticDialog} as={Fragment}>

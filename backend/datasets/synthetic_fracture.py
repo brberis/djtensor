@@ -69,17 +69,20 @@ def get_species_profile(species, profiles=None):
 
 def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=None):
     """
-    Generate realistic fracture displacement using multi-scale noise.
+    Generate realistic fracture displacement — smooth flowing curves with
+    gentle undulations, matching real fossil tooth fracture patterns.
 
-    Combines:
-      - Large-scale waviness (geological fracture following grain)
-      - Medium-scale jaggedness (conchoidal fracture of enameloid)
-      - Micro-scale roughness (crystal-level texture)
+    Real fractures are NOT zigzag. They follow smooth curves with:
+      - Broad gentle waviness (the main fracture path)
+      - Subtle bumps (surface irregularities of the material)
+      - Very slight micro-texture (barely visible)
+
+    Based on study of real fragments in the Fragment Teeth Test dataset.
 
     Args:
         length: Number of points along the fracture line.
-        roughness: Overall jaggedness (0=smooth, 1=very jagged).
-        micro_roughness: Fine-scale texture intensity.
+        roughness: Overall curve amplitude (0=flat, 1=more wavy).
+        micro_roughness: Subtle bump intensity.
         seed: Optional random seed.
 
     Returns:
@@ -92,49 +95,43 @@ def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=No
 
     displacement = np.zeros(length)
 
-    # Scale 1: Large-scale waviness (follows material grain boundaries)
-    # Low frequency, high amplitude
-    large_noise = rng.randn(max(length // 20, 3))
-    large_noise = np.interp(
+    # Scale 1: Broad gentle curvature (the main fracture path)
+    # Very low frequency, moderate amplitude — smooth flowing curve
+    n_control = max(3, rng.randint(3, 6))
+    control_points = rng.randn(n_control)
+    large = np.interp(
         np.linspace(0, 1, length),
-        np.linspace(0, 1, len(large_noise)),
-        large_noise
+        np.linspace(0, 1, n_control),
+        control_points
     )
-    displacement += large_noise * roughness * 15.0
+    # Smooth heavily
+    if length > 10:
+        kernel_size = max(length // 8, 5)
+        kernel = np.ones(kernel_size) / kernel_size
+        large = np.convolve(large, kernel, mode='same')
+    displacement += large * roughness * 10.0
 
-    # Scale 2: Medium jaggedness (conchoidal fracture steps)
-    # Medium frequency, medium amplitude — creates the characteristic "stepped" look
-    med_noise = rng.randn(max(length // 5, 5))
-    med_noise = np.interp(
+    # Scale 2: Gentle bumps (material irregularities)
+    # Medium-low frequency, low amplitude
+    n_bumps = max(5, length // 15)
+    bumps = rng.randn(n_bumps)
+    bumps_interp = np.interp(
         np.linspace(0, 1, length),
-        np.linspace(0, 1, len(med_noise)),
-        med_noise
+        np.linspace(0, 1, n_bumps),
+        bumps
     )
-    displacement += med_noise * roughness * 8.0
+    # Smooth to keep bumps gentle
+    if length > 10:
+        k2 = max(length // 20, 3)
+        bumps_interp = np.convolve(bumps_interp, np.ones(k2) / k2, mode='same')
+    displacement += bumps_interp * roughness * 4.0
 
-    # Scale 3: Micro roughness (crystal-level texture of enameloid)
-    # High frequency, low amplitude — creates the fine-grained edge
-    micro = rng.randn(length) * micro_roughness * 3.0
-    # Slight smoothing to avoid pure pixel noise
+    # Scale 3: Very subtle micro-texture (barely visible surface roughness)
+    micro = rng.randn(length) * micro_roughness * 1.0
     if length > 5:
-        kernel = np.ones(3) / 3
+        kernel = np.ones(5) / 5
         micro = np.convolve(micro, kernel, mode='same')
     displacement += micro
-
-    # Scale 4: Occasional sharp notches (stress fracture steps)
-    # Rare but significant — creates the occasional deep notch or step
-    n_notches = rng.randint(1, max(2, int(length / 40)))
-    for _ in range(n_notches):
-        pos = rng.randint(0, length)
-        width = rng.randint(2, max(3, length // 30))
-        depth = rng.uniform(5, 15) * roughness
-        sign = rng.choice([-1, 1])
-        start = max(0, pos - width)
-        end = min(length, pos + width)
-        # Create a sharp V-notch
-        for i in range(start, end):
-            dist_from_center = abs(i - pos) / max(width, 1)
-            displacement[i] += sign * depth * (1 - dist_from_center)
 
     return displacement
 
@@ -516,17 +513,21 @@ FRACTURE_FUNCTIONS = {
 
 def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=4):
     """
-    Add a 3D cross-section effect at the fracture edge.
+    Add a realistic 3D cross-section effect at the fracture edge.
 
-    Simulates the visible tooth cross-section at the break point:
-      - Outer band: exposed enameloid (slightly lighter, pearly)
-      - Inner band: exposed dentine (slightly darker, fibrous)
+    Based on study of real fragments: the exposed cross-section shows
+    a wide band of light beige/cream-colored internal material (dentine),
+    with a thin darker edge line at the very break point.
+
+    The cross-section width varies randomly along the fracture (some areas
+    show more internal material, some less), and has a grainy texture.
 
     Args:
-        img_array: RGB image as numpy array (will be modified in place).
+        img_array: RGB image as numpy array.
         tooth_mask: Binary tooth segmentation mask.
         fracture_mask: Binary fracture mask (1=keep, 0=remove).
-        edge_width: Width of the 3D effect in pixels.
+        edge_width: Base width of the cross-section effect in pixels.
+                    Actual width varies randomly (0.5x to 2x this value).
 
     Returns:
         Modified image array.
@@ -537,52 +538,65 @@ def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=4):
     result = img_array.copy()
     h, w = tooth_mask.shape
 
-    # Find the fracture boundary: pixels that are tooth AND at the edge of the fracture
     keep = tooth_mask.astype(bool) & fracture_mask.astype(bool)
     removed = tooth_mask.astype(bool) & ~fracture_mask.astype(bool)
 
     if not np.any(removed) or not np.any(keep):
         return result
 
-    # Distance from each kept tooth pixel to the nearest removed pixel
+    # Distance from each kept tooth pixel to the nearest fracture boundary
     dist_to_fracture = ndimage.distance_transform_edt(~removed)
 
-    # Create bands for the 3D effect
-    # Band 1 (outermost): Enameloid exposure — lighter, slight shine
-    enameloid_band = keep & (dist_to_fracture > 0) & (dist_to_fracture <= edge_width * 0.5)
-    # Band 2 (inner): Dentine exposure — darker, more matte
-    dentine_band = keep & (dist_to_fracture > edge_width * 0.5) & (dist_to_fracture <= edge_width)
+    # Create a varying width map (the cross-section isn't uniform width)
+    # Use smooth random noise to vary the effective edge width
+    width_noise = np.random.randn(h, w) * 0.3
+    width_noise = ndimage.gaussian_filter(width_noise, sigma=15)  # smooth it
+    effective_width = edge_width * (1.0 + width_noise)
+    effective_width = np.clip(effective_width, edge_width * 0.3, edge_width * 2.5)
 
-    # Sample the average tooth color for relative adjustments
-    tooth_pixels = img_array[tooth_mask.astype(bool)]
-    if len(tooth_pixels) == 0:
+    # The cross-section zone: kept tooth pixels within the effective width
+    cross_section = keep & (dist_to_fracture > 0) & (dist_to_fracture <= effective_width)
+
+    if not np.any(cross_section):
         return result
-    avg_brightness = np.mean(tooth_pixels)
 
-    # Enameloid band: lighten slightly with a warm/pearly tint
-    if np.any(enameloid_band):
-        for c in range(3):
-            channel = result[:, :, c].astype(np.float32)
-            # Lighten by 15-25%
-            lighten = 1.15 + 0.1 * (c == 0)  # slight warm tint (more red)
-            channel[enameloid_band] = np.clip(channel[enameloid_band] * lighten, 0, 255)
-            result[:, :, c] = channel.astype(np.uint8)
+    # Exposed dentine color: light beige/cream
+    # Based on real fragments: the internal material is consistently
+    # light beige (R:210-230, G:195-215, B:170-190)
+    dentine_base = np.array([220, 205, 180], dtype=np.float32)
 
-    # Dentine band: darken slightly with a cooler tone
-    if np.any(dentine_band):
-        for c in range(3):
-            channel = result[:, :, c].astype(np.float32)
-            # Darken by 10-20%
-            darken = 0.85 - 0.05 * (c == 2)  # slight cool tint (less blue)
-            channel[dentine_band] = np.clip(channel[dentine_band] * darken, 0, 255)
-            result[:, :, c] = channel.astype(np.uint8)
+    # Add grainy texture to the cross-section
+    grain = np.random.randn(h, w) * 12
+    grain = ndimage.gaussian_filter(grain, sigma=1.5)  # slight smooth for grain texture
 
-    # Add subtle shadow along the very edge (depth cue)
-    edge_line = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 1.5)
+    # Blend: pixels closer to the fracture edge get more dentine color,
+    # pixels further inside blend back to the original tooth color
+    cross_rows, cross_cols = np.where(cross_section)
+    for idx in range(len(cross_rows)):
+        r, c = cross_rows[idx], cross_cols[idx]
+        dist = dist_to_fracture[r, c]
+        ew = effective_width[r, c]
+
+        # Blend factor: 1.0 at the fracture edge, fading to 0.0 at the inner boundary
+        blend = 1.0 - (dist / max(ew, 1)) ** 0.7
+
+        # Dentine color with grain texture
+        dentine_color = dentine_base + grain[r, c]
+        dentine_color = np.clip(dentine_color, 0, 255)
+
+        # Blend with original pixel
+        original = result[r, c].astype(np.float32)
+        result[r, c] = np.clip(
+            original * (1 - blend) + dentine_color * blend,
+            0, 255
+        ).astype(np.uint8)
+
+    # Dark edge line at the very fracture boundary (depth shadow)
+    edge_line = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 2.0)
     if np.any(edge_line):
         for c in range(3):
             channel = result[:, :, c].astype(np.float32)
-            channel[edge_line] = np.clip(channel[edge_line] * 0.7, 0, 255)
+            channel[edge_line] = np.clip(channel[edge_line] * 0.6, 0, 255)
             result[:, :, c] = channel.astype(np.uint8)
 
     return result

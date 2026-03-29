@@ -22,10 +22,10 @@
       "diagonal_snap": 0.15
     },
     "edge_params": {
-      "roughness": 0.6,
-      "micro_roughness": 0.4,
+      "roughness": 0.35,
+      "micro_roughness": 0.2,
       "curvature": 0.3,
-      "edge_3d_width": 4
+      "edge_3d_width": 20
     }
   },
   "Otodus Megalodon": {
@@ -37,10 +37,10 @@
       "diagonal_snap": 0.20
     },
     "edge_params": {
-      "roughness": 0.7,
-      "micro_roughness": 0.5,
+      "roughness": 0.4,
+      "micro_roughness": 0.25,
       "curvature": 0.4,
-      "edge_3d_width": 5
+      "edge_3d_width": 25
     },
     "_notes": "Large triangular teeth. Thick enameloid produces angular, conchoidal fractures. Root-crown junction is the primary weak point. Bourlette (nutrient groove) area is structurally vulnerable. Serrations chip individually."
   },
@@ -53,10 +53,10 @@
       "diagonal_snap": 0.15
     },
     "edge_params": {
-      "roughness": 0.6,
-      "micro_roughness": 0.5,
+      "roughness": 0.35,
+      "micro_roughness": 0.2,
       "curvature": 0.3,
-      "edge_3d_width": 4
+      "edge_3d_width": 20
     },
     "_notes": "Similar to megalodon but thinner crown. More prone to tip loss due to narrow apex. Serrations are smaller and chip along the blade edge. Enameloid is thinner so fractures are sharper."
   },
@@ -69,10 +69,10 @@
       "diagonal_snap": 0.15
     },
     "edge_params": {
-      "roughness": 0.5,
-      "micro_roughness": 0.6,
+      "roughness": 0.3,
+      "micro_roughness": 0.2,
       "curvature": 0.5,
-      "edge_3d_width": 3
+      "edge_3d_width": 18
     },
     "_notes": "Distinctive curved blade with large serrations. The curved shape makes lateral breaks along the blade very common. Large serrations are individually fragile. Thinner crown means less conchoidal fracture."
   },
@@ -85,10 +85,10 @@
       "diagonal_snap": 0.15
     },
     "edge_params": {
-      "roughness": 0.5,
-      "micro_roughness": 0.4,
+      "roughness": 0.3,
+      "micro_roughness": 0.2,
       "curvature": 0.4,
-      "edge_3d_width": 3
+      "edge_3d_width": 18
     },
     "_notes": "Cockscomb/notched shape. The distal notch is a natural stress concentrator. Tip is robust but the notch area and fine serrations along the distal edge are vulnerable. Broad root breaks cleanly."
   },
@@ -104,7 +104,7 @@
       "roughness": 0.4,
       "micro_roughness": 0.3,
       "curvature": 0.2,
-      "edge_3d_width": 3
+      "edge_3d_width": 18
     },
     "_notes": "Small narrow triangular teeth. Very narrow tip is the most fragile point. Root lobes are thin and break easily. Less serration so fewer edge chips. Fractures tend to be cleaner due to smaller size."
   },
@@ -120,7 +120,7 @@
       "roughness": 0.3,
       "micro_roughness": 0.3,
       "curvature": 0.2,
-      "edge_3d_width": 2
+      "edge_3d_width": 15
     },
     "_notes": "Thin, narrow, smooth-edged teeth (no serrations). Extremely prone to tip breakage. Root is relatively large compared to crown. No serrations means virtually no edge chipping. Clean diagonal snaps are common."
   }
