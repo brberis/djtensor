@@ -591,18 +591,41 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
     return fracture_mask
 
 
-def _compute_dentine_color(img_array, tooth_mask, keep_mask):
-    """Compute dentine color relative to the tooth surface (lighter + warmer)."""
-    near_edge_pixels = img_array[keep_mask]
-    if len(near_edge_pixels) > 0:
-        avg_surface = np.mean(near_edge_pixels, axis=0)
+def _compute_dentine_color(img_array, tooth_mask, keep_mask=None):
+    """
+    Compute dentine color by sampling the ROOT area of the tooth.
+
+    Fossil teeth have mineralized dentine that matches the root color,
+    not fresh beige. The root is typically at the top of the image
+    (opposite the tip/apex). We sample from the upper portion of the
+    tooth to get the natural root/dentine color.
+    """
+    h, w = tooth_mask.shape
+    tooth_rows = np.where(np.any(tooth_mask, axis=1))[0]
+    if len(tooth_rows) == 0:
+        return np.array([180, 170, 155], dtype=np.float32)
+
+    rmin, rmax = tooth_rows[0], tooth_rows[-1]
+    tooth_height = rmax - rmin
+
+    # Sample from the top 25% of the tooth (root area)
+    root_top = rmin
+    root_bottom = rmin + int(tooth_height * 0.25)
+
+    root_zone = np.zeros_like(tooth_mask, dtype=bool)
+    root_zone[root_top:root_bottom, :] = True
+    root_pixels_mask = tooth_mask.astype(bool) & root_zone
+
+    if np.sum(root_pixels_mask) > 20:
+        root_color = np.median(img_array[root_pixels_mask], axis=0)
     else:
-        avg_surface = np.array([150, 140, 130], dtype=np.float32)
-    # Randomize the dentine offset each time — real teeth vary
-    r_offset = np.random.uniform(20, 50)
-    g_offset = np.random.uniform(15, 40)
-    b_offset = np.random.uniform(5, 25)
-    return np.clip(avg_surface + np.array([r_offset, g_offset, b_offset]), 0, 255)
+        # Fallback: use overall tooth color with slight lightening
+        tooth_pixels = img_array[tooth_mask.astype(bool)]
+        root_color = np.median(tooth_pixels, axis=0) if len(tooth_pixels) > 0 else np.array([180, 170, 155])
+
+    # Small random variation so each fragment is slightly different
+    variation = np.random.uniform(-8, 8, 3)
+    return np.clip(root_color + variation, 0, 255).astype(np.float32)
 
 
 def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
