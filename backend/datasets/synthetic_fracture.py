@@ -591,10 +591,30 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
     return fracture_mask
 
 
+def _compute_dentine_color(img_array, tooth_mask, keep_mask):
+    """Compute dentine color relative to the tooth surface (lighter + warmer)."""
+    near_edge_pixels = img_array[keep_mask]
+    if len(near_edge_pixels) > 0:
+        avg_surface = np.mean(near_edge_pixels, axis=0)
+    else:
+        avg_surface = np.array([150, 140, 130], dtype=np.float32)
+    return np.clip(avg_surface + np.array([60, 50, 35]), 0, 255)
+
+
 def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
                    background_color=(255, 255, 255)):
     """
-    Apply fracture mask with 3D cross-section effect.
+    Apply fracture mask with visible cross-section fill.
+
+    When a tooth breaks, the fracture reveals the internal material (dentine).
+    This function:
+    1. Keeps the surviving fragment
+    2. Fills the REMOVED side of the fracture with dentine color (the visible
+       cross-section of the broken tooth, as seen from the photography angle)
+    3. Adds a thin dark shadow line at the actual fracture boundary
+
+    The dentine fill width varies — thicker in the center of the tooth
+    (where it's physically thicker), thinner at the edges.
 
     Args:
         image_path: Path to the original image.
@@ -607,35 +627,114 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
         PIL Image of the fractured tooth.
     """
     if edge_params is None:
-        edge_params = {'edge_3d_width': 4}
+        edge_params = {'edge_3d_width': 20}
 
     # Step 1: Sanitize onto clean background
     clean_img = sanitize_tooth_image(image_path, background_color=background_color)
-    img_array = np.array(clean_img)
+    img_array = np.array(clean_img).astype(np.float32)
+    h, w = tooth_mask.shape
 
     # Step 2: Compute keep mask and remove disconnected fragments
     keep_mask = tooth_mask.astype(bool) & fracture_mask.astype(bool)
     keep_mask = _keep_largest_fragment(keep_mask.astype(np.uint8)).astype(bool)
 
-    # Step 3: Apply 3D dentine effect at fracture edge
+    # Step 3: Compute dentine color (lighter than tooth surface)
+    dentine_base = _compute_dentine_color(img_array, tooth_mask, keep_mask)
+
+    # Step 4: Fill the REMOVED side of the fracture with dentine
+    # This simulates the visible cross-section of the broken tooth
+    removed = tooth_mask.astype(bool) & ~keep_mask
     edge_width = edge_params.get('edge_3d_width', 20)
-    # Recompute fracture_mask from the cleaned keep_mask
-    clean_fracture = (keep_mask & tooth_mask.astype(bool)).astype(np.uint8)
-    img_array = _add_3d_edge_effect(img_array, tooth_mask, clean_fracture, edge_width)
 
-    # Only feather the original tooth boundary (against background), NOT the fracture edge
-    tooth_boundary_alpha = tooth_mask.astype(np.float32)
-    tooth_boundary_alpha = ndimage.gaussian_filter(tooth_boundary_alpha, sigma=1.0)
-    tooth_boundary_alpha = np.clip(tooth_boundary_alpha * 2, 0.0, 1.0)
+    if np.any(removed) and np.any(keep_mask):
+        # Distance from each removed pixel to the nearest KEPT pixel
+        dist_from_kept = ndimage.distance_transform_edt(~keep_mask)
 
-    # Fracture edge stays sharp (no feathering)
-    final_alpha = np.where(keep_mask, tooth_boundary_alpha, 0.0)
+        # The cross-section fill width varies:
+        # - Wider in the center of the tooth (thicker there)
+        # - Narrower at the edges
+        # Use distance from tooth boundary as a proxy for thickness
+        dist_from_bg = ndimage.distance_transform_edt(tooth_mask)
+        max_thickness = np.max(dist_from_bg) if np.max(dist_from_bg) > 0 else 1
+        thickness_factor = np.clip(dist_from_bg / max_thickness, 0, 1)
+
+        # Effective fill width: base * thickness_factor + random variation
+        width_noise = np.random.randn(h, w).astype(np.float32) * 0.2
+        width_noise = ndimage.gaussian_filter(width_noise, sigma=15)
+        effective_fill = edge_width * thickness_factor * (1.0 + width_noise)
+        effective_fill = np.clip(effective_fill, 3, edge_width * 2.5)
+
+        # Dentine fill zone: removed pixels close to the fracture boundary
+        dentine_zone = removed & (dist_from_kept <= effective_fill)
+
+        if np.any(dentine_zone):
+            # Add grain texture
+            grain = np.random.randn(h, w).astype(np.float32) * 8
+            grain = ndimage.gaussian_filter(grain, sigma=2.0)
+
+            # Blend: full dentine near fracture, fading to background at outer edge
+            blend = np.zeros((h, w), dtype=np.float32)
+            blend[dentine_zone] = 1.0 - np.clip(
+                dist_from_kept[dentine_zone] / np.maximum(effective_fill[dentine_zone], 1),
+                0, 1
+            ) ** 0.6
+
+            dentine_fill = np.zeros_like(img_array)
+            dentine_fill[:, :, 0] = dentine_base[0] + grain
+            dentine_fill[:, :, 1] = dentine_base[1] + grain
+            dentine_fill[:, :, 2] = dentine_base[2] + grain
+            dentine_fill = np.clip(dentine_fill, 0, 255)
+
+            # Apply dentine fill to the removed zone
+            blend_3d = blend[:, :, np.newaxis]
+            bg_color = np.full_like(img_array, background_color, dtype=np.float32)
+            img_array[dentine_zone] = (
+                dentine_fill[dentine_zone] * blend[dentine_zone, np.newaxis] +
+                bg_color[dentine_zone] * (1 - blend[dentine_zone, np.newaxis])
+            )
+
+    # Step 5: Also paint dentine on the KEPT side (inner surface near fracture)
+    if np.any(removed) and np.any(keep_mask):
+        dist_to_removed = ndimage.distance_transform_edt(~removed)
+        inner_band = keep_mask & (dist_to_removed > 0) & (dist_to_removed <= max(edge_width // 3, 4))
+        if np.any(inner_band):
+            inner_blend = 1.0 - np.clip(dist_to_removed[inner_band] / max(edge_width // 3, 4), 0, 1) ** 0.5
+            grain_inner = np.random.randn(np.sum(inner_band)).astype(np.float32) * 6
+            for c in range(3):
+                ch = img_array[:, :, c]
+                ch[inner_band] = ch[inner_band] * (1 - inner_blend) + (dentine_base[c] + grain_inner) * inner_blend
+                img_array[:, :, c] = ch
+
+    # Step 6: Dark shadow line at the fracture boundary
+    if np.any(removed) and np.any(keep_mask):
+        dist_to_removed2 = ndimage.distance_transform_edt(~removed)
+        shadow = keep_mask & (dist_to_removed2 > 0) & (dist_to_removed2 <= 2.0)
+        if np.any(shadow):
+            img_array[shadow] *= 0.5
+
+    # Step 7: Composite — include both kept fragment AND dentine fill zone
+    visible_mask = keep_mask.copy()
+    if np.any(removed) and np.any(keep_mask):
+        dist_from_kept_final = ndimage.distance_transform_edt(~keep_mask)
+        # Recompute fill width for visibility mask
+        dist_from_bg_final = ndimage.distance_transform_edt(tooth_mask)
+        max_t = np.max(dist_from_bg_final) if np.max(dist_from_bg_final) > 0 else 1
+        t_factor = np.clip(dist_from_bg_final / max_t, 0, 1)
+        eff_fill_final = edge_width * t_factor
+        eff_fill_final = np.clip(eff_fill_final, 3, edge_width * 2.5)
+        dentine_visible = removed & (dist_from_kept_final <= eff_fill_final)
+        visible_mask = visible_mask | dentine_visible
+
+    # Feather only the outer boundary (tooth edge against background)
+    visible_alpha = visible_mask.astype(np.float32)
+    visible_alpha = ndimage.gaussian_filter(visible_alpha, sigma=1.0)
+    visible_alpha = np.clip(visible_alpha * 2, 0.0, 1.0)
 
     bg = np.full_like(img_array, background_color, dtype=np.float32)
-    result = img_array.astype(np.float32) * final_alpha[:, :, np.newaxis] + \
-             bg * (1.0 - final_alpha[:, :, np.newaxis])
+    result = img_array * visible_alpha[:, :, np.newaxis] + \
+             bg * (1.0 - visible_alpha[:, :, np.newaxis])
 
-    return PILImage.fromarray(result.astype(np.uint8))
+    return PILImage.fromarray(np.clip(result, 0, 255).astype(np.uint8))
 
 
 def generate_synthetic_fragment(image_path, target_completeness, reference_area=None,
