@@ -109,7 +109,8 @@ class DatasetViewSet(viewsets.ModelViewSet):
         images_per_bin = int(request.data.get('images_per_bin', 10))
         name = request.data.get('name', f"Synthetic from {dataset.name}")
         profile_overrides = request.data.get('profile_overrides')
-        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin, profile_overrides)
+        augmentations = request.data.get('augmentations')
+        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin, profile_overrides, augmentations)
         return Response({'status': 'queued', 'name': name}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -155,7 +156,7 @@ class ImageViewSet(viewsets.ModelViewSet):
     pagination_class = ImagePagination
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().select_related('source_image')
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(image__icontains=search)

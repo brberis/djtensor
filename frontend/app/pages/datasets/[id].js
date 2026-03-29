@@ -27,8 +27,24 @@ import {
   PencilSquareIcon,
   TrashIcon,
   XMarkIcon,
+  ArrowLeftIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
+
+const AUGMENTATION_FLAGS = [
+  { key: 'grayscale', label: 'Grayscale' },
+  { key: 'random_grayscale', label: 'Random Grayscale (50%)' },
+  { key: 'horizontal_flip', label: 'Horizontal Flip' },
+  { key: 'vertical_flip', label: 'Vertical Flip' },
+  { key: 'random_rotation', label: 'Random Rotation (\u00b115\u00b0)' },
+  { key: 'zoom', label: 'Random Zoom (5-15%)' },
+  { key: 'brightness_contrast', label: 'Brightness & Contrast (\u00b110%)' },
+  { key: 'random_crop', label: 'Random Crop & Resize' },
+  { key: 'gaussian_noise', label: 'Gaussian Noise (2%)' },
+  { key: 'blur', label: 'Gaussian Blur' },
+  { key: 'cutout', label: 'Cutout (20x20)' },
+];
 
 // Wrapper that shows an Archived placeholder when the image file is missing
 function ArchivedImage({ src, alt, width, height, className, ...rest }) {
@@ -107,9 +123,12 @@ export default function DatasetDetail() {
   const [expandedSpecies, setExpandedSpecies] = useState(null);
   const [showDeleteDataset, setShowDeleteDataset] = useState(false);
   const [deletingDataset, setDeletingDataset] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
 
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
+  const actionsMenuRef = useRef(null);
 
   const router = useRouter();
   const { id } = router.query;
@@ -279,6 +298,14 @@ export default function DatasetDetail() {
       if (Object.keys(profileOverrides).length > 0) {
         payload.profile_overrides = profileOverrides;
       }
+      // Include selected augmentations (exclude 'fragments' key)
+      const augmentations = {};
+      for (const [key, val] of Object.entries(selectedTransformations)) {
+        if (key !== 'fragments' && val) augmentations[key] = true;
+      }
+      if (Object.keys(augmentations).length > 0) {
+        payload.augmentations = augmentations;
+      }
       await fetch(`/api/datasets/dataset/${id}/generate-synthetic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -296,6 +323,9 @@ export default function DatasetDetail() {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setOpenLabelMenuId(null);
+      }
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) {
+        setShowActionsMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -560,12 +590,25 @@ export default function DatasetDetail() {
                   {activeImage && (
                     <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
                       <div className="rounded-lg bg-gray-100 p-3">
+                        {activeImage.source_image_data && (
+                          <>
+                            <p className="text-xs font-medium text-gray-500 mb-1">Original</p>
+                            <ArchivedImage
+                              src={normalizeMediaUrl(activeImage.source_image_data.image)}
+                              alt="Original tooth"
+                              width={420}
+                              height={200}
+                              className="mx-auto max-h-[200px] rounded-lg object-contain mb-3"
+                            />
+                            <p className="text-xs font-medium text-gray-500 mb-1">Transformed</p>
+                          </>
+                        )}
                         <ArchivedImage
                           src={normalizeMediaUrl(activeImage.image)}
                           alt={activeImage.file_name || "dataset image"}
                           width={420}
-                          height={420}
-                          className="mx-auto max-h-[420px] rounded-lg object-contain"
+                          height={activeImage.source_image_data ? 200 : 420}
+                          className={`mx-auto rounded-lg object-contain ${activeImage.source_image_data ? 'max-h-[200px]' : 'max-h-[420px]'}`}
                         />
                       </div>
                       <dl className="space-y-3 text-sm">
@@ -589,6 +632,23 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
+                        {canSeeSyntheticTools && activeImage.target_completeness != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Target Completeness</dt>
+                            <dd className="text-gray-900">{Math.round(activeImage.target_completeness * 100)}%</dd>
+                          </div>
+                        )}
+                        {canSeeSyntheticTools && activeImage.source_image_data?.tooth_area && activeImage.tooth_area && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Pixel Comparison</dt>
+                            <dd className="text-gray-900 text-xs">
+                              {activeImage.tooth_area.toLocaleString()} / {activeImage.source_image_data.tooth_area.toLocaleString()} px
+                              <span className="ml-1 text-gray-400">
+                                ({Math.round((activeImage.tooth_area / activeImage.source_image_data.tooth_area) * 100)}%)
+                              </span>
+                            </dd>
+                          </div>
+                        )}
                         <div><dt className="font-medium text-gray-500">Created</dt><dd className="text-gray-900">{new Date(activeImage.created_at).toLocaleString()}</dd></div>
                       </dl>
                     </div>
@@ -608,7 +668,16 @@ export default function DatasetDetail() {
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{dataset.name}</h1>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.push('/datasets')}
+                className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                title="Back to datasets"
+              >
+                <ArrowLeftIcon className="h-5 w-5" />
+              </button>
+              <h1 className="text-2xl font-bold text-gray-900">{dataset.name}</h1>
+            </div>
             {dataset.description && <p className="mt-1 text-sm text-gray-500">{dataset.description}</p>}
             {datasetLocked && (
               <div className="mt-2">
@@ -631,65 +700,118 @@ export default function DatasetDetail() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {canSeeSyntheticTools && (
-              <>
-                <button
-                  onClick={() => {
-                    if (allDatasets.length === 0) {
-                      fetch('/api/datasets/dataset/')
-                        .then(r => r.json())
-                        .then(data => setAllDatasets(Array.isArray(data) ? data : data.results || []))
-                        .catch(console.error);
-                    }
-                    setReferenceDatasetId('');
-                    setShowCompletenessDialog(true);
-                  }}
-                  className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center gap-2"
-                  title="Compute tooth completeness % for all images"
-                >
-                  Compute Completeness
-                </button>
-                {!dataset?.for_testing && !dataset?.synthetic && (
+          <div className="relative" ref={actionsMenuRef}>
+            <button
+              onClick={() => setShowActionsMenu(!showActionsMenu)}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 flex items-center gap-2 transition-colors"
+            >
+              Actions
+              <ChevronDownIcon className="h-4 w-4 text-blue-200" />
+            </button>
+            {showActionsMenu && (
+              <div className="absolute right-0 z-20 mt-2 w-72 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-gray-900/10 focus:outline-none">
+                <div className="py-1">
+                  {canSeeSyntheticTools && (
+                    <button
+                      onClick={() => {
+                        setShowActionsMenu(false);
+                        if (allDatasets.length === 0) {
+                          fetch('/api/datasets/dataset/')
+                            .then(r => r.json())
+                            .then(data => setAllDatasets(Array.isArray(data) ? data : data.results || []))
+                            .catch(console.error);
+                        }
+                        setReferenceDatasetId('');
+                        setShowCompletenessDialog(true);
+                      }}
+                      className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Compute Completeness
+                    </button>
+                  )}
+                  {canSeeSyntheticTools && !dataset?.for_testing && !dataset?.synthetic && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Transformations</p>
+                      <div className="max-h-64 overflow-y-auto px-4 py-1 space-y-1">
+                        <label className="flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer hover:bg-blue-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedTransformations.fragments || false}
+                            onChange={() => setSelectedTransformations(prev => ({ ...prev, fragments: !prev.fragments }))}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                          />
+                          <span className="text-sm font-medium text-gray-900">Generate Fragments</span>
+                        </label>
+                        <div className="border-t border-gray-100 my-1" />
+                        {AUGMENTATION_FLAGS.map(flag => (
+                          <label key={flag.key} className="flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer hover:bg-blue-50">
+                            <input
+                              type="checkbox"
+                              checked={selectedTransformations[flag.key] || false}
+                              onChange={() => setSelectedTransformations(prev => ({ ...prev, [flag.key]: !prev[flag.key] }))}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
+                            />
+                            <span className="text-sm text-gray-700">{flag.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="px-4 py-2">
+                        <button
+                          onClick={() => {
+                            setShowActionsMenu(false);
+                            if (selectedTransformations.fragments) {
+                              setSyntheticName(`Synthetic from ${dataset?.name}`);
+                              setProfileOverrides({});
+                              setExpandedSpecies(null);
+                              if (!fractureProfiles) {
+                                fetch('/api/datasets/dataset/fracture-profiles')
+                                  .then(r => r.json())
+                                  .then(data => setFractureProfiles(data))
+                                  .catch(console.error);
+                              }
+                              setShowSyntheticDialog(true);
+                            }
+                          }}
+                          disabled={!Object.values(selectedTransformations).some(Boolean)}
+                          className={`w-full rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            Object.values(selectedTransformations).some(Boolean)
+                              ? 'bg-blue-600 text-white hover:bg-blue-500'
+                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}
+                        >
+                          Apply {Object.values(selectedTransformations).filter(Boolean).length} transformation{Object.values(selectedTransformations).filter(Boolean).length !== 1 ? 's' : ''}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t border-gray-100 my-1" />
                   <button
                     onClick={() => {
-                      setSyntheticName(`Synthetic from ${dataset?.name}`);
-                      setProfileOverrides({});
-                      setExpandedSpecies(null);
-                      // Load fracture profiles if not loaded
-                      if (!fractureProfiles) {
-                        fetch('/api/datasets/dataset/fracture-profiles')
-                          .then(r => r.json())
-                          .then(data => setFractureProfiles(data))
-                          .catch(console.error);
-                      }
-                      setShowSyntheticDialog(true);
+                      setShowActionsMenu(false);
+                      setShowBulkUpload(true);
                     }}
-                    className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center gap-2"
-                    title="Generate synthetic fragmentary tooth images"
+                    disabled={datasetLocked}
+                    className={`block w-full px-4 py-2 text-left text-sm ${datasetLocked ? 'text-gray-300 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50'}`}
                   >
-                    Generate Fragments
+                    Bulk Upload
                   </button>
-                )}
-              </>
-            )}
-            <button
-              onClick={() => setShowBulkUpload(true)}
-              className={`${datasetLocked ? theme.classes.btnDisabled : theme.classes.btnPrimary} flex items-center gap-2`}
-              disabled={datasetLocked}
-              title={datasetLocked ? lockTooltip : 'Upload images in bulk'}
-            >
-              <CloudArrowUpIcon className="h-5 w-5" />
-              Bulk Upload
-            </button>
-            {user?.isSuperuser && (
-              <button
-                onClick={() => setShowDeleteDataset(true)}
-                className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 flex items-center gap-2"
-                title="Delete this dataset (admin only)"
-              >
-                <TrashIcon className="h-5 w-5" />
-              </button>
+                  {user?.isSuperuser && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          setShowDeleteDataset(true);
+                        }}
+                        className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                      >
+                        Delete Dataset
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>

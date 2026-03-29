@@ -58,6 +58,7 @@ class ImageSerializer(serializers.ModelSerializer):
     image_width = serializers.SerializerMethodField()
     image_height = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+    source_image_data = serializers.SerializerMethodField()
 
     class Meta:
         model = Image
@@ -89,6 +90,20 @@ class ImageSerializer(serializers.ModelSerializer):
             return None
 
     def get_image(self, obj):
+        return self._build_image_url(obj)
+
+    def get_source_image_data(self, obj):
+        if not obj.source_image_id:
+            return None
+        src = obj.source_image
+        return {
+            'id': src.id,
+            'image': self._build_image_url(src),
+            'tooth_area': src.tooth_area,
+            'completeness': src.completeness,
+        }
+
+    def _build_image_url(self, obj):
         from django.conf import settings
         import os
         if not obj.image:

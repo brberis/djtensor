@@ -130,9 +130,13 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
 
 @shared_task
 def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, images_per_bin,
-                               profile_overrides=None):
+                               profile_overrides=None, augmentations=None):
     """
     Generate a synthetic dataset of fragmentary tooth images from a source dataset.
+
+    Pipeline: fragment generation -> augmentation transforms (if selected).
+    Augmentations are applied after fragmentation so the cascade produces
+    e.g. fragmented + grayscale images in a single pass.
 
     Args:
         source_dataset_id: ID of the source dataset (complete teeth).
@@ -140,14 +144,24 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
         completeness_bins: List of target completeness values, e.g. [0.8, 0.6, 0.4].
         images_per_bin: Number of images to generate per species per bin.
         profile_overrides: Optional dict of {species_name: profile_dict} to override defaults.
+        augmentations: Optional dict of augmentation flags (e.g. {'grayscale': True, 'horizontal_flip': True}).
     """
     from .models import Dataset, Image, Label
     from .synthetic_fracture import generate_synthetic_fragment
     from django.core.files.base import ContentFile
+    from PIL import Image as PILImage
     import io
     import random
+    import numpy as np
 
     source = Dataset.objects.get(pk=source_dataset_id)
+
+    # Determine transformation type from selected options
+    has_augmentations = augmentations and any(augmentations.values())
+    if has_augmentations:
+        transform_type = 'fracture+augmentation'
+    else:
+        transform_type = 'fracture'
 
     # Create the synthetic dataset
     syn_dataset = Dataset.objects.create(
@@ -159,8 +173,28 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
         for_testing=False,
         synthetic=True,
         source_dataset=source,
+        transformation_type=transform_type,
+        generation_config={
+            'completeness_bins': completeness_bins,
+            'images_per_bin': images_per_bin,
+            'profile_overrides': profile_overrides,
+            'augmentations': augmentations,
+        },
     )
     syn_dataset.labels.set(source.labels.all())
+
+    # Build augmentation pipeline once if augmentations are selected
+    augmentation_pipeline = None
+    if has_augmentations:
+        from .augmentation_preview import build_augmentation_pipeline
+        resolution = int(source.resolution)
+        augmentation_pipeline = build_augmentation_pipeline(
+            augmentations, image_size=(resolution, resolution)
+        )
+
+    # Ensure source images have tooth_area computed for exact completeness
+    from .segmentation import segment_tooth, compute_tooth_area
+    source_areas = {}  # cache {image_id: tooth_area}
 
     total_generated = 0
     # Absolute minimum: the lowest bin the user selected
@@ -199,6 +233,15 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
                         logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
                         continue
 
+                    # Apply augmentation pipeline if selected
+                    if augmentation_pipeline is not None:
+                        import tensorflow as tf
+                        img_array = np.array(result_img, dtype=np.float32)
+                        batch = tf.expand_dims(img_array, 0)
+                        augmented = augmentation_pipeline(batch, training=True)
+                        aug_np = np.clip(augmented.numpy()[0], 0, 255).astype(np.uint8)
+                        result_img = PILImage.fromarray(aug_np)
+
                     buf = io.BytesIO()
                     result_img.save(buf, format='PNG')
                     buf.seek(0)
@@ -206,13 +249,29 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
                     filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
                     content = ContentFile(buf.getvalue(), name=filename)
 
+                    # Compute exact tooth_area from source original
+                    if src_img.id not in source_areas:
+                        src_area = src_img.tooth_area
+                        if src_area is None:
+                            try:
+                                mask = segment_tooth(src_img.image.path)
+                                src_area = compute_tooth_area(mask)
+                                src_img.tooth_area = src_area
+                                src_img.save(update_fields=['tooth_area'])
+                            except Exception:
+                                src_area = 0
+                        source_areas[src_img.id] = src_area
+
+                    orig_area = source_areas[src_img.id]
+                    result_tooth_area = int(actual_compl * orig_area) if orig_area else None
+
                     Image.objects.create(
                         dataset=syn_dataset,
                         image=content,
                         label=label,
                         source_image=src_img,
                         target_completeness=target_compl,
-                        tooth_area=None,
+                        tooth_area=result_tooth_area,
                         completeness=actual_compl,
                     )
                     generated += 1

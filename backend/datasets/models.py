@@ -28,9 +28,17 @@ class Dataset(models.Model):
     base = models.BooleanField(default=False)
     for_testing = models.BooleanField(default=True)
     shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets')
-    # Synthetic dataset provenance
+    # Transformed dataset provenance
     synthetic = models.BooleanField(default=False)
-    source_dataset = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='synthetic_datasets')
+    source_dataset = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='derived_datasets')
+    transformation_type = models.CharField(
+        max_length=50, blank=True, null=True,
+        help_text="Type of transformation applied (e.g. fracture, augmentation)"
+    )
+    generation_config = models.JSONField(
+        null=True, blank=True,
+        help_text="Parameters used to generate this dataset"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -14,7 +14,7 @@ import { createApiClient } from '../../../../utils/apiProxy';
 export default async function handler(req, res) {
   const api = createApiClient(req);
   const { id } = req.query;
-  const url = `api/datasets/dataset/${id}`;
+  const url = `api/datasets/dataset/${id}/`;
 
   switch (req.method) {
     case 'GET':
