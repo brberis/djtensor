@@ -598,7 +598,11 @@ def _compute_dentine_color(img_array, tooth_mask, keep_mask):
         avg_surface = np.mean(near_edge_pixels, axis=0)
     else:
         avg_surface = np.array([150, 140, 130], dtype=np.float32)
-    return np.clip(avg_surface + np.array([35, 25, 10]), 0, 255)
+    # Randomize the dentine offset each time — real teeth vary
+    r_offset = np.random.uniform(20, 50)
+    g_offset = np.random.uniform(15, 40)
+    b_offset = np.random.uniform(5, 25)
+    return np.clip(avg_surface + np.array([r_offset, g_offset, b_offset]), 0, 255)
 
 
 def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
@@ -668,9 +672,19 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
         dentine_zone = removed & (dist_from_kept <= effective_fill)
 
         if np.any(dentine_zone):
-            # Add grain texture
-            grain = np.random.randn(h, w).astype(np.float32) * 8
-            grain = ndimage.gaussian_filter(grain, sigma=2.0)
+            # Multi-scale texture: fine grain + medium patches + subtle streaks
+            grain_fine = np.random.randn(h, w).astype(np.float32) * 6
+            grain_fine = ndimage.gaussian_filter(grain_fine, sigma=1.5)
+
+            # Medium patches (porous texture of osteodentine)
+            patches = np.random.randn(h, w).astype(np.float32) * 12
+            patches = ndimage.gaussian_filter(patches, sigma=6)
+
+            # Subtle color variation per channel (some areas more yellow, some more gray)
+            color_var_r = np.random.randn(h, w).astype(np.float32) * 8
+            color_var_r = ndimage.gaussian_filter(color_var_r, sigma=10)
+            color_var_g = np.random.randn(h, w).astype(np.float32) * 6
+            color_var_g = ndimage.gaussian_filter(color_var_g, sigma=10)
 
             # Blend: full dentine near fracture, fading to background at outer edge
             blend = np.zeros((h, w), dtype=np.float32)
@@ -680,9 +694,9 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
             ) ** 0.6
 
             dentine_fill = np.zeros_like(img_array)
-            dentine_fill[:, :, 0] = dentine_base[0] + grain
-            dentine_fill[:, :, 1] = dentine_base[1] + grain
-            dentine_fill[:, :, 2] = dentine_base[2] + grain
+            dentine_fill[:, :, 0] = dentine_base[0] + grain_fine + patches + color_var_r
+            dentine_fill[:, :, 1] = dentine_base[1] + grain_fine + patches + color_var_g
+            dentine_fill[:, :, 2] = dentine_base[2] + grain_fine + patches * 0.7
             dentine_fill = np.clip(dentine_fill, 0, 255)
 
             # Apply dentine fill to the removed zone
