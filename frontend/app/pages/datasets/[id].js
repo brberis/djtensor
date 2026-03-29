@@ -94,6 +94,9 @@ export default function DatasetDetail() {
 
   const [showSyntheticTools, setShowSyntheticTools] = useState(false);
   const [computingCompleteness, setComputingCompleteness] = useState(false);
+  const [showCompletenessDialog, setShowCompletenessDialog] = useState(false);
+  const [allDatasets, setAllDatasets] = useState([]);
+  const [referenceDatasetId, setReferenceDatasetId] = useState('');
   const [showSyntheticDialog, setShowSyntheticDialog] = useState(false);
   const [syntheticName, setSyntheticName] = useState('');
   const [syntheticBins, setSyntheticBins] = useState([0.8, 0.6, 0.4]);
@@ -228,11 +231,16 @@ export default function DatasetDetail() {
   const handleComputeCompleteness = async () => {
     setComputingCompleteness(true);
     try {
+      const body = {};
+      if (referenceDatasetId) {
+        body.reference_dataset_id = parseInt(referenceDatasetId);
+      }
       await fetch(`/api/datasets/dataset/${id}/compute-completeness`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
+      setShowCompletenessDialog(false);
     } catch (e) {
       console.error('Failed to queue completeness computation:', e);
     } finally {
@@ -627,12 +635,20 @@ export default function DatasetDetail() {
             {canSeeSyntheticTools && (
               <>
                 <button
-                  onClick={handleComputeCompleteness}
-                  className={`${computingCompleteness ? theme.classes.btnDisabled : 'rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50'} flex items-center gap-2`}
-                  disabled={computingCompleteness}
+                  onClick={() => {
+                    if (allDatasets.length === 0) {
+                      fetch('/api/datasets/dataset/')
+                        .then(r => r.json())
+                        .then(data => setAllDatasets(Array.isArray(data) ? data : data.results || []))
+                        .catch(console.error);
+                    }
+                    setReferenceDatasetId('');
+                    setShowCompletenessDialog(true);
+                  }}
+                  className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center gap-2"
                   title="Compute tooth completeness % for all images"
                 >
-                  {computingCompleteness ? 'Queued...' : 'Compute Completeness'}
+                  Compute Completeness
                 </button>
                 {!dataset?.for_testing && !dataset?.synthetic && (
                   <button
@@ -922,6 +938,59 @@ export default function DatasetDetail() {
           );
         })}
       </div>
+
+      {/* Compute Completeness Dialog */}
+      <Transition.Root show={showCompletenessDialog} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowCompletenessDialog(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
+          <div className="fixed inset-0 z-10 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
+                <Dialog.Title className="text-lg font-semibold text-gray-900">Compute Tooth Completeness</Dialog.Title>
+                <p className="mt-1 text-sm text-gray-500">
+                  Select a reference dataset of <strong>complete teeth</strong> to compute completeness percentages against.
+                  If none selected, uses the current dataset as its own reference.
+                </p>
+                <div className="mt-4">
+                  <label className="text-sm font-medium text-gray-700">Reference Dataset (complete teeth)</label>
+                  <select
+                    value={referenceDatasetId}
+                    onChange={(e) => setReferenceDatasetId(e.target.value)}
+                    className={`mt-1 block w-full ${theme.classes.input}`}
+                  >
+                    <option value="">Same dataset (self-reference)</option>
+                    {allDatasets
+                      .filter(d => String(d.id) !== String(id))
+                      .map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                  </select>
+                  <p className="mt-2 text-xs text-gray-400">
+                    For accurate results, select a base dataset with complete (unfragmented) teeth as the reference.
+                  </p>
+                </div>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowCompletenessDialog(false)}
+                    className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleComputeCompleteness}
+                    disabled={computingCompleteness}
+                    className={computingCompleteness ? theme.classes.btnDisabled : theme.classes.btnPrimary}
+                  >
+                    {computingCompleteness ? 'Queued...' : 'Compute'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
 
       {/* Delete Dataset Confirmation */}
       <ConfirmDialog
