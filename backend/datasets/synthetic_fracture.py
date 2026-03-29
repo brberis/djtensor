@@ -439,95 +439,47 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
         return _rasterize_fracture_line(points, mask.shape, keep_side='below')
 
 
-def _fracture_edge_chip(mask, fraction, edge_params):
-    """Chip along the blade edge or serration margin."""
-    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
-    h, w = mask.shape
-    height = rmax - rmin
-    width = cmax - cmin
-
-    # Find the contour and pick a section to chip
-    contour = _get_tooth_contour(mask)
-    if len(contour) < 10:
-        return np.ones_like(mask)
-
-    # Pick a random contour section (not at the very top or bottom extremes)
-    n = len(contour)
-    start_idx = np.random.randint(n // 6, 5 * n // 6)
-    chip_length = max(int(n * fraction * 0.4), 10)
-    end_idx = min(start_idx + chip_length, n - 1)
-
-    chip_contour = contour[start_idx:end_idx]
-    if len(chip_contour) < 3:
-        return np.ones_like(mask)
-
-    # Create chip by cutting inward from the contour
-    centroid = np.mean(np.argwhere(mask), axis=0)
-    chip_depth = max(height, width) * fraction * 0.3
-
-    noise = _generate_fracture_noise(
-        len(chip_contour),
-        roughness=edge_params.get('roughness', 0.6),
-        micro_roughness=edge_params.get('micro_roughness', 0.4),
-    )
-
-    fracture = np.ones_like(mask)
-    for i, (r, c) in enumerate(chip_contour):
-        # Direction from contour point toward centroid
-        dr = centroid[0] - r
-        dc = centroid[1] - c
-        dist = max(np.sqrt(dr ** 2 + dc ** 2), 1)
-        dr, dc = dr / dist, dc / dist
-
-        # Chip depth with noise
-        depth = chip_depth * (1.0 + noise[i] / 20.0)
-        depth = max(depth, 2)
-
-        # Remove pixels from contour inward
-        for d in range(int(depth)):
-            pr = int(r + dr * d * 0.3)
-            pc = int(c + dc * d * 0.3)
-            if 0 <= pr < h and 0 <= pc < w:
-                fracture[pr, pc] = 0
-
-    # Dilate the chip slightly for more natural appearance
-    chip_region = fracture == 0
-    chip_region = ndimage.binary_dilation(chip_region, iterations=2)
-    fracture[chip_region] = 0
-
-    return fracture
-
-
 FRACTURE_FUNCTIONS = {
     'root_loss': _fracture_root_loss,
     'tip_loss': _fracture_tip_loss,
     'lateral_break': _fracture_lateral_break,
-    'edge_chip': _fracture_edge_chip,
+    'edge_chip': _fracture_tip_loss,  # edge_chip redirects to tip_loss (chips create impossible holes)
     'diagonal_snap': _fracture_diagonal_snap,
 }
+
+
+def _keep_largest_fragment(keep_mask):
+    """
+    Post-process: keep only the largest connected component.
+    Removes disconnected floating pieces that are physically impossible.
+    """
+    labeled, num = ndimage.label(keep_mask)
+    if num <= 1:
+        return keep_mask
+    sizes = ndimage.sum(keep_mask, labeled, range(1, num + 1))
+    largest = np.argmax(sizes) + 1
+    return (labeled == largest).astype(np.uint8)
 
 
 # ---------------------------------------------------------------------------
 # 3D cross-section effect
 # ---------------------------------------------------------------------------
 
-def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=4):
+def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=20):
     """
-    Add a realistic 3D cross-section effect at the fracture edge.
+    Add visible exposed dentine at the fracture edge.
 
-    Based on study of real fragments: the exposed cross-section shows
-    a wide band of light beige/cream-colored internal material (dentine),
-    with a thin darker edge line at the very break point.
+    Based on real fragments: broken teeth show a wide band of light
+    beige/cream-colored internal material (exposed dentine/osteodentine).
+    This is the most visually distinctive feature of a real fracture.
 
-    The cross-section width varies randomly along the fracture (some areas
-    show more internal material, some less), and has a grainy texture.
+    Uses fast vectorized numpy operations (no per-pixel loops).
 
     Args:
         img_array: RGB image as numpy array.
         tooth_mask: Binary tooth segmentation mask.
         fracture_mask: Binary fracture mask (1=keep, 0=remove).
-        edge_width: Base width of the cross-section effect in pixels.
-                    Actual width varies randomly (0.5x to 2x this value).
+        edge_width: Width of the exposed dentine band in pixels.
 
     Returns:
         Modified image array.
@@ -535,71 +487,59 @@ def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=4):
     if edge_width <= 0:
         return img_array
 
-    result = img_array.copy()
+    result = img_array.astype(np.float32)
     h, w = tooth_mask.shape
 
     keep = tooth_mask.astype(bool) & fracture_mask.astype(bool)
     removed = tooth_mask.astype(bool) & ~fracture_mask.astype(bool)
 
     if not np.any(removed) or not np.any(keep):
-        return result
+        return img_array
 
-    # Distance from each kept tooth pixel to the nearest fracture boundary
+    # Distance from each pixel to the fracture boundary
     dist_to_fracture = ndimage.distance_transform_edt(~removed)
 
-    # Create a varying width map (the cross-section isn't uniform width)
-    # Use smooth random noise to vary the effective edge width
-    width_noise = np.random.randn(h, w) * 0.3
-    width_noise = ndimage.gaussian_filter(width_noise, sigma=15)  # smooth it
-    effective_width = edge_width * (1.0 + width_noise)
-    effective_width = np.clip(effective_width, edge_width * 0.3, edge_width * 2.5)
+    # Varying width: smooth random variation so some areas show more dentine
+    width_variation = np.random.randn(h, w) * 0.3
+    width_variation = ndimage.gaussian_filter(width_variation, sigma=20)
+    effective_width = edge_width * (1.0 + width_variation)
+    effective_width = np.clip(effective_width, edge_width * 0.4, edge_width * 2.0)
 
-    # The cross-section zone: kept tooth pixels within the effective width
+    # Cross-section zone: kept tooth pixels within the effective width
     cross_section = keep & (dist_to_fracture > 0) & (dist_to_fracture <= effective_width)
 
     if not np.any(cross_section):
-        return result
+        return img_array
 
-    # Exposed dentine color: light beige/cream
-    # Based on real fragments: the internal material is consistently
-    # light beige (R:210-230, G:195-215, B:170-190)
-    dentine_base = np.array([220, 205, 180], dtype=np.float32)
+    # Blend factor: 1.0 at fracture edge, fading toward interior
+    # Use safe division with the effective width
+    blend = np.zeros((h, w), dtype=np.float32)
+    blend[cross_section] = 1.0 - np.clip(
+        dist_to_fracture[cross_section] / np.maximum(effective_width[cross_section], 1.0),
+        0, 1
+    ) ** 0.5
 
-    # Add grainy texture to the cross-section
-    grain = np.random.randn(h, w) * 12
-    grain = ndimage.gaussian_filter(grain, sigma=1.5)  # slight smooth for grain texture
+    # Exposed dentine color: light beige/cream (R:215, G:200, B:175)
+    # Add grainy texture for realism
+    grain = np.random.randn(h, w).astype(np.float32) * 10
+    grain = ndimage.gaussian_filter(grain, sigma=2.0)
 
-    # Blend: pixels closer to the fracture edge get more dentine color,
-    # pixels further inside blend back to the original tooth color
-    cross_rows, cross_cols = np.where(cross_section)
-    for idx in range(len(cross_rows)):
-        r, c = cross_rows[idx], cross_cols[idx]
-        dist = dist_to_fracture[r, c]
-        ew = effective_width[r, c]
+    dentine = np.zeros_like(result)
+    dentine[:, :, 0] = 215 + grain  # R
+    dentine[:, :, 1] = 200 + grain  # G
+    dentine[:, :, 2] = 175 + grain  # B
+    dentine = np.clip(dentine, 0, 255)
 
-        # Blend factor: 1.0 at the fracture edge, fading to 0.0 at the inner boundary
-        blend = 1.0 - (dist / max(ew, 1)) ** 0.7
+    # Apply blend: tooth pixels near fracture become dentine-colored
+    blend_3d = blend[:, :, np.newaxis]
+    result = result * (1 - blend_3d) + dentine * blend_3d
 
-        # Dentine color with grain texture
-        dentine_color = dentine_base + grain[r, c]
-        dentine_color = np.clip(dentine_color, 0, 255)
+    # Dark shadow line at the very edge (1-2px) for depth cue
+    shadow = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 2.0)
+    if np.any(shadow):
+        result[shadow] *= 0.55
 
-        # Blend with original pixel
-        original = result[r, c].astype(np.float32)
-        result[r, c] = np.clip(
-            original * (1 - blend) + dentine_color * blend,
-            0, 255
-        ).astype(np.uint8)
-
-    # Dark edge line at the very fracture boundary (depth shadow)
-    edge_line = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 2.0)
-    if np.any(edge_line):
-        for c in range(3):
-            channel = result[:, :, c].astype(np.float32)
-            channel[edge_line] = np.clip(channel[edge_line] * 0.6, 0, 255)
-            result[:, :, c] = channel.astype(np.uint8)
-
-    return result
+    return np.clip(result, 0, 255).astype(np.uint8)
 
 
 # ---------------------------------------------------------------------------
@@ -663,12 +603,15 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
     clean_img = sanitize_tooth_image(image_path, background_color=background_color)
     img_array = np.array(clean_img)
 
-    # Step 2: Apply 3D edge effect before masking
-    edge_width = edge_params.get('edge_3d_width', 4)
-    img_array = _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width)
-
-    # Step 3: Apply fracture mask with sharp edges (no gaussian feathering)
+    # Step 2: Compute keep mask and remove disconnected fragments
     keep_mask = tooth_mask.astype(bool) & fracture_mask.astype(bool)
+    keep_mask = _keep_largest_fragment(keep_mask.astype(np.uint8)).astype(bool)
+
+    # Step 3: Apply 3D dentine effect at fracture edge
+    edge_width = edge_params.get('edge_3d_width', 20)
+    # Recompute fracture_mask from the cleaned keep_mask
+    clean_fracture = (keep_mask & tooth_mask.astype(bool)).astype(np.uint8)
+    img_array = _add_3d_edge_effect(img_array, tooth_mask, clean_fracture, edge_width)
 
     # Only feather the original tooth boundary (against background), NOT the fracture edge
     tooth_boundary_alpha = tooth_mask.astype(np.float32)
@@ -725,8 +668,10 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
         edge_params=profile['edge_params'],
     )
 
-    # Compute actual completeness
-    result_mask = tooth_mask & fracture_mask
+    # Compute actual completeness (using cleaned mask — largest fragment only)
+    result_mask = _keep_largest_fragment(
+        (tooth_mask & fracture_mask).astype(np.uint8)
+    )
     result_area = compute_tooth_area(result_mask)
     ref = reference_area or original_area
     actual_completeness = compute_completeness(result_area, ref)
