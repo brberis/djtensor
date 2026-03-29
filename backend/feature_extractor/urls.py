@@ -9,7 +9,7 @@
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .api import TFModelViewSet, StudyViewSet, TrainingSessionViewSet, EpochViewSet, TestViewSet, PerformanceViewSet, TestResultViewSet, StudyMembershipViewSet
+from .api import TFModelViewSet, StudyViewSet, TrainingSessionViewSet, EpochViewSet, TestViewSet, PerformanceViewSet, TestResultViewSet, StudyMembershipViewSet, SiteSettingsViewSet
 from .views import stream_training_logs, retrain_session, stop_training
 
 router = DefaultRouter()
@@ -21,6 +21,7 @@ router.register(r'tests', TestViewSet, 'tests')
 router.register(r'testresult', TestResultViewSet, 'testresults')
 router.register(r'performance', PerformanceViewSet, 'performance')
 router.register(r'study-memberships', StudyMembershipViewSet, 'study-memberships')
+router.register(r'site-settings', SiteSettingsViewSet, 'site-settings')
 
 urlpatterns = [
     path('', include(router.urls)),

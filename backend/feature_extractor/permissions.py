@@ -75,6 +75,16 @@ class IsStudyEditorOrOwner(BasePermission):
         return role in ('owner', 'editor')
 
 
+class IsSyntheticToolsEnabled(BasePermission):
+    """Allow access if user is superuser or synthetic tools are enabled in site settings."""
+
+    def has_permission(self, request, view):
+        if request.user.is_superuser:
+            return True
+        from .models import SiteSettings
+        return SiteSettings.get().show_synthetic_tools
+
+
 class IsStudyOwner(BasePermission):
     """Allow access only to study owners (for destructive ops like hard delete)."""
 

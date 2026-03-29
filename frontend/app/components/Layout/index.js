@@ -23,6 +23,7 @@ import {
   ArrowRightOnRectangleIcon,
   UserCircleIcon,
   ChevronUpDownIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { CheckIcon } from '@heroicons/react/20/solid';
 import Link from 'next/link';
@@ -37,8 +38,8 @@ const formatDate = (dateStr) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-// Sidebar navigation items
-const navigation = [
+// Sidebar navigation items (base items always visible)
+const baseNavigation = [
   { name: 'Training', href: '/', icon: CpuChipIcon },
   { name: 'Testing', href: '/testing', icon: ClipboardDocumentCheckIcon },
   { name: 'Performance', href: '/performance', icon: ChartBarIcon },
@@ -55,6 +56,7 @@ const Layout = (props) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [studies, setStudies] = useState([]);
   const [selectedStudy, setSelectedStudy] = useState('');
+  const [showSyntheticTools, setShowSyntheticTools] = useState(false);
   const { user, loading, logout } = useAuth();
   const { canMutate } = usePermissions();
 
@@ -64,6 +66,27 @@ const Layout = (props) => {
       router.replace('/login');
     }
   }, [user, loading, router]);
+
+  // Fetch site settings for synthetic tools visibility
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/feature_extractor/site-settings/')
+      .then(r => r.json())
+      .then(data => {
+        if (data.show_synthetic_tools !== undefined) {
+          setShowSyntheticTools(data.show_synthetic_tools);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Build navigation with conditional synthetic tools entry
+  const navigation = [
+    ...baseNavigation,
+    ...((user?.isSuperuser || showSyntheticTools)
+      ? [{ name: 'Augmentation', href: '/augmentation', icon: SparklesIcon }]
+      : []),
+  ];
 
   useEffect(() => {
     if (!user) return;

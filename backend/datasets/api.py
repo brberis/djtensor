@@ -22,8 +22,9 @@ from rest_framework.response import Response
 from feature_extractor.models import Study
 from .models import Dataset, Image, Label
 from .serializers import DatasetSerializer, ImageSerializer, LabelSerializer
-from .tasks import create_dataset_archive
+from .tasks import create_dataset_archive, compute_completeness_for_dataset, generate_synthetic_dataset
 from .image_resize import resize_to_dataset, get_target_resolution
+from feature_extractor.permissions import IsSyntheticToolsEnabled
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,22 @@ class DatasetViewSet(viewsets.ModelViewSet):
         if dataset_is_locked(dataset):
             return Response({'error': dataset_lock_reason(dataset)}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
+    def compute_completeness(self, request, pk=None):
+        dataset = self.get_object()
+        reference_dataset_id = request.data.get('reference_dataset_id')
+        compute_completeness_for_dataset.delay(dataset.id, reference_dataset_id)
+        return Response({'status': 'queued', 'dataset': dataset.name}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
+    def generate_synthetic(self, request, pk=None):
+        dataset = self.get_object()
+        bins = request.data.get('completeness_bins', [0.8, 0.6, 0.4])
+        images_per_bin = int(request.data.get('images_per_bin', 10))
+        name = request.data.get('name', f"Synthetic from {dataset.name}")
+        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin)
+        return Response({'status': 'queued', 'name': name}, status=status.HTTP_202_ACCEPTED)
 
 
 class LabelViewSet(viewsets.ModelViewSet):
@@ -181,6 +198,61 @@ class ImageViewSet(viewsets.ModelViewSet):
         if image.dataset and dataset_is_locked(image.dataset):
             return Response({'error': dataset_lock_reason(image.dataset)}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
+    def augmentation_preview(self, request, pk=None):
+        """Generate N augmented preview images for a single image."""
+        import os
+        import uuid
+        from django.conf import settings
+        from .augmentation_preview import generate_preview
+
+        image = self.get_object()
+        config = {k: v for k, v in request.data.items() if k != 'count'}
+        n = int(request.data.get('count', 6))
+        n = min(n, 20)  # Cap at 20
+
+        try:
+            previews = generate_preview(image.image.path, config, n)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        preview_dir = os.path.join(settings.MEDIA_ROOT, 'augmentation_previews')
+        os.makedirs(preview_dir, exist_ok=True)
+
+        urls = []
+        for img_bytes in previews:
+            filename = f"preview_{uuid.uuid4().hex}.png"
+            filepath = os.path.join(preview_dir, filename)
+            with open(filepath, 'wb') as f:
+                f.write(img_bytes)
+            urls.append(f"/media/augmentation_previews/{filename}")
+
+        base_url = getattr(settings, "BASE_URL", "").rstrip("/")
+        original_url = base_url + image.image.url
+
+        return Response({
+            'original': original_url,
+            'previews': [base_url + u for u in urls],
+        })
+
+    @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled])
+    def segmentation(self, request, pk=None):
+        """Return the binary segmentation mask as a PNG image."""
+        from django.http import HttpResponse
+        from .segmentation import segment_tooth, get_mask_as_image
+        import io
+
+        image = self.get_object()
+        try:
+            mask = segment_tooth(image.image.path)
+            mask_img = get_mask_as_image(mask)
+            buf = io.BytesIO()
+            mask_img.save(buf, format='PNG')
+            buf.seek(0)
+            return HttpResponse(buf.getvalue(), content_type='image/png')
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'])
     def bulk_delete(self, request):

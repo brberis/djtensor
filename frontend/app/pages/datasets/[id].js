@@ -15,6 +15,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import Layout from '../../components/Layout';
 import BulkUploadDialog from '../../components/BulkUploadDialog';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { useAuth } from '../../contexts/AuthContext';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
 import Image from 'next/image';
@@ -91,11 +92,20 @@ export default function DatasetDetail() {
   const [searchPage, setSearchPage] = useState(1);
   const [searchHasMore, setSearchHasMore] = useState(false);
 
+  const [showSyntheticTools, setShowSyntheticTools] = useState(false);
+  const [computingCompleteness, setComputingCompleteness] = useState(false);
+  const [showSyntheticDialog, setShowSyntheticDialog] = useState(false);
+  const [syntheticName, setSyntheticName] = useState('');
+  const [syntheticBins, setSyntheticBins] = useState([0.8, 0.6, 0.4]);
+  const [syntheticImagesPerBin, setSyntheticImagesPerBin] = useState(10);
+  const [generatingSynthetic, setGeneratingSynthetic] = useState(false);
+
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
 
   const router = useRouter();
   const { id } = router.query;
+  const { user } = useAuth();
 
   const datasetLocked = Boolean(dataset?.is_locked);
   const lockDetails = dataset?.lock_details || [];
@@ -196,6 +206,54 @@ export default function DatasetDetail() {
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
+
+  useEffect(() => {
+    fetch('/api/feature_extractor/site-settings/')
+      .then(r => r.json())
+      .then(data => {
+        if (data.show_synthetic_tools !== undefined) {
+          setShowSyntheticTools(data.show_synthetic_tools);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const canSeeSyntheticTools = user?.isSuperuser || showSyntheticTools;
+
+  const handleComputeCompleteness = async () => {
+    setComputingCompleteness(true);
+    try {
+      await fetch(`/api/datasets/dataset/${id}/compute-completeness`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch (e) {
+      console.error('Failed to queue completeness computation:', e);
+    } finally {
+      setComputingCompleteness(false);
+    }
+  };
+
+  const handleGenerateSynthetic = async () => {
+    setGeneratingSynthetic(true);
+    try {
+      await fetch(`/api/datasets/dataset/${id}/generate-synthetic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: syntheticName || `Synthetic from ${dataset?.name}`,
+          completeness_bins: syntheticBins,
+          images_per_bin: syntheticImagesPerBin,
+        }),
+      });
+      setShowSyntheticDialog(false);
+    } catch (e) {
+      console.error('Failed to queue synthetic generation:', e);
+    } finally {
+      setGeneratingSynthetic(false);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -479,6 +537,21 @@ export default function DatasetDetail() {
                         <div><dt className="font-medium text-gray-500">Resolution</dt><dd className="text-gray-900">{activeImage.image_width && activeImage.image_height ? `${activeImage.image_width} x ${activeImage.image_height}` : (dataset?.resolution ? `${dataset.resolution} x ${dataset.resolution}` : "Unknown")}</dd></div>
                         {activeImage.file_size ? (<div><dt className="font-medium text-gray-500">Size</dt><dd className="text-gray-900">{formatBytes(activeImage.file_size)}</dd></div>) : null}
                         <div><dt className="font-medium text-gray-500">Label</dt><dd className="text-gray-900">{labels.find((l) => l.id === activeImage.label)?.name || activeImage.label}</dd></div>
+                        {canSeeSyntheticTools && activeImage.completeness != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Tooth Completeness</dt>
+                            <dd className="text-gray-900">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                activeImage.completeness > 0.8 ? 'bg-green-100 text-green-800' :
+                                activeImage.completeness > 0.5 ? 'bg-amber-100 text-amber-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {Math.round(activeImage.completeness * 100)}%
+                              </span>
+                              {activeImage.tooth_area && <span className="ml-2 text-xs text-gray-400">({activeImage.tooth_area.toLocaleString()} px)</span>}
+                            </dd>
+                          </div>
+                        )}
                         <div><dt className="font-medium text-gray-500">Created</dt><dd className="text-gray-900">{new Date(activeImage.created_at).toLocaleString()}</dd></div>
                       </dl>
                     </div>
@@ -521,15 +594,41 @@ export default function DatasetDetail() {
               </div>
             )}
           </div>
-          <button
-            onClick={() => setShowBulkUpload(true)}
-            className={`${datasetLocked ? theme.classes.btnDisabled : theme.classes.btnPrimary} flex items-center gap-2`}
-            disabled={datasetLocked}
-            title={datasetLocked ? lockTooltip : 'Upload images in bulk'}
-          >
-            <CloudArrowUpIcon className="h-5 w-5" />
-            Bulk Upload
-          </button>
+          <div className="flex items-center gap-2">
+            {canSeeSyntheticTools && (
+              <>
+                <button
+                  onClick={handleComputeCompleteness}
+                  className={`${computingCompleteness ? theme.classes.btnDisabled : 'rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50'} flex items-center gap-2`}
+                  disabled={computingCompleteness}
+                  title="Compute tooth completeness % for all images"
+                >
+                  {computingCompleteness ? 'Queued...' : 'Compute Completeness'}
+                </button>
+                {!dataset?.for_testing && !dataset?.synthetic && (
+                  <button
+                    onClick={() => {
+                      setSyntheticName(`Synthetic from ${dataset?.name}`);
+                      setShowSyntheticDialog(true);
+                    }}
+                    className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 flex items-center gap-2"
+                    title="Generate synthetic fragmentary tooth images"
+                  >
+                    Generate Fragments
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              onClick={() => setShowBulkUpload(true)}
+              className={`${datasetLocked ? theme.classes.btnDisabled : theme.classes.btnPrimary} flex items-center gap-2`}
+              disabled={datasetLocked}
+              title={datasetLocked ? lockTooltip : 'Upload images in bulk'}
+            >
+              <CloudArrowUpIcon className="h-5 w-5" />
+              Bulk Upload
+            </button>
+          </div>
         </div>
       </div>
 
@@ -742,6 +841,15 @@ export default function DatasetDetail() {
                             className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
                           />
                         </button>
+                        {canSeeSyntheticTools && image.completeness != null && (
+                          <div className={`absolute right-1 top-1 z-10 rounded px-1 py-0.5 text-[10px] font-bold ${
+                            image.completeness > 0.8 ? 'bg-green-500/80 text-white' :
+                            image.completeness > 0.5 ? 'bg-amber-500/80 text-white' :
+                            'bg-red-500/80 text-white'
+                          }`}>
+                            {Math.round(image.completeness * 100)}%
+                          </div>
+                        )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity p-1">
                           <p className="text-[10px] text-white truncate">{image.file_name || image.image.split('/').pop()}</p>
                         </div>
@@ -767,6 +875,92 @@ export default function DatasetDetail() {
           );
         })}
       </div>
+
+      {/* Synthetic Fragment Generation Dialog */}
+      <Transition.Root show={showSyntheticDialog} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowSyntheticDialog(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
+          <div className="fixed inset-0 z-10 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
+                <Dialog.Title className="text-lg font-semibold text-gray-900">Generate Synthetic Fragments</Dialog.Title>
+                <p className="mt-1 text-sm text-gray-500">Create fragmentary tooth images at specified completeness levels.</p>
+
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Dataset Name</label>
+                    <input
+                      type="text"
+                      value={syntheticName}
+                      onChange={(e) => setSyntheticName(e.target.value)}
+                      className={`mt-1 block w-full ${theme.classes.input}`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Completeness Bins (%)</label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[90, 80, 70, 60, 50, 40, 30, 20].map(pct => {
+                        const val = pct / 100;
+                        const active = syntheticBins.includes(val);
+                        return (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setSyntheticBins(prev =>
+                              active ? prev.filter(b => b !== val) : [...prev, val].sort((a, b) => b - a)
+                            )}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                              active ? 'bg-blue-100 text-blue-800 ring-1 ring-blue-600/30' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Images per Species per Bin</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={syntheticImagesPerBin}
+                      onChange={(e) => setSyntheticImagesPerBin(Math.max(1, parseInt(e.target.value) || 1))}
+                      className={`mt-1 block w-24 ${theme.classes.input}`}
+                    />
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+                    Estimated output: ~{syntheticBins.length * syntheticImagesPerBin * labels.length} images
+                    ({syntheticBins.length} bins x {syntheticImagesPerBin} images x {labels.length} species)
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowSyntheticDialog(false)}
+                    className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleGenerateSynthetic}
+                    disabled={generatingSynthetic || syntheticBins.length === 0}
+                    className={generatingSynthetic || syntheticBins.length === 0 ? theme.classes.btnDisabled : theme.classes.btnPrimary}
+                  >
+                    {generatingSynthetic ? 'Queuing...' : 'Generate'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
     </Layout>
   );
 }

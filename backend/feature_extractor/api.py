@@ -823,3 +823,23 @@ class StudyMembershipViewSet(viewsets.ModelViewSet):
                     pass  # skip invalid ids
 
         return Response({'created': created, 'updated': updated})
+
+
+class SiteSettingsViewSet(viewsets.ViewSet):
+    """Singleton site settings for feature flags."""
+
+    def list(self, request):
+        from .models import SiteSettings
+        settings = SiteSettings.get()
+        return Response({'show_synthetic_tools': settings.show_synthetic_tools})
+
+    @action(detail=False, methods=['patch'])
+    def update_settings(self, request):
+        if not request.user.is_superuser:
+            return Response({'error': 'Admin only'}, status=status.HTTP_403_FORBIDDEN)
+        from .models import SiteSettings
+        settings = SiteSettings.get()
+        if 'show_synthetic_tools' in request.data:
+            settings.show_synthetic_tools = request.data['show_synthetic_tools']
+            settings.save()
+        return Response({'show_synthetic_tools': settings.show_synthetic_tools})

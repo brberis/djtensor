@@ -1,0 +1,33 @@
+{
+  "_description": "Fracture probability weights per tooth region. Values are relative probabilities, summing to 1.0. Edit this file to tune fracture patterns per species. Use the Augmentation Preview UI to visualize the effects.",
+  "_fracture_types": {
+    "root_loss": "Remove the root portion of the tooth (bottom section)",
+    "tip_loss": "Remove the tip/apex of the tooth (top section)",
+    "lateral_break": "Break along a vertical/diagonal line, removing one side",
+    "edge_chip": "Remove a small portion from an edge (serrations, blade edge)"
+  },
+  "default": {
+    "root_loss": 0.30,
+    "tip_loss": 0.30,
+    "lateral_break": 0.25,
+    "edge_chip": 0.15
+  },
+  "Carcharocles megalodon": {
+    "root_loss": 0.40,
+    "tip_loss": 0.25,
+    "lateral_break": 0.20,
+    "edge_chip": 0.15
+  },
+  "Hemipristis serra": {
+    "root_loss": 0.20,
+    "tip_loss": 0.15,
+    "lateral_break": 0.50,
+    "edge_chip": 0.15
+  },
+  "Carcharhinus": {
+    "root_loss": 0.25,
+    "tip_loss": 0.35,
+    "lateral_break": 0.25,
+    "edge_chip": 0.15
+  }
+}

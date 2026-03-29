@@ -113,6 +113,11 @@ export default function SettingsPage() {
   const [batchSaving, setBatchSaving] = useState(false);
   const [batchMessage, setBatchMessage] = useState(null);
 
+  // Synthetic tools toggle state (superuser only)
+  const [showSyntheticTools, setShowSyntheticTools] = useState(false);
+  const [syntheticSaving, setSyntheticSaving] = useState(false);
+  const [syntheticMessage, setSyntheticMessage] = useState(null);
+
   useEffect(() => {
     if (!user) return;
     const storageKey = 'selectedStudy_' + user.id;
@@ -150,6 +155,16 @@ export default function SettingsPage() {
       .then(data => {
         const users = Array.isArray(data) ? data : data.results || [];
         setAllUsers(users);
+      })
+      .catch(console.error);
+
+    // Fetch site settings
+    fetch('/api/feature_extractor/site-settings/')
+      .then(r => r.json())
+      .then(data => {
+        if (data.show_synthetic_tools !== undefined) {
+          setShowSyntheticTools(data.show_synthetic_tools);
+        }
       })
       .catch(console.error);
   }, [user]);
@@ -303,6 +318,30 @@ export default function SettingsPage() {
       setBatchMessage({ type: 'error', text: 'Failed to assign permissions' });
     } finally {
       setBatchSaving(false);
+    }
+  };
+
+  const handleSyntheticToggle = async () => {
+    setSyntheticSaving(true);
+    setSyntheticMessage(null);
+    try {
+      const res = await fetch('/api/feature_extractor/site-settings/', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body: JSON.stringify({ show_synthetic_tools: !showSyntheticTools }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setShowSyntheticTools(data.show_synthetic_tools);
+        setSyntheticMessage({ type: 'success', text: data.show_synthetic_tools ? 'Synthetic tools visible to team' : 'Synthetic tools hidden from team' });
+      } else {
+        setSyntheticMessage({ type: 'error', text: 'Failed to update setting' });
+      }
+    } catch (e) {
+      setSyntheticMessage({ type: 'error', text: 'Failed to update setting' });
+    } finally {
+      setSyntheticSaving(false);
     }
   };
 
@@ -465,6 +504,39 @@ export default function SettingsPage() {
       {user?.isSuperuser && (
         <div className="mt-8 space-y-6">
           <h2 className="text-lg font-semibold text-gray-900">Admin Settings</h2>
+
+          {/* Synthetic Data Tools toggle */}
+          <div className={theme.classes.card}>
+            <div className="px-6 py-5">
+              <h3 className="text-base font-semibold leading-6 text-gray-900">Synthetic Data Tools</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Controls visibility of experimental synthetic data features (augmentation preview, tooth completeness detection, synthetic fragment generation).
+                When disabled, these tools are only visible to admins.
+              </p>
+              {syntheticMessage && (
+                <div className={`rounded-md p-3 mt-3 ${
+                  syntheticMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                }`}>
+                  <p className="text-sm">{syntheticMessage.text}</p>
+                </div>
+              )}
+              <div className="mt-4 flex items-center gap-4">
+                <span className={'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ' +
+                  (showSyntheticTools
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-gray-100 text-gray-800')}>
+                  {showSyntheticTools ? 'Visible to Team' : 'Admin Only'}
+                </span>
+                <button
+                  onClick={handleSyntheticToggle}
+                  disabled={syntheticSaving}
+                  className={syntheticSaving ? theme.classes.btnDisabled : 'rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50'}
+                >
+                  {syntheticSaving ? 'Updating...' : (showSyntheticTools ? 'Hide from Team' : 'Show to Team')}
+                </button>
+              </div>
+            </div>
+          </div>
 
           {/* Study Order — drag and drop */}
           <div className={theme.classes.card}>

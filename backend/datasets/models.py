@@ -28,6 +28,9 @@ class Dataset(models.Model):
     base = models.BooleanField(default=False)
     for_testing = models.BooleanField(default=True)
     shared = models.ManyToManyField('feature_extractor.Study', related_name='shared_datasets')
+    # Synthetic dataset provenance
+    synthetic = models.BooleanField(default=False)
+    source_dataset = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='synthetic_datasets')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -56,9 +59,30 @@ class Image(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     used_for_training = models.BooleanField(default=False)
     used_for_testing = models.BooleanField(default=False)
+    # Tooth completeness detection fields
+    tooth_area = models.IntegerField(blank=True, null=True)
+    completeness = models.FloatField(blank=True, null=True)
+    # Synthetic image provenance
+    source_image = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='synthetic_derivatives')
+    target_completeness = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return self.image.url
+
+
+class SpeciesReferenceArea(models.Model):
+    label = models.ForeignKey(Label, related_name='reference_areas', on_delete=models.CASCADE)
+    dataset = models.ForeignKey(Dataset, related_name='reference_areas', on_delete=models.CASCADE)
+    avg_area = models.FloatField()
+    sample_count = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('label', 'dataset')
+
+    def __str__(self):
+        return f"{self.label.name} in {self.dataset.name}: avg_area={self.avg_area}"
 
 
 @receiver(post_delete, sender=Image)

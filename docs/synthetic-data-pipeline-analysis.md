@@ -65,6 +65,67 @@ Teeth below ~50% completeness were never classified by species because paleontol
 
 ---
 
+## Class-Specific Fracture Simulation
+
+### The Problem with Generic Fractures
+
+A naive geometric fracture (random Voronoi or Bezier cut) does not account for species-specific tooth morphology. Different species break differently:
+
+- **Carcharocles megalodon** — thick, triangular, heavy enameloid. Tends to break at root-crown junction or lose serration edges
+- **Hemipristis serra** — thin, curved blade. Fractures along the blade length
+- **Carcharhinus** — small, narrow. Often loses the tip or root lobes
+
+The **diagnostic features** paleontologists use to ID species (serrations, root shape, blade curvature, nutrient groove) are in specific locations. A fracture that removes vs. preserves those features has very different effects on classification.
+
+### Three Paths to Class-Specific Fractures
+
+#### Path 1 — Data-Driven (best, needs data)
+
+Once Alexa photographs enough real fragments per species:
+1. Segment each real fragment → binary mask
+2. Segment same species' complete teeth → reference mask
+3. Compute the "missing region" (difference between full and fragment)
+4. Build a **fracture pattern distribution per species** — where do fractures typically occur? What shapes?
+5. Sample from that distribution for new fractures
+
+Needs ~20-30 real fragments per species. **Blocked** by Alexa's collection work.
+
+#### Path 2 — Morphology-Guided Heuristics (can start now, needs team input)
+
+Encode paleontological knowledge about how each species' teeth break:
+1. Define a **tooth anatomy map** per species: crown, root, serrations, tip, blade regions
+2. Define **fracture probability weights** per region per species
+
+Example:
+```
+megalodon_fracture_weights = {
+    "root_loss": 0.4,       # 40% of fractures lose root
+    "tip_loss": 0.3,        # 30% lose the tip
+    "lateral_break": 0.2,   # 20% break along the blade
+    "serration_chip": 0.1   # 10% chip serration edges
+}
+```
+
+Requires **input from Arthur and the paleontology team** to define rules, but no training data.
+
+#### Path 3 — Generic + Iterative Validation (pragmatic bootstrap)
+
+1. Generate generic geometric fractures
+2. Show to team via Augmentation Preview UI
+3. Paleontologists flag unrealistic ones
+4. Constrain the fracture generator based on feedback
+5. Iterate until validated
+
+### Recommended Approach: Combine Paths 2 + 3
+
+1. Start with **generic geometric fractures** with basic species-specific weight maps
+2. Use **Augmentation Preview UI** to iterate with the team
+3. When Alexa's data arrives, upgrade to **data-driven distributions** (Path 1)
+
+The `synthetic_fracture.py` module accepts per-species fracture weight maps via a JSON config, making it easy to refine without code changes.
+
+---
+
 ## Recommended Priority Order
 
 1. **Run threshold experiment first** — Test existing model with progressively fragmentary teeth to find where accuracy degrades. This establishes the baseline and tells us *where* the model breaks and *how much* synthetic data is needed at each completeness level. (Meeting action item assigned to Cristobal)
@@ -108,6 +169,64 @@ Any synthetic data pipeline must save outputs **outside** Docker volumes or have
 - **Ideal scenario** is using actual fossil fragments so the model learns real edge nuances — but Alexa's spreadsheet showed this is impractical due to species class limits in the collection.
 - **Synthetic advantage:** Guarantees known species ID (the ground truth comes from the complete tooth before fragmentation). Katie supports this approach.
 - **Future direction:** Train a new model with partial/fragmentary teeth, then feed unlabeled smaller fragments to it for classification.
+
+---
+
+## Tooth Completeness Percentage Detection
+
+A key requirement is automatically detecting what percentage of a tooth is present — for any image in training datasets, testing datasets, or synthetic outputs.
+
+### Approaches Analyzed
+
+#### Approach 1 — Segmentation + Species Reference Area (recommended first)
+
+- Segment tooth from background using thresholding or simple model (images have standardized white/uniform backgrounds)
+- Build a reference area per species from complete tooth dataset (average pixel area of segmented complete teeth)
+- `completeness % = fragment_area / species_reference_area`
+- **Pros:** Simple, interpretable, works with existing data, no model training needed for the detector itself
+- **Cons:** Sensitive to image scale/resolution (mitigated by standardized 384px images)
+
+#### Approach 2 — Convex Hull Ratio (species-agnostic)
+
+- Segment tooth, compute its convex hull
+- `completeness_proxy = tooth_area / convex_hull_area`
+- **Pros:** No reference data needed, species-independent
+- **Cons:** Not a true "percentage of full tooth" — more of a fragmentation score. Naturally concave teeth skew results.
+
+#### Approach 3 — Shape Completion Network (most accurate, more complex)
+
+- Train a U-Net to predict the full tooth mask from a fragment mask
+- `completeness % = fragment_area / predicted_full_area`
+- **Pros:** Most accurate, learns species-specific morphology
+- **Cons:** Needs training data (can bootstrap with synthetic fragments from complete teeth)
+
+### Recommended Detection Strategy
+
+Start with **Approach 1** — it's immediate, interpretable, and aligns with Katie's binning work. The standardized image resolution (384px) and consistent backgrounds make segmentation straightforward. Upgrade to Approach 3 later using synthetic fragments as training data for the shape completion network.
+
+---
+
+## UI Visualization Tool
+
+A new UI page/section is needed to:
+
+1. **Preview augmentation results** — Show original image alongside all enabled augmentation transforms applied to it, so researchers can visually verify augmentation quality before training
+2. **Analyze synthetic fragments** — Display generated synthetic fragments with their computed completeness percentage, organized by species and completeness bin
+3. **Compare real vs. synthetic** — Side-by-side view of real fragments (from Alexa's photos) and synthetic ones at similar completeness levels for validation
+
+This tool serves both as a development aid (tuning augmentation parameters) and a research tool (validating synthetic data quality with the paleontology team).
+
+---
+
+## Feature Visibility Control
+
+Since this is a production server used by the research team, all synthetic data features are **admin-only by default**. A toggle in the Settings page (Admin Settings section) allows the admin to expose these tools to the team when they're ready.
+
+- **Admin (superuser):** Always sees all synthetic data tools (Augmentation page, completeness badges, synthetic generation buttons, synthetic_fracture training flag)
+- **Team members (toggle OFF):** Cannot see or access any synthetic data features
+- **Team members (toggle ON):** Full access to all synthetic data features
+
+This is implemented via a `SiteSettings` singleton model with a `show_synthetic_tools` boolean flag, a reusable `IsSyntheticToolsEnabled` permission class for backend API protection, and a frontend context check that guards all new UI elements.
 
 ---
 

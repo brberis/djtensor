@@ -111,8 +111,9 @@ class TFModel(models.Model):
     zoom = models.BooleanField(default=False)  # Added zoom
     brightness_contrast = models.BooleanField(default=False) 
     random_crop = models.BooleanField(default=False) 
-    gaussian_noise = models.BooleanField(default=False) 
-    cutout = models.BooleanField(default=False) 
+    gaussian_noise = models.BooleanField(default=False)
+    cutout = models.BooleanField(default=False)
+    synthetic_fracture = models.BooleanField(default=False)
     
     pre_model = models.CharField(max_length=100, choices=PRE_MODEL, default='mobilenet_v3_large_075_224')
     default = models.BooleanField(default=False)
@@ -212,6 +213,22 @@ class TestResult(models.Model):
 #         train_model.delay(instance.id)
 
     
+class SiteSettings(models.Model):
+    show_synthetic_tools = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name_plural = "Site Settings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 @receiver(post_save, sender=Test)
 def test_images_on_save(sender, instance, created, **kwargs):
     if created:

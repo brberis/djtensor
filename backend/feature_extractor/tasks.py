@@ -324,52 +324,56 @@ def train_model(training_session_id, *args, **kwargs):
             data_augmentation.add(tf.keras.layers.RandomFlip('vertical'))
         
         # Apply random rotation with a smaller angle range (±15 degrees)
+        # fill_mode='constant' with white fill to avoid mirror artifacts at edges
         if model_random_rotation:
             logger.info("<--- Random Rotation enabled --->")
-            data_augmentation.add(tf.keras.layers.RandomRotation(0.15))  # Rotate randomly by ±15 degrees
-        
+            data_augmentation.add(tf.keras.layers.RandomRotation(
+                0.15, fill_mode='constant', fill_value=255.0))
+
         # Apply zoom if the model specifies random zoom
         if model_zoom:
             logger.info("<--- Random Zoom enabled --->")
-            data_augmentation.add(tf.keras.layers.RandomZoom(0.05, 0.15))  # Zoom in/out by 5%-15%
-        
+            data_augmentation.add(tf.keras.layers.RandomZoom(
+                0.05, 0.15, fill_mode='constant', fill_value=255.0))
+
         def clip_values(images):
-            return tf.clip_by_value(images, 0.0, 1.0)
-        
+            return tf.clip_by_value(images, 0.0, 255.0)
+
         # Apply brightness and contrast adjustments if enabled
         if model_brightness_contrast:
             logger.info("<--- Random Brightness and Contrast enabled --->")
-            data_augmentation.add(tf.keras.layers.RandomBrightness(0.1))  # Adjust brightness by ±10%
-            data_augmentation.add(tf.keras.layers.RandomContrast(0.1))    # Adjust contrast by ±10%
-            data_augmentation.add(tf.keras.layers.Lambda(clip_values)) 
+            data_augmentation.add(tf.keras.layers.RandomBrightness(0.1, value_range=(0, 255)))
+            data_augmentation.add(tf.keras.layers.RandomContrast(0.1))
+            data_augmentation.add(tf.keras.layers.Lambda(clip_values))
 
         # Apply random crop and resize if enabled
         if model_random_crop:
             logger.info("<--- Random Crop and Rescale enabled --->")
-            data_augmentation.add(tf.keras.layers.RandomCrop(height=IMAGE_SIZE[0] - 10, width=IMAGE_SIZE[1] - 10))  
-            data_augmentation.add(tf.keras.layers.Resizing(IMAGE_SIZE[0], IMAGE_SIZE[1]))  # Resize to original dimensions
-        
+            crop_margin = 30
+            data_augmentation.add(tf.keras.layers.RandomCrop(height=IMAGE_SIZE[0] - crop_margin, width=IMAGE_SIZE[1] - crop_margin))
+            data_augmentation.add(tf.keras.layers.Resizing(IMAGE_SIZE[0], IMAGE_SIZE[1]))
+
         # Apply Gaussian noise if specified
         if model_gaussian_noise:
             logger.info("<--- Gaussian Noise enabled --->")
             def add_gaussian_noise(images):
-                noise = tf.random.normal(shape=tf.shape(images), mean=0.0, stddev=0.02, dtype=tf.float32)  # 2% noise
+                noise = tf.random.normal(shape=tf.shape(images), mean=0.0, stddev=12.75, dtype=tf.float32)  # ~5% of 255
                 return images + noise
             data_augmentation.add(tf.keras.layers.Lambda(add_gaussian_noise))
-        
-        # Apply Gaussian blur if specified (new)
+
+        # Apply Gaussian blur if specified
         if model_blur:
             logger.info("<--- Gaussian Blur enabled --->")
             def apply_gaussian_blur(images):
-                blurred_images = tfa.image.gaussian_filter2d(images, filter_shape=(3, 3), sigma=0.7)  # Moderate blur
+                blurred_images = tfa.image.gaussian_filter2d(images, filter_shape=(3, 3), sigma=0.7)
                 return blurred_images
             data_augmentation.add(tf.keras.layers.Lambda(apply_gaussian_blur))
-        
-        # Optionally, apply Cutout if enabled
+
+        # Apply Cutout if enabled (white fill instead of black)
         if model_cutout:
             logger.info("<--- Cutout enabled --->")
             def apply_random_cutout(images):
-                cutout_images = tfa.image.random_cutout(images, mask_size=(20, 20))
+                cutout_images = tfa.image.random_cutout(images, mask_size=(40, 40), constant_values=255)
                 return cutout_images
             data_augmentation.add(tf.keras.layers.Lambda(apply_random_cutout))
    
