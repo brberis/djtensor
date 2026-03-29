@@ -170,7 +170,14 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
             species_override = profile_overrides[label.name]
 
         for target_compl in completeness_bins:
-            for i in range(images_per_bin):
+            generated = 0
+            max_attempts = images_per_bin * 5  # retry budget
+            attempts = 0
+            min_acceptable = max(target_compl - 0.25, 0.10)
+            max_acceptable = min(target_compl + 0.25, 1.0)
+
+            while generated < images_per_bin and attempts < max_attempts:
+                attempts += 1
                 src_img = random.choice(source_images)
                 try:
                     result_img, actual_compl = generate_synthetic_fragment(
@@ -180,12 +187,16 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
                         profile_override=species_override,
                     )
 
-                    # Save the synthetic image
+                    # Filter: skip if completeness is too far from target
+                    if actual_compl < min_acceptable or actual_compl > max_acceptable:
+                        logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
+                        continue
+
                     buf = io.BytesIO()
                     result_img.save(buf, format='PNG')
                     buf.seek(0)
 
-                    filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{i}_{src_img.id}.png"
+                    filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
                     content = ContentFile(buf.getvalue(), name=filename)
 
                     Image.objects.create(
@@ -197,10 +208,14 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
                         tooth_area=None,
                         completeness=actual_compl,
                     )
+                    generated += 1
                     total_generated += 1
 
                 except Exception as e:
                     logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
+
+            if generated < images_per_bin:
+                logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{images_per_bin} after {attempts} attempts")
 
     logger.info(f"Synthetic dataset '{name}' created with {total_generated} images")
 
