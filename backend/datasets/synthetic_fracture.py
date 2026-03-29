@@ -598,7 +598,7 @@ def _compute_dentine_color(img_array, tooth_mask, keep_mask):
         avg_surface = np.mean(near_edge_pixels, axis=0)
     else:
         avg_surface = np.array([150, 140, 130], dtype=np.float32)
-    return np.clip(avg_surface + np.array([60, 50, 35]), 0, 255)
+    return np.clip(avg_surface + np.array([35, 25, 10]), 0, 255)
 
 
 def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
