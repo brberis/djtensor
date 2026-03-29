@@ -158,6 +158,8 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
     syn_dataset.labels.set(source.labels.all())
 
     total_generated = 0
+    # Absolute minimum: the lowest bin the user selected
+    absolute_min = min(completeness_bins) - 0.10
 
     for label in source.labels.all():
         source_images = list(Image.objects.filter(dataset=source, label=label))
@@ -173,8 +175,8 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
             generated = 0
             max_attempts = images_per_bin * 5  # retry budget
             attempts = 0
-            min_acceptable = max(target_compl - 0.25, 0.10)
-            max_acceptable = min(target_compl + 0.25, 1.0)
+            min_acceptable = max(target_compl - 0.20, absolute_min, 0.10)
+            max_acceptable = min(target_compl + 0.20, 1.0)
 
             while generated < images_per_bin and attempts < max_attempts:
                 attempts += 1

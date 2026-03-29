@@ -519,15 +519,25 @@ def _add_3d_edge_effect(img_array, tooth_mask, fracture_mask, edge_width=20):
         0, 1
     ) ** 0.5
 
-    # Exposed dentine color: light beige/cream (R:215, G:200, B:175)
+    # Dentine color: RELATIVE to the tooth surface — always lighter + warmer
+    # Sample average color along the fracture edge to compute contrast
+    near_edge = keep & (dist_to_fracture > 0) & (dist_to_fracture <= 5)
+    if np.any(near_edge):
+        avg_surface = np.mean(result[near_edge], axis=0)
+    else:
+        avg_surface = np.mean(result[keep], axis=0) if np.any(keep) else np.array([150, 140, 130])
+
+    # Make dentine 50-70 units lighter than surface, with warm beige shift
+    dentine_base = np.clip(avg_surface + np.array([60, 50, 35]), 0, 255)
+
     # Add grainy texture for realism
-    grain = np.random.randn(h, w).astype(np.float32) * 10
+    grain = np.random.randn(h, w).astype(np.float32) * 8
     grain = ndimage.gaussian_filter(grain, sigma=2.0)
 
     dentine = np.zeros_like(result)
-    dentine[:, :, 0] = 215 + grain  # R
-    dentine[:, :, 1] = 200 + grain  # G
-    dentine[:, :, 2] = 175 + grain  # B
+    dentine[:, :, 0] = dentine_base[0] + grain
+    dentine[:, :, 1] = dentine_base[1] + grain
+    dentine[:, :, 2] = dentine_base[2] + grain
     dentine = np.clip(dentine, 0, 255)
 
     # Apply blend: tooth pixels near fracture become dentine-colored
