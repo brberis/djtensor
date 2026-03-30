@@ -129,18 +129,20 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
 
 
 @shared_task
-def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, images_per_bin,
+def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin,
                                profile_overrides=None, augmentations=None):
     """
-    Generate a synthetic dataset of fragmentary tooth images from a source dataset.
+    Populate a synthetic dataset with fragmentary tooth images.
+
+    The dataset record is created by the API view before this task runs,
+    so the frontend can navigate to the dataset page immediately.
 
     Pipeline: fragment generation -> augmentation transforms (if selected).
     Augmentations are applied after fragmentation so the cascade produces
     e.g. fragmented + grayscale images in a single pass.
 
     Args:
-        source_dataset_id: ID of the source dataset (complete teeth).
-        name: Name for the new synthetic dataset.
+        syn_dataset_id: ID of the pre-created synthetic dataset.
         completeness_bins: List of target completeness values, e.g. [0.8, 0.6, 0.4].
         images_per_bin: Number of images to generate per species per bin.
         profile_overrides: Optional dict of {species_name: profile_dict} to override defaults.
@@ -154,41 +156,10 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
     import random
     import numpy as np
 
-    source = Dataset.objects.get(pk=source_dataset_id)
+    syn_dataset = Dataset.objects.get(pk=syn_dataset_id)
+    source = syn_dataset.source_dataset
 
-    # Handle name collisions — append counter if name already exists
-    base_name = name
-    counter = 1
-    while Dataset.objects.filter(name=name).exists():
-        counter += 1
-        name = f"{base_name} ({counter})"
-
-    # Determine transformation type from selected options
     has_augmentations = augmentations and any(augmentations.values())
-    if has_augmentations:
-        transform_type = 'fracture+augmentation'
-    else:
-        transform_type = 'fracture'
-
-    # Create the synthetic dataset
-    syn_dataset = Dataset.objects.create(
-        study=source.study,
-        name=name,
-        description=f"Synthetic fragments from {source.name}. Bins: {completeness_bins}",
-        resolution=source.resolution,
-        base=False,
-        for_testing=False,
-        synthetic=True,
-        source_dataset=source,
-        transformation_type=transform_type,
-        generation_config={
-            'completeness_bins': completeness_bins,
-            'images_per_bin': images_per_bin,
-            'profile_overrides': profile_overrides,
-            'augmentations': augmentations,
-        },
-    )
-    syn_dataset.labels.set(source.labels.all())
 
     # Build augmentation pipeline once if augmentations are selected
     augmentation_pipeline = None

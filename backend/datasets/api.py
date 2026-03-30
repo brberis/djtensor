@@ -110,8 +110,41 @@ class DatasetViewSet(viewsets.ModelViewSet):
         name = request.data.get('name', f"Synthetic from {dataset.name}")
         profile_overrides = request.data.get('profile_overrides')
         augmentations = request.data.get('augmentations')
-        generate_synthetic_dataset.delay(dataset.id, name, bins, images_per_bin, profile_overrides, augmentations)
-        return Response({'status': 'queued', 'name': name}, status=status.HTTP_202_ACCEPTED)
+
+        # Handle name collisions
+        base_name = name
+        counter = 1
+        while Dataset.objects.filter(name=name).exists():
+            counter += 1
+            name = f"{base_name} ({counter})"
+
+        # Determine transformation type
+        has_augmentations = augmentations and any(v for v in (augmentations or {}).values())
+        transform_type = 'fracture+augmentation' if has_augmentations else 'fracture'
+
+        # Create dataset record synchronously so we can return the ID
+        syn_dataset = Dataset.objects.create(
+            study=dataset.study,
+            name=name,
+            description=f"Synthetic fragments from {dataset.name}. Bins: {bins}",
+            resolution=dataset.resolution,
+            base=False,
+            for_testing=False,
+            synthetic=True,
+            source_dataset=dataset,
+            transformation_type=transform_type,
+            generation_config={
+                'completeness_bins': bins,
+                'images_per_bin': images_per_bin,
+                'profile_overrides': profile_overrides,
+                'augmentations': augmentations,
+            },
+        )
+        syn_dataset.labels.set(dataset.labels.all())
+
+        # Queue Celery task to populate the dataset with images
+        generate_synthetic_dataset.delay(syn_dataset.id, bins, images_per_bin, profile_overrides, augmentations)
+        return Response({'status': 'queued', 'name': name, 'dataset_id': syn_dataset.id}, status=status.HTTP_202_ACCEPTED)
 
 
 class LabelViewSet(viewsets.ModelViewSet):

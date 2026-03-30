@@ -309,12 +309,17 @@ export default function DatasetDetail() {
       if (Object.keys(augmentations).length > 0) {
         payload.augmentations = augmentations;
       }
-      await fetch(`/api/datasets/dataset/${id}/generate-synthetic`, {
+      const res = await fetch(`/api/datasets/dataset/${id}/generate-synthetic`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      const data = await res.json();
       setShowSyntheticDialog(false);
+      // Navigate to the new synthetic dataset page
+      if (data.dataset_id) {
+        router.push(`/datasets/${data.dataset_id}`);
+      }
     } catch (e) {
       console.error('Failed to queue synthetic generation:', e);
     } finally {

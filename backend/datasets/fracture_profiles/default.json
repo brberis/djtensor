@@ -22,11 +22,11 @@
   },
   "default": {
     "fracture_types": {
-      "root_loss": 0.15,
+      "root_loss": 0.05,
       "tip_loss": 0.10,
-      "lateral_break": 0.15,
+      "lateral_break": 0.20,
       "edge_chip": 0.05,
-      "diagonal_snap": 0.15,
+      "diagonal_snap": 0.20,
       "transverse_snap": 0.20,
       "oblique_front": 0.20
     },
@@ -41,11 +41,11 @@
   },
   "Otodus Megalodon": {
     "fracture_types": {
-      "root_loss": 0.25,
-      "tip_loss": 0.15,
-      "lateral_break": 0.10,
+      "root_loss": 0.08,
+      "tip_loss": 0.12,
+      "lateral_break": 0.15,
       "edge_chip": 0.05,
-      "diagonal_snap": 0.15,
+      "diagonal_snap": 0.20,
       "transverse_snap": 0.20,
       "oblique_front": 0.20
     },
@@ -61,13 +61,13 @@
   },
   "Carcharodon Carcharias": {
     "fracture_types": {
-      "root_loss": 0.20,
-      "tip_loss": 0.20,
-      "lateral_break": 0.10,
+      "root_loss": 0.05,
+      "tip_loss": 0.15,
+      "lateral_break": 0.15,
       "edge_chip": 0.10,
-      "diagonal_snap": 0.15,
-      "transverse_snap": 0.10,
-      "oblique_front": 0.15
+      "diagonal_snap": 0.20,
+      "transverse_snap": 0.15,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.35,
@@ -81,13 +81,13 @@
   },
   "Hemipristis Serra": {
     "fracture_types": {
-      "root_loss": 0.15,
+      "root_loss": 0.05,
       "tip_loss": 0.10,
       "lateral_break": 0.25,
       "edge_chip": 0.10,
-      "diagonal_snap": 0.10,
+      "diagonal_snap": 0.15,
       "transverse_snap": 0.20,
-      "oblique_front": 0.20
+      "oblique_front": 0.15
     },
     "edge_params": {
       "roughness": 0.3,
@@ -101,13 +101,13 @@
   },
   "Galeocerdo Cuvier": {
     "fracture_types": {
-      "root_loss": 0.20,
-      "tip_loss": 0.15,
-      "lateral_break": 0.10,
-      "edge_chip": 0.15,
-      "diagonal_snap": 0.10,
+      "root_loss": 0.05,
+      "tip_loss": 0.12,
+      "lateral_break": 0.15,
+      "edge_chip": 0.13,
+      "diagonal_snap": 0.20,
       "transverse_snap": 0.20,
-      "oblique_front": 0.20
+      "oblique_front": 0.15
     },
     "edge_params": {
       "roughness": 0.3,
@@ -121,13 +121,13 @@
   },
   "Carcharhinus Leucas": {
     "fracture_types": {
-      "root_loss": 0.20,
-      "tip_loss": 0.25,
-      "lateral_break": 0.10,
+      "root_loss": 0.05,
+      "tip_loss": 0.20,
+      "lateral_break": 0.15,
       "edge_chip": 0.05,
-      "diagonal_snap": 0.10,
+      "diagonal_snap": 0.20,
       "transverse_snap": 0.20,
-      "oblique_front": 0.20
+      "oblique_front": 0.15
     },
     "edge_params": {
       "roughness": 0.4,
@@ -141,11 +141,11 @@
   },
   "Negaprion Brevirostris": {
     "fracture_types": {
-      "root_loss": 0.20,
-      "tip_loss": 0.25,
-      "lateral_break": 0.05,
+      "root_loss": 0.05,
+      "tip_loss": 0.20,
+      "lateral_break": 0.10,
       "edge_chip": 0.05,
-      "diagonal_snap": 0.15,
+      "diagonal_snap": 0.20,
       "transverse_snap": 0.20,
       "oblique_front": 0.20
     },
