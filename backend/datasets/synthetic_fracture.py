@@ -240,7 +240,7 @@ def _find_contour_at_col(mask, col):
 
 
 def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness=0.4,
-                            min_angle_change=10, max_angle_change=110):
+                            min_angle_change=20, max_angle_change=110):
     """
     Generate a fracture path as a multi-segment walk with real direction changes.
 
@@ -271,8 +271,8 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
             start[1] + t * (end[1] - start[1]),
         ])
 
-    # Number of direction changes: 2-4 for most fractures
-    n_turns = np.random.randint(2, 5)
+    # Number of direction changes: 3-5 for most fractures
+    n_turns = np.random.randint(3, 6)
 
     # Generate waypoints: the crack goes through these turning points
     # Each segment covers 15-45% of the remaining distance
@@ -314,8 +314,8 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
     rows = np.interp(t, dists, waypoints[:, 0])
     cols = np.interp(t, dists, waypoints[:, 1])
 
-    # Smooth the transitions so turns are not sharp corners
-    sigma = max(n_points // 20, 3)
+    # Light smoothing — preserve direction changes, just soften sharp corners
+    sigma = max(n_points // 40, 2)
     rows = ndimage.gaussian_filter1d(rows, sigma=sigma)
     cols = ndimage.gaussian_filter1d(cols, sigma=sigma)
 
@@ -942,12 +942,16 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
                     ch[inner_band] = ch[inner_band] * (1 - inner_blend) + (dentine_base[c] + grain_inner) * inner_blend
                     img_array[:, :, c] = ch
 
-    # Step 6: Dark shadow line at the fracture boundary (always visible)
+    # Step 6: Very subtle edge darkening at the fracture boundary.
+    # Real broken teeth have no visible line — just a slight shadow where
+    # the edge catches less light. Varies along the fracture.
     if np.any(removed) and np.any(keep_mask):
         dist_to_removed2 = ndimage.distance_transform_edt(~removed)
-        shadow = keep_mask & (dist_to_removed2 > 0) & (dist_to_removed2 <= 2.0)
+        shadow = keep_mask & (dist_to_removed2 > 0) & (dist_to_removed2 <= 1.5)
         if np.any(shadow):
-            img_array[shadow] *= 0.5
+            # Vary opacity along the edge (some parts darker, some barely visible)
+            shadow_noise = np.random.uniform(0.85, 0.97, size=np.sum(shadow)).astype(np.float32)
+            img_array[shadow] *= shadow_noise[:, np.newaxis]
 
     # Step 7: Composite — include kept fragment (and dentine fill where visible)
     visible_mask = keep_mask.copy()
