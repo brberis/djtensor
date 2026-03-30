@@ -772,41 +772,60 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
     return fracture_mask, effective_edge_params
 
 
-def _compute_dentine_color(img_array, tooth_mask, keep_mask=None):
+def _compute_dentine_color(img_array, tooth_mask, keep_mask=None, edge_params=None):
     """
-    Compute dentine color by sampling the ROOT area of the tooth.
+    Compute dentine base color using one of two modes (from edge_params):
 
-    Fossil teeth have mineralized dentine that matches the root color,
-    not fresh beige. The root is typically at the top of the image
-    (opposite the tip/apex). We sample from the upper portion of the
-    tooth to get the natural root/dentine color.
+    1. "manual" — use dentine_color_min/max RGB range from the profile.
+       A random color within the range is picked.
+    2. "auto" (default) — sample the darker side of the tooth surface
+       and lighten by dentine_clarity_pct (0-100%). This matches the
+       tooth's own coloring automatically.
+
+    The returned base color is then used with the existing multi-scale
+    texture system (grain, patches, color variation) which stays unchanged.
     """
+    if edge_params is None:
+        edge_params = {}
+
+    dentine_mode = edge_params.get('dentine_color_mode', 'auto')
+
+    if dentine_mode == 'manual':
+        # Manual RGB range from profile
+        color_min = np.array(edge_params.get('dentine_color_min', [140, 130, 110]), dtype=np.float32)
+        color_max = np.array(edge_params.get('dentine_color_max', [200, 190, 170]), dtype=np.float32)
+        base = np.array([
+            np.random.uniform(color_min[0], color_max[0]),
+            np.random.uniform(color_min[1], color_max[1]),
+            np.random.uniform(color_min[2], color_max[2]),
+        ], dtype=np.float32)
+        variation = np.random.uniform(-5, 5, 3)
+        return np.clip(base + variation, 0, 255).astype(np.float32)
+
+    # Auto mode: sample the darker areas of the tooth + clarity boost
+    clarity_pct = edge_params.get('dentine_clarity_pct', 15)  # % to lighten
+
     h, w = tooth_mask.shape
-    tooth_rows = np.where(np.any(tooth_mask, axis=1))[0]
-    if len(tooth_rows) == 0:
+    tooth_pixels = img_array[tooth_mask.astype(bool)]
+    if len(tooth_pixels) == 0:
         return np.array([180, 170, 155], dtype=np.float32)
 
-    rmin, rmax = tooth_rows[0], tooth_rows[-1]
-    tooth_height = rmax - rmin
+    # Compute per-pixel brightness and find the darker 30%
+    brightness = np.mean(tooth_pixels, axis=1)
+    dark_threshold = np.percentile(brightness, 30)
+    dark_mask_idx = brightness <= dark_threshold
 
-    # Sample from the top 25% of the tooth (root area)
-    root_top = rmin
-    root_bottom = rmin + int(tooth_height * 0.25)
-
-    root_zone = np.zeros_like(tooth_mask, dtype=bool)
-    root_zone[root_top:root_bottom, :] = True
-    root_pixels_mask = tooth_mask.astype(bool) & root_zone
-
-    if np.sum(root_pixels_mask) > 20:
-        root_color = np.median(img_array[root_pixels_mask], axis=0)
+    if np.sum(dark_mask_idx) > 10:
+        dark_color = np.median(tooth_pixels[dark_mask_idx], axis=0)
     else:
-        # Fallback: use overall tooth color with slight lightening
-        tooth_pixels = img_array[tooth_mask.astype(bool)]
-        root_color = np.median(tooth_pixels, axis=0) if len(tooth_pixels) > 0 else np.array([180, 170, 155])
+        dark_color = np.median(tooth_pixels, axis=0)
 
-    # Small random variation so each fragment is slightly different
+    # Lighten by clarity percentage: move toward white by that %
+    clarity_factor = clarity_pct / 100.0
+    base = dark_color + (255.0 - dark_color) * clarity_factor
+
     variation = np.random.uniform(-8, 8, 3)
-    return np.clip(root_color + variation, 0, 255).astype(np.float32)
+    return np.clip(base + variation, 0, 255).astype(np.float32)
 
 
 def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
@@ -850,7 +869,7 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
     dentine_range = edge_params.get('dentine_range', (0.0, 1.0))
 
     # Step 3: Compute dentine color (lighter than tooth surface)
-    dentine_base = _compute_dentine_color(img_array, tooth_mask, keep_mask)
+    dentine_base = _compute_dentine_color(img_array, tooth_mask, keep_mask, edge_params)
 
     removed = tooth_mask.astype(bool) & ~keep_mask
     edge_width = edge_params.get('edge_3d_width', 20)
@@ -901,34 +920,52 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
             dentine_zone = removed & (dist_from_kept <= effective_fill) & dentine_spatial
 
             if np.any(dentine_zone):
-                grain_fine = np.random.randn(h, w).astype(np.float32) * 6
-                grain_fine = ndimage.gaussian_filter(grain_fine, sigma=1.5)
-
-                patches = np.random.randn(h, w).astype(np.float32) * 12
-                patches = ndimage.gaussian_filter(patches, sigma=6)
-
-                color_var_r = np.random.randn(h, w).astype(np.float32) * 8
-                color_var_r = ndimage.gaussian_filter(color_var_r, sigma=10)
-                color_var_g = np.random.randn(h, w).astype(np.float32) * 6
-                color_var_g = ndimage.gaussian_filter(color_var_g, sigma=10)
-
-                blend = np.zeros((h, w), dtype=np.float32)
-                blend[dentine_zone] = 1.0 - np.clip(
+                # Normalized distance: 0 at fracture edge, 1 at outer boundary
+                normalized_dist = np.zeros((h, w), dtype=np.float32)
+                normalized_dist[dentine_zone] = np.clip(
                     dist_from_kept[dentine_zone] / np.maximum(effective_fill[dentine_zone], 1),
                     0, 1
-                ) ** 0.6
+                )
 
+                # Sharp rock/mineral texture — low sigma for crisp detail
+                # Coarse: irregular mineral patches
+                rock_coarse = np.random.randn(h, w).astype(np.float32) * 15
+                rock_coarse = ndimage.gaussian_filter(rock_coarse, sigma=3)
+
+                # Fine grain: pixel-level surface roughness (barely smoothed)
+                rock_fine = np.random.randn(h, w).astype(np.float32) * 8
+                rock_fine = ndimage.gaussian_filter(rock_fine, sigma=0.5)
+
+                # Mineral streaks (sharp, elongated)
+                streaks = np.random.randn(h, w).astype(np.float32) * 7
+                streaks = ndimage.gaussian_filter(streaks, sigma=[0.5, 5])
+
+                # Per-channel color zones (warm/cool areas)
+                color_var = np.zeros((h, w, 3), dtype=np.float32)
+                for ci in range(3):
+                    cv = np.random.randn(h, w).astype(np.float32) * 8
+                    cv = ndimage.gaussian_filter(cv, sigma=5)
+                    color_var[:, :, ci] = cv
+
+                # Edge color: darker variant (mineralized surface)
+                edge_darken = edge_params.get('dentine_edge_darken_pct', 20) / 100.0
+                dentine_edge = dentine_base * (1.0 - edge_darken)
+
+                # Color transition base → edge with irregular boundary
+                transition_noise = np.random.randn(h, w).astype(np.float32) * 0.12
+                transition_noise = ndimage.gaussian_filter(transition_noise, sigma=4)
+                color_t = np.clip(normalized_dist + transition_noise, 0, 1)
+
+                combined_texture = rock_coarse + rock_fine + streaks
                 dentine_fill = np.zeros_like(img_array)
-                dentine_fill[:, :, 0] = dentine_base[0] + grain_fine + patches + color_var_r
-                dentine_fill[:, :, 1] = dentine_base[1] + grain_fine + patches + color_var_g
-                dentine_fill[:, :, 2] = dentine_base[2] + grain_fine + patches * 0.7
+                for ci in range(3):
+                    base_val = dentine_base[ci] + combined_texture + color_var[:, :, ci]
+                    edge_val = dentine_edge[ci] + combined_texture * 0.7 + color_var[:, :, ci] * 0.6
+                    dentine_fill[:, :, ci] = base_val * (1 - color_t) + edge_val * color_t
                 dentine_fill = np.clip(dentine_fill, 0, 255)
 
-                bg_color = np.full_like(img_array, background_color, dtype=np.float32)
-                img_array[dentine_zone] = (
-                    dentine_fill[dentine_zone] * blend[dentine_zone, np.newaxis] +
-                    bg_color[dentine_zone] * (1 - blend[dentine_zone, np.newaxis])
-                )
+                # Fully opaque — hard edge, no anti-alias fade
+                img_array[dentine_zone] = dentine_fill[dentine_zone]
 
         # Step 5: Also paint dentine on the KEPT side (inner surface near fracture)
         if np.any(removed) and np.any(keep_mask):

@@ -1325,7 +1325,7 @@ export default function DatasetDetail() {
                                   <div className="mt-2">
                                     <p className="text-xs font-semibold text-gray-600 mb-1.5">Fracture Types (probability weights)</p>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                                      {['root_loss', 'tip_loss', 'lateral_break', 'edge_chip', 'diagonal_snap'].map(type => (
+                                      {['root_loss', 'tip_loss', 'lateral_break', 'edge_chip', 'diagonal_snap', 'transverse_snap', 'oblique_front'].map(type => (
                                         <div key={type} className="flex items-center gap-2">
                                           <label className="text-xs text-gray-600 w-24 truncate" title={type}>{type.replace('_', ' ')}</label>
                                           <input
@@ -1364,6 +1364,86 @@ export default function DatasetDetail() {
                                         </div>
                                       ))}
                                     </div>
+                                  </div>
+                                  <div className="mt-3">
+                                    <p className="text-xs font-semibold text-gray-600 mb-1.5">Dentine Color</p>
+                                    <div className="flex items-center gap-3 mb-2">
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`dentine_mode_${speciesName}`}
+                                          checked={(edgeParams.dentine_color_mode || 'auto') === 'auto'}
+                                          onChange={() => updateOverride('edge_params', 'dentine_color_mode', 'auto')}
+                                          className="text-blue-600 focus:ring-blue-600"
+                                        />
+                                        <span className="text-xs text-gray-600">Auto-match tooth</span>
+                                      </label>
+                                      <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                          type="radio"
+                                          name={`dentine_mode_${speciesName}`}
+                                          checked={edgeParams.dentine_color_mode === 'manual'}
+                                          onChange={() => updateOverride('edge_params', 'dentine_color_mode', 'manual')}
+                                          className="text-blue-600 focus:ring-blue-600"
+                                        />
+                                        <span className="text-xs text-gray-600">Manual range</span>
+                                      </label>
+                                    </div>
+                                    {(edgeParams.dentine_color_mode || 'auto') === 'auto' ? (
+                                      <div className="flex items-center gap-2">
+                                        <label className="text-xs text-gray-600 w-24">Clarity boost %</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="5"
+                                          value={edgeParams.dentine_clarity_pct ?? 15}
+                                          onChange={(e) => updateOverride('edge_params', 'dentine_clarity_pct', parseInt(e.target.value) || 0)}
+                                          className="w-16 text-xs rounded border-gray-300 px-1.5 py-0.5"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                          <label className="text-xs text-gray-600 w-16">Min color</label>
+                                          <input
+                                            type="color"
+                                            value={(() => {
+                                              const c = edgeParams.dentine_color_min || [140, 130, 110];
+                                              return `#${c.map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('')}`;
+                                            })()}
+                                            onChange={(e) => {
+                                              const hex = e.target.value;
+                                              const rgb = [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+                                              updateOverride('edge_params', 'dentine_color_min', rgb);
+                                            }}
+                                            className="w-8 h-6 rounded border border-gray-300 cursor-pointer"
+                                          />
+                                          <span className="text-[10px] text-gray-400">
+                                            {(edgeParams.dentine_color_min || [140,130,110]).join(', ')}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <label className="text-xs text-gray-600 w-16">Max color</label>
+                                          <input
+                                            type="color"
+                                            value={(() => {
+                                              const c = edgeParams.dentine_color_max || [200, 190, 170];
+                                              return `#${c.map(v => Math.min(255, Math.max(0, v)).toString(16).padStart(2, '0')).join('')}`;
+                                            })()}
+                                            onChange={(e) => {
+                                              const hex = e.target.value;
+                                              const rgb = [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+                                              updateOverride('edge_params', 'dentine_color_max', rgb);
+                                            }}
+                                            className="w-8 h-6 rounded border border-gray-300 cursor-pointer"
+                                          />
+                                          <span className="text-[10px] text-gray-400">
+                                            {(edgeParams.dentine_color_max || [200,190,170]).join(', ')}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                   {isCustomized && (
                                     <button

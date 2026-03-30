@@ -13,7 +13,12 @@
     "roughness": "Overall jaggedness of fracture edge (0.0=smooth, 1.0=very jagged)",
     "micro_roughness": "Fine-scale jaggedness for enameloid texture (0.0-1.0)",
     "curvature": "How much the fracture follows the tooth's natural curvature (0.0=straight, 1.0=follows contour)",
-    "edge_3d_width": "Width in pixels of the 3D cross-section effect at the fracture edge"
+    "edge_3d_width": "Width in pixels of the 3D cross-section effect at the fracture edge",
+    "dentine_color_mode": "'auto' (sample darker tooth area + lighten) or 'manual' (use dentine_color_min/max)",
+    "dentine_clarity_pct": "Auto mode: % to lighten from the darker tooth surface (0=same as dark side, 100=white)",
+    "dentine_color_min": "Manual mode: [R,G,B] minimum of the dentine color range",
+    "dentine_color_max": "Manual mode: [R,G,B] maximum of the dentine color range",
+    "dentine_edge_darken_pct": "% to darken the dentine at the outer edge (0=same, 50=half brightness). Simulates mineralized fossil edge."
   },
   "default": {
     "fracture_types": {
@@ -29,7 +34,9 @@
       "roughness": 0.35,
       "micro_roughness": 0.2,
       "curvature": 0.3,
-      "edge_3d_width": 20
+      "edge_3d_width": 20,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 15
     }
   },
   "Otodus Megalodon": {
@@ -46,7 +53,9 @@
       "roughness": 0.4,
       "micro_roughness": 0.25,
       "curvature": 0.4,
-      "edge_3d_width": 25
+      "edge_3d_width": 25,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 20
     },
     "_notes": "Large triangular teeth. Thick enameloid produces angular, conchoidal fractures. Root-crown junction is the primary weak point. Bourlette area is vulnerable. Thick cross-section means transverse/oblique breaks expose prominent dentine."
   },
@@ -64,7 +73,9 @@
       "roughness": 0.35,
       "micro_roughness": 0.2,
       "curvature": 0.3,
-      "edge_3d_width": 20
+      "edge_3d_width": 20,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 18
     },
     "_notes": "Similar to megalodon but thinner crown. More prone to tip loss. Enameloid is thinner so fractures are sharper. Oblique front breaks expose thin but visible dentine layer."
   },
@@ -82,7 +93,9 @@
       "roughness": 0.3,
       "micro_roughness": 0.2,
       "curvature": 0.5,
-      "edge_3d_width": 18
+      "edge_3d_width": 18,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 12
     },
     "_notes": "Distinctive curved blade with large serrations. Curved shape makes lateral breaks common. Transverse breaks across the curved blade expose wide dentine bands."
   },
@@ -100,7 +113,9 @@
       "roughness": 0.3,
       "micro_roughness": 0.2,
       "curvature": 0.4,
-      "edge_3d_width": 18
+      "edge_3d_width": 18,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 12
     },
     "_notes": "Cockscomb/notched shape. Distal notch is a stress concentrator. Wide flat crown means transverse breaks produce broad dentine exposure."
   },
@@ -118,7 +133,9 @@
       "roughness": 0.4,
       "micro_roughness": 0.3,
       "curvature": 0.2,
-      "edge_3d_width": 18
+      "edge_3d_width": 18,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 15
     },
     "_notes": "Small narrow triangular teeth. Narrow tip is most fragile. Oblique front fractures on thin crown expose proportionally more dentine."
   },
@@ -136,7 +153,9 @@
       "roughness": 0.3,
       "micro_roughness": 0.3,
       "curvature": 0.2,
-      "edge_3d_width": 15
+      "edge_3d_width": 15,
+      "dentine_color_mode": "auto",
+      "dentine_clarity_pct": 10
     },
     "_notes": "Thin, narrow, smooth-edged teeth. No serrations so no edge chipping. Clean diagonal and transverse snaps are common. Thin cross-section limits dentine exposure."
   }
