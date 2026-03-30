@@ -287,12 +287,32 @@ class ImageViewSet(viewsets.ModelViewSet):
                 profile_override = overrides[label_name]
 
         try:
-            result_img, actual_compl = generate_synthetic_fragment(
-                src.image.path,
-                target_completeness=target,
-                species=label_name,
-                profile_override=profile_override,
-            )
+            # Derive acceptable range from the dataset's generation config
+            bins = []
+            if image.dataset and image.dataset.generation_config:
+                bins = image.dataset.generation_config.get('completeness_bins', [])
+            absolute_min = (min(bins) - 0.10) if bins else 0.10
+            min_acceptable = max(target - 0.20, absolute_min, 0.10)
+            max_acceptable = min(target + 0.15, 0.98)  # never 100% for fragments
+            max_attempts = 10
+
+            result_img = None
+            actual_compl = None
+            for attempt in range(max_attempts):
+                result_img, actual_compl = generate_synthetic_fragment(
+                    src.image.path,
+                    target_completeness=target,
+                    species=label_name,
+                    profile_override=profile_override,
+                )
+                if min_acceptable <= actual_compl <= max_acceptable:
+                    break
+
+            if actual_compl is None or actual_compl > max_acceptable or actual_compl < min_acceptable:
+                return Response(
+                    {'error': f'Could not generate within range after {max_attempts} attempts (got {actual_compl:.0%})'},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
 
             buf = io.BytesIO()
             result_img.save(buf, format='PNG')

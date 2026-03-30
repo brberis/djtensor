@@ -156,6 +156,13 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
 
     source = Dataset.objects.get(pk=source_dataset_id)
 
+    # Handle name collisions — append counter if name already exists
+    base_name = name
+    counter = 1
+    while Dataset.objects.filter(name=name).exists():
+        counter += 1
+        name = f"{base_name} ({counter})"
+
     # Determine transformation type from selected options
     has_augmentations = augmentations and any(augmentations.values())
     if has_augmentations:
@@ -197,8 +204,14 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
     source_areas = {}  # cache {image_id: tooth_area}
 
     total_generated = 0
-    # Absolute minimum: the lowest bin the user selected
-    absolute_min = min(completeness_bins) - 0.10
+    # Derive tolerance from bin spacing (half the gap between bins, min 0.10)
+    sorted_bins = sorted(completeness_bins)
+    if len(sorted_bins) > 1:
+        bin_gaps = [sorted_bins[i+1] - sorted_bins[i] for i in range(len(sorted_bins)-1)]
+        tolerance = max(min(bin_gaps) / 2, 0.10)
+    else:
+        tolerance = 0.15
+    absolute_min = max(sorted_bins[0] - tolerance, 0.05)
 
     for label in source.labels.all():
         source_images = list(Image.objects.filter(dataset=source, label=label))
@@ -214,8 +227,8 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
             generated = 0
             max_attempts = images_per_bin * 5  # retry budget
             attempts = 0
-            min_acceptable = max(target_compl - 0.20, absolute_min, 0.10)
-            max_acceptable = min(target_compl + 0.20, 1.0)
+            min_acceptable = max(target_compl - tolerance, absolute_min, 0.05)
+            max_acceptable = min(target_compl + tolerance, 0.98)  # never 100% for fragments
 
             while generated < images_per_bin and attempts < max_attempts:
                 attempts += 1
