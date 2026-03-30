@@ -90,11 +90,12 @@ def _otsu_threshold(arr):
 
 def segment_tooth(image_path, threshold=None):
     """
-    Segment tooth from background using adaptive thresholding.
+    Segment tooth from background using color distance + adaptive thresholding.
 
-    Uses Otsu's method to find the optimal threshold between tooth and
-    background, then determines which side is the tooth based on which
-    connected component is more centrally located.
+    For light backgrounds: uses Euclidean color distance from the sampled
+    background color in RGB space. Even very light tooth areas (white root,
+    cream-colored fossils) differ from pure white background in at least one
+    channel. Falls back to grayscale Otsu for dark backgrounds.
 
     Args:
         image_path: Path to the image file.
@@ -104,6 +105,7 @@ def segment_tooth(image_path, threshold=None):
         Binary numpy array (1 = tooth, 0 = background).
     """
     img = _open_as_rgb(image_path)
+    rgb = np.array(img, dtype=np.float32)
     arr = np.array(img.convert('L'))
     h, w = arr.shape
 
@@ -113,20 +115,18 @@ def segment_tooth(image_path, threshold=None):
         bg_type = _detect_background(arr)
 
         if bg_type == 'light':
-            # Light background: simple threshold works well
-            # Use Otsu but cap at 240 for white backgrounds
-            otsu = _otsu_threshold(arr)
-            thresh = min(otsu + 10, 240)
-            mask = arr < thresh
+            # White background: use max channel deviation from white.
+            # Any pixel where ANY channel differs from 255 by more than
+            # a small margin is not background. Fossil teeth — even very
+            # light cream/white roots — always have some color tint.
+            max_dev = np.max(255.0 - rgb, axis=2)
+            mask = max_dev > 6
         else:
-            # Dark or mixed background: use Otsu's method
+            # Dark or mixed background: use Otsu's method on grayscale
             otsu = _otsu_threshold(arr)
-            # Try both sides of the threshold, pick the one that's more
-            # centrally located (the tooth is usually centered)
-            mask_dark = arr < otsu   # assume tooth is dark
-            mask_light = arr >= otsu  # assume tooth is light
+            mask_dark = arr < otsu
+            mask_light = arr >= otsu
 
-            # The tooth should be the more central, connected object
             center_r, center_c = h // 2, w // 2
             margin = min(h, w) // 4
 
@@ -150,7 +150,7 @@ def segment_tooth(image_path, threshold=None):
 
     # Morphological cleanup: remove noise
     mask = ndimage.binary_opening(mask, iterations=2)
-    mask = ndimage.binary_closing(mask, iterations=2)
+    mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask.astype(np.uint8)
 
