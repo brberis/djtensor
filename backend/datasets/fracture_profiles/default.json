@@ -5,7 +5,9 @@
     "tip_loss": "Break losing the apex/tip of the crown",
     "lateral_break": "Diagonal/oblique break removing one side of the tooth",
     "edge_chip": "Chip along the blade edge or serration margin",
-    "diagonal_snap": "Oblique fracture across the crown at an angle"
+    "diagonal_snap": "Oblique fracture across the crown at an angle",
+    "transverse_snap": "Vertical/near-vertical break across the tooth, exposing wide dentine cross-section",
+    "oblique_front": "Steep angled fracture biased toward the labial face, exposing prominent dentine"
   },
   "_edge_params": {
     "roughness": "Overall jaggedness of fracture edge (0.0=smooth, 1.0=very jagged)",
@@ -15,11 +17,13 @@
   },
   "default": {
     "fracture_types": {
-      "root_loss": 0.30,
-      "tip_loss": 0.25,
-      "lateral_break": 0.20,
-      "edge_chip": 0.10,
-      "diagonal_snap": 0.15
+      "root_loss": 0.15,
+      "tip_loss": 0.10,
+      "lateral_break": 0.15,
+      "edge_chip": 0.05,
+      "diagonal_snap": 0.15,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.35,
@@ -30,11 +34,13 @@
   },
   "Otodus Megalodon": {
     "fracture_types": {
-      "root_loss": 0.35,
-      "tip_loss": 0.20,
-      "lateral_break": 0.15,
-      "edge_chip": 0.10,
-      "diagonal_snap": 0.20
+      "root_loss": 0.25,
+      "tip_loss": 0.15,
+      "lateral_break": 0.10,
+      "edge_chip": 0.05,
+      "diagonal_snap": 0.15,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.4,
@@ -42,15 +48,17 @@
       "curvature": 0.4,
       "edge_3d_width": 25
     },
-    "_notes": "Large triangular teeth. Thick enameloid produces angular, conchoidal fractures. Root-crown junction is the primary weak point. Bourlette (nutrient groove) area is structurally vulnerable. Serrations chip individually."
+    "_notes": "Large triangular teeth. Thick enameloid produces angular, conchoidal fractures. Root-crown junction is the primary weak point. Bourlette area is vulnerable. Thick cross-section means transverse/oblique breaks expose prominent dentine."
   },
   "Carcharodon Carcharias": {
     "fracture_types": {
-      "root_loss": 0.30,
-      "tip_loss": 0.25,
-      "lateral_break": 0.15,
-      "edge_chip": 0.15,
-      "diagonal_snap": 0.15
+      "root_loss": 0.20,
+      "tip_loss": 0.20,
+      "lateral_break": 0.10,
+      "edge_chip": 0.10,
+      "diagonal_snap": 0.15,
+      "transverse_snap": 0.10,
+      "oblique_front": 0.15
     },
     "edge_params": {
       "roughness": 0.35,
@@ -58,15 +66,17 @@
       "curvature": 0.3,
       "edge_3d_width": 20
     },
-    "_notes": "Similar to megalodon but thinner crown. More prone to tip loss due to narrow apex. Serrations are smaller and chip along the blade edge. Enameloid is thinner so fractures are sharper."
+    "_notes": "Similar to megalodon but thinner crown. More prone to tip loss. Enameloid is thinner so fractures are sharper. Oblique front breaks expose thin but visible dentine layer."
   },
   "Hemipristis Serra": {
     "fracture_types": {
-      "root_loss": 0.20,
-      "tip_loss": 0.15,
-      "lateral_break": 0.35,
-      "edge_chip": 0.15,
-      "diagonal_snap": 0.15
+      "root_loss": 0.15,
+      "tip_loss": 0.10,
+      "lateral_break": 0.25,
+      "edge_chip": 0.10,
+      "diagonal_snap": 0.10,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.3,
@@ -74,15 +84,17 @@
       "curvature": 0.5,
       "edge_3d_width": 18
     },
-    "_notes": "Distinctive curved blade with large serrations. The curved shape makes lateral breaks along the blade very common. Large serrations are individually fragile. Thinner crown means less conchoidal fracture."
+    "_notes": "Distinctive curved blade with large serrations. Curved shape makes lateral breaks common. Transverse breaks across the curved blade expose wide dentine bands."
   },
   "Galeocerdo Cuvier": {
     "fracture_types": {
-      "root_loss": 0.25,
-      "tip_loss": 0.25,
-      "lateral_break": 0.15,
-      "edge_chip": 0.20,
-      "diagonal_snap": 0.15
+      "root_loss": 0.20,
+      "tip_loss": 0.15,
+      "lateral_break": 0.10,
+      "edge_chip": 0.15,
+      "diagonal_snap": 0.10,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.3,
@@ -90,15 +102,17 @@
       "curvature": 0.4,
       "edge_3d_width": 18
     },
-    "_notes": "Cockscomb/notched shape. The distal notch is a natural stress concentrator. Tip is robust but the notch area and fine serrations along the distal edge are vulnerable. Broad root breaks cleanly."
+    "_notes": "Cockscomb/notched shape. Distal notch is a stress concentrator. Wide flat crown means transverse breaks produce broad dentine exposure."
   },
   "Carcharhinus Leucas": {
     "fracture_types": {
-      "root_loss": 0.25,
-      "tip_loss": 0.35,
-      "lateral_break": 0.15,
-      "edge_chip": 0.10,
-      "diagonal_snap": 0.15
+      "root_loss": 0.20,
+      "tip_loss": 0.25,
+      "lateral_break": 0.10,
+      "edge_chip": 0.05,
+      "diagonal_snap": 0.10,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.4,
@@ -106,15 +120,17 @@
       "curvature": 0.2,
       "edge_3d_width": 18
     },
-    "_notes": "Small narrow triangular teeth. Very narrow tip is the most fragile point. Root lobes are thin and break easily. Less serration so fewer edge chips. Fractures tend to be cleaner due to smaller size."
+    "_notes": "Small narrow triangular teeth. Narrow tip is most fragile. Oblique front fractures on thin crown expose proportionally more dentine."
   },
   "Negaprion Brevirostris": {
     "fracture_types": {
-      "root_loss": 0.30,
-      "tip_loss": 0.35,
-      "lateral_break": 0.10,
+      "root_loss": 0.20,
+      "tip_loss": 0.25,
+      "lateral_break": 0.05,
       "edge_chip": 0.05,
-      "diagonal_snap": 0.20
+      "diagonal_snap": 0.15,
+      "transverse_snap": 0.20,
+      "oblique_front": 0.20
     },
     "edge_params": {
       "roughness": 0.3,
@@ -122,6 +138,6 @@
       "curvature": 0.2,
       "edge_3d_width": 15
     },
-    "_notes": "Thin, narrow, smooth-edged teeth (no serrations). Extremely prone to tip breakage. Root is relatively large compared to crown. No serrations means virtually no edge chipping. Clean diagonal snaps are common."
+    "_notes": "Thin, narrow, smooth-edged teeth. No serrations so no edge chipping. Clean diagonal and transverse snaps are common. Thin cross-section limits dentine exposure."
   }
 }

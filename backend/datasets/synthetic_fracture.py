@@ -439,12 +439,117 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
         return _rasterize_fracture_line(points, mask.shape, keep_side='below')
 
 
+def _fracture_transverse_snap(mask, fraction, edge_params):
+    """
+    Vertical/near-vertical fracture across the tooth (transverse break).
+
+    Cuts roughly perpendicular to the long axis, like a tooth snapped
+    in half. Exposes a wide cross-section of dentine because the break
+    goes through the thickest part of the tooth.
+    """
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    h, w = mask.shape
+    height = rmax - rmin
+    width = cmax - cmin
+
+    # Vertical cut position: remove fraction from one side
+    remove_left = np.random.random() < 0.5
+    cut_frac = fraction if remove_left else (1.0 - fraction)
+    cut_col = int(cmin + width * cut_frac)
+
+    # Near-vertical angle: small tilt (0-15 degrees)
+    angle = np.random.uniform(-0.12, 0.12)
+
+    n_points = max(height + 20, 50)
+    base_rows = np.linspace(rmin - 10, rmax + 10, n_points)
+    base_cols = np.full(n_points, float(cut_col))
+
+    for i, r in enumerate(base_rows):
+        t = (r - rmin) / max(height, 1)
+        base_cols[i] += angle * height * (t - 0.5)
+
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6),
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+    fracture_cols = base_cols + noise
+
+    points = np.stack([base_rows, fracture_cols], axis=1)
+    keep_side = 'left' if remove_left else 'right'
+    return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
+
+
+def _fracture_oblique_front(mask, fraction, edge_params):
+    """
+    Oblique fracture biased toward the front (labial) face of the tooth.
+
+    The cut angle is steep (55-80 degrees from horizontal), exposing a
+    wide band of dentine on the front-facing side. This is common in
+    real fossils where the enameloid/labial face shears off.
+    """
+    rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
+    h, w = mask.shape
+    height = rmax - rmin
+    width = cmax - cmin
+
+    # Steep angle (55-80 degrees) — more vertical than diagonal_snap
+    angle_deg = np.random.uniform(55, 80) * np.random.choice([-1, 1])
+    angle_rad = np.radians(angle_deg)
+
+    # Fracture center biased toward front (left or right side)
+    front_side = np.random.choice(['left', 'right'])
+    if front_side == 'left':
+        center_col = cmin + width * np.random.uniform(0.2, 0.4)
+    else:
+        center_col = cmin + width * np.random.uniform(0.6, 0.8)
+
+    center_row = rmin + height * np.random.uniform(0.3, 0.7)
+
+    half_diag = max(height, width)
+    start = (center_row - half_diag * np.sin(angle_rad),
+             center_col - half_diag * np.cos(angle_rad))
+    end = (center_row + half_diag * np.sin(angle_rad),
+           center_col + half_diag * np.cos(angle_rad))
+
+    n_points = max(int(2 * half_diag), 80)
+    t = np.linspace(0, 1, n_points)
+    base_rows = start[0] + t * (end[0] - start[0])
+    base_cols = start[1] + t * (end[1] - start[1])
+
+    noise = _generate_fracture_noise(
+        n_points,
+        roughness=edge_params.get('roughness', 0.6) * 1.2,
+        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    )
+
+    perp_row = -np.cos(angle_rad)
+    perp_col = np.sin(angle_rad)
+    fracture_rows = base_rows + noise * perp_row
+    fracture_cols = base_cols + noise * perp_col
+
+    points = np.stack([fracture_rows, fracture_cols], axis=1)
+
+    # Keep the side that's closer to target completeness
+    test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
+    keep_above = np.sum(mask & test_mask)
+    keep_below = np.sum(mask & ~test_mask)
+    target_area = compute_tooth_area(mask) * (1.0 - fraction)
+
+    if abs(keep_above - target_area) < abs(keep_below - target_area):
+        return _rasterize_fracture_line(points, mask.shape, keep_side='above')
+    else:
+        return _rasterize_fracture_line(points, mask.shape, keep_side='below')
+
+
 FRACTURE_FUNCTIONS = {
     'root_loss': _fracture_root_loss,
     'tip_loss': _fracture_tip_loss,
     'lateral_break': _fracture_lateral_break,
-    'edge_chip': _fracture_tip_loss,  # edge_chip redirects to tip_loss (chips create impossible holes)
+    'edge_chip': _fracture_tip_loss,
     'diagonal_snap': _fracture_diagonal_snap,
+    'transverse_snap': _fracture_transverse_snap,
+    'oblique_front': _fracture_oblique_front,
 }
 
 
@@ -570,8 +675,11 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
         Binary fracture mask (1 = keep, 0 = remove).
     """
     if species_weights is None:
-        species_weights = {'root_loss': 0.3, 'tip_loss': 0.25, 'lateral_break': 0.2,
-                           'edge_chip': 0.1, 'diagonal_snap': 0.15}
+        species_weights = {
+            'root_loss': 0.15, 'tip_loss': 0.10, 'lateral_break': 0.15,
+            'edge_chip': 0.05, 'diagonal_snap': 0.15,
+            'transverse_snap': 0.20, 'oblique_front': 0.20,
+        }
     if edge_params is None:
         edge_params = {'roughness': 0.6, 'micro_roughness': 0.4, 'curvature': 0.3,
                        'edge_3d_width': 4}
@@ -584,11 +692,24 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
     probs = probs / probs.sum()
     fracture_type = np.random.choice(types, p=probs)
 
+    # Vary dentine exposure by fracture type: transverse/oblique cuts through
+    # the thickest part of the tooth expose more internal structure
+    dentine_width_multiplier = {
+        'transverse_snap': 2.5,
+        'oblique_front': 2.0,
+        'lateral_break': 1.5,
+        'diagonal_snap': 1.3,
+    }
+    effective_edge_params = dict(edge_params)  # copy to avoid mutating original
+    if fracture_type in dentine_width_multiplier:
+        base_width = effective_edge_params.get('edge_3d_width', 20)
+        effective_edge_params['edge_3d_width'] = int(base_width * dentine_width_multiplier[fracture_type])
+
     fraction_to_remove = 1.0 - target_completeness
 
     func = FRACTURE_FUNCTIONS.get(fracture_type, _fracture_tip_loss)
-    fracture_mask = func(mask, fraction_to_remove, edge_params)
-    return fracture_mask
+    fracture_mask = func(mask, fraction_to_remove, effective_edge_params)
+    return fracture_mask, effective_edge_params
 
 
 def _compute_dentine_color(img_array, tooth_mask, keep_mask=None):
@@ -803,7 +924,7 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
         if 'edge_params' in profile_override:
             profile['edge_params'] = {**profile['edge_params'], **profile_override['edge_params']}
 
-    fracture_mask = generate_fracture_mask(
+    fracture_mask, effective_edge_params = generate_fracture_mask(
         tooth_mask, target_completeness,
         species_weights=profile['fracture_types'],
         edge_params=profile['edge_params'],
@@ -811,7 +932,7 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
 
     result_img = apply_fracture(
         image_path, tooth_mask, fracture_mask,
-        edge_params=profile['edge_params'],
+        edge_params=effective_edge_params,
     )
 
     # Compute actual completeness (using cleaned mask — largest fragment only)
