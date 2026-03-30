@@ -1224,7 +1224,7 @@ export default function DatasetDetail() {
                   <button
                     type="button"
                     onClick={() => setShowParamHelp(!showParamHelp)}
-                    className="rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold text-gray-400 ring-1 ring-gray-300 hover:bg-gray-100 hover:text-gray-600"
+                    className="rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold text-blue-600 bg-blue-100 hover:bg-blue-200"
                     title="Parameter help"
                   >?</button>
                 </div>
@@ -1232,21 +1232,21 @@ export default function DatasetDetail() {
                 {showParamHelp && (
                   <div className="mt-3 rounded-lg bg-blue-50 ring-1 ring-blue-200 p-4 text-xs text-gray-700 space-y-2 max-h-64 overflow-y-auto">
                     <p className="font-semibold text-blue-800 text-sm mb-2">Parameter Reference</p>
-                    <p><strong>Completeness Bins</strong> — Target % of tooth remaining. Select multiple to generate at each level.</p>
-                    <p><strong>Images per Species per Bin</strong> — Number of fragments per species per bin.</p>
+                    <p><strong>Completeness Bins</strong>: Target % of tooth remaining. Select multiple to generate at each level.</p>
+                    <p><strong>Images per Species per Bin</strong>: Number of fragments per species per bin.</p>
                     <p className="font-semibold text-blue-800 mt-3">Fracture Types (probability weights):</p>
-                    <p><strong>root loss</strong> — break at root/base. <strong>tip loss</strong> — break at crown apex. <strong>lateral break</strong> — diagonal cut removing one side.</p>
-                    <p><strong>edge chip</strong> — small serration chip. <strong>diagonal snap</strong> — 25-55 degree oblique cut. <strong>transverse snap</strong> — near-vertical break with wide dentine.</p>
-                    <p><strong>oblique front</strong> — steep 55-80 degree cut on the labial face. Weights are relative, do not need to sum to 1.</p>
+                    <p><strong>root loss</strong>: break at root/base. <strong>tip loss</strong>: break at crown apex. <strong>lateral break</strong>: diagonal cut removing one side.</p>
+                    <p><strong>edge chip</strong>: small serration chip. <strong>diagonal snap</strong>: 25-55 degree oblique cut. <strong>transverse snap</strong>: near-vertical break with wide dentine.</p>
+                    <p><strong>oblique front</strong>: steep 55-80 degree cut on the labial face. Weights are relative, do not need to sum to 1.</p>
                     <p className="font-semibold text-blue-800 mt-3">Edge Parameters:</p>
-                    <p><strong>Roughness</strong> — Irregularity of fracture line (0=smooth, 1=very jagged).</p>
-                    <p><strong>Micro roughness</strong> — Fine pixel-level surface detail.</p>
-                    <p><strong>Curvature</strong> — How much the fracture follows the tooth contour (0=straight, 1=follows shape).</p>
-                    <p><strong>3D edge (px)</strong> — Base width of exposed dentine in pixels (multiplied by fracture type: transverse 2.5x, oblique 2x, lateral 1.5x).</p>
+                    <p><strong>Roughness</strong>: Irregularity of fracture line (0=smooth, 1=very jagged).</p>
+                    <p><strong>Micro roughness</strong>: Fine pixel-level surface detail.</p>
+                    <p><strong>Curvature</strong>: How much the fracture follows the tooth contour (0=straight, 1=follows shape).</p>
+                    <p><strong>3D edge (px)</strong>: Base width of exposed dentine in pixels (multiplied by fracture type: transverse 2.5x, oblique 2x, lateral 1.5x).</p>
                     <p className="font-semibold text-blue-800 mt-3">Dentine Color:</p>
-                    <p><strong>Auto-match</strong> — Samples the darkest 30% of the tooth and lightens by Clarity %. Matches each tooth color automatically.</p>
-                    <p><strong>Manual range</strong> — Pick min/max colors; random color per fragment within that range.</p>
-                    <p><strong>Clarity boost %</strong> — Lightening from dark sample (0=same as dark, 100=white).</p>
+                    <p><strong>Auto-match</strong>: Samples the darkest 30% of the tooth and lightens by Clarity %. Matches each tooth color automatically.</p>
+                    <p><strong>Manual range</strong>: Pick min/max colors; random color per fragment within that range.</p>
+                    <p><strong>Clarity boost %</strong>: Lightening from dark sample (0=same as dark, 100=white).</p>
                   </div>
                 )}
 

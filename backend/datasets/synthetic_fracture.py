@@ -278,19 +278,21 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
     current = start.copy()
     remaining_dist = total_dist
 
+    min_seg_dist = max(total_dist * 0.08, 15)  # minimum segment length
+
     for i in range(n_turns):
-        if remaining_dist < 10:
+        if remaining_dist < min_seg_dist:
             break
-        # This segment covers a random fraction of remaining distance
-        seg_frac = np.random.uniform(0.15, 0.45)
-        seg_dist = remaining_dist * seg_frac
+        # This segment covers 20-40% of remaining distance
+        seg_frac = np.random.uniform(0.20, 0.40)
+        seg_dist = max(remaining_dist * seg_frac, min_seg_dist)
 
         # Direction: starts pointing toward end, but changes angle
         to_end = end - current
         base_angle = np.arctan2(to_end[0], to_end[1])
 
-        # Random angle deviation
-        angle_change = np.random.uniform(min_angle_change, max_angle_change)
+        # Minimum 25 degrees so turns are always visible
+        angle_change = np.random.uniform(max(min_angle_change, 25), max_angle_change)
         angle_change = np.radians(angle_change) * np.random.choice([-1, 1])
         new_angle = base_angle + angle_change
 
@@ -1040,18 +1042,40 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
                     0, 1
                 )
 
-                # Sharp rock/mineral texture — low sigma for crisp detail
-                # Coarse: irregular mineral patches
-                rock_coarse = np.random.randn(h, w).astype(np.float32) * 15
-                rock_coarse = ndimage.gaussian_filter(rock_coarse, sigma=3)
+                # Heavy rock/mineral texture — thick grain like broken stone
+                # Coarse chunks: large irregular brightness patches
+                rock_coarse = np.random.randn(h, w).astype(np.float32) * 22
+                rock_coarse = ndimage.gaussian_filter(rock_coarse, sigma=2)
 
-                # Fine grain: pixel-level surface roughness (barely smoothed)
-                rock_fine = np.random.randn(h, w).astype(np.float32) * 8
-                rock_fine = ndimage.gaussian_filter(rock_fine, sigma=0.5)
+                # Thick grain: visible granular surface
+                rock_grain = np.random.randn(h, w).astype(np.float32) * 14
+                # Barely smoothed — keep individual grain visible
+                rock_grain = ndimage.gaussian_filter(rock_grain, sigma=0.7)
+
+                # Break sections / cracks within the dentine
+                # Random dark lines simulating internal fracture planes
+                cracks = np.zeros((h, w), dtype=np.float32)
+                n_cracks = np.random.randint(2, 6)
+                for _ in range(n_cracks):
+                    # Random thin dark line across the dentine zone
+                    crack_r = np.random.randint(0, h)
+                    crack_c = np.random.randint(0, w)
+                    crack_angle = np.random.uniform(0, np.pi)
+                    crack_len = np.random.randint(10, max(30, min(h, w) // 4))
+                    crack_width = np.random.uniform(0.8, 2.0)
+                    for t in np.linspace(0, 1, crack_len * 2):
+                        cr = int(crack_r + t * crack_len * np.sin(crack_angle))
+                        cc = int(crack_c + t * crack_len * np.cos(crack_angle))
+                        if 0 <= cr < h and 0 <= cc < w:
+                            r_s = max(0, cr - 1)
+                            r_e = min(h, cr + 2)
+                            c_s = max(0, cc - 1)
+                            c_e = min(w, cc + 2)
+                            cracks[r_s:r_e, c_s:c_e] = -np.random.uniform(15, 30)
 
                 # Mineral streaks (sharp, elongated)
-                streaks = np.random.randn(h, w).astype(np.float32) * 7
-                streaks = ndimage.gaussian_filter(streaks, sigma=[0.5, 5])
+                streaks = np.random.randn(h, w).astype(np.float32) * 10
+                streaks = ndimage.gaussian_filter(streaks, sigma=[0.5, 4])
 
                 # Per-channel color zones (warm/cool areas)
                 color_var = np.zeros((h, w, 3), dtype=np.float32)
@@ -1069,7 +1093,7 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
                 transition_noise = ndimage.gaussian_filter(transition_noise, sigma=4)
                 color_t = np.clip(normalized_dist + transition_noise, 0, 1)
 
-                combined_texture = rock_coarse + rock_fine + streaks
+                combined_texture = rock_coarse + rock_grain + streaks + cracks
                 dentine_fill = np.zeros_like(img_array)
                 for ci in range(3):
                     base_val = dentine_base[ci] + combined_texture + color_var[:, :, ci]
