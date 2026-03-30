@@ -342,7 +342,11 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
 
 def _rasterize_fracture_line(points, mask_shape, keep_side='above'):
     """
-    Rasterize a fracture line into a binary mask.
+    Rasterize a fracture line into a binary mask using polygon fill.
+
+    Builds a closed polygon from the fracture line + the image edge on the
+    REMOVE side, then fills it. This handles non-monotonic paths correctly
+    (no striping artifacts from doubled-back fracture lines).
 
     Args:
         points: Nx2 array of (row, col) points defining the fracture line.
@@ -352,69 +356,48 @@ def _rasterize_fracture_line(points, mask_shape, keep_side='above'):
     Returns:
         Binary mask (1 = keep, 0 = remove).
     """
+    from PIL import Image as PILImage, ImageDraw
+
     h, w = mask_shape
-    fracture = np.ones((h, w), dtype=np.uint8)
-
     if len(points) < 2:
-        return fracture
+        return np.ones((h, w), dtype=np.uint8)
 
-    if keep_side in ('above', 'below'):
-        # For each column in the fracture line, find the row threshold
-        # Interpolate the fracture line to cover all columns
-        cols = points[:, 1]
-        rows = points[:, 0]
+    # Clip points to image bounds
+    pts = points.copy()
+    pts[:, 0] = np.clip(pts[:, 0], 0, h - 1)
+    pts[:, 1] = np.clip(pts[:, 1], 0, w - 1)
 
-        # Sort by column for interpolation
-        sort_idx = np.argsort(cols)
-        cols_sorted = cols[sort_idx]
-        rows_sorted = rows[sort_idx]
+    # Build polygon: fracture line + edge corners on the REMOVE side
+    # Convert to (col, row) = (x, y) for PIL
+    line_xy = [(int(round(c)), int(round(r))) for r, c in pts]
 
-        # Remove duplicate columns
-        _, unique_idx = np.unique(cols_sorted, return_index=True)
-        cols_unique = cols_sorted[unique_idx]
-        rows_unique = rows_sorted[unique_idx]
+    # Add corner points to close the polygon on the remove side
+    if keep_side == 'above':
+        # Remove below: polygon = line + bottom-right + bottom-left
+        corners = [(w - 1, h - 1), (0, h - 1)]
+    elif keep_side == 'below':
+        # Remove above: polygon = line + top-left + top-right
+        corners = [(0, 0), (w - 1, 0)]
+    elif keep_side == 'left':
+        # Remove right: polygon = line + top-right + bottom-right
+        corners = [(w - 1, 0), (w - 1, h - 1)]
+    elif keep_side == 'right':
+        # Remove left: polygon = line + bottom-left + top-left
+        corners = [(0, h - 1), (0, 0)]
+    else:
+        return np.ones((h, w), dtype=np.uint8)
 
-        if len(cols_unique) < 2:
-            return fracture
+    polygon = line_xy + corners
 
-        # Interpolate to all integer columns
-        col_range = np.arange(max(0, int(cols_unique[0])), min(w, int(cols_unique[-1]) + 1))
-        row_interp = np.interp(col_range, cols_unique, rows_unique)
+    # Draw filled polygon (the REMOVE zone)
+    remove_img = PILImage.new('L', (w, h), 0)
+    draw = ImageDraw.Draw(remove_img)
+    draw.polygon(polygon, fill=255)
+    remove_mask = np.array(remove_img) > 127
 
-        for c, r in zip(col_range, row_interp):
-            r_int = int(np.clip(r, 0, h - 1))
-            c_int = int(np.clip(c, 0, w - 1))
-            if keep_side == 'above':
-                fracture[r_int:, c_int] = 0
-            else:
-                fracture[:r_int, c_int] = 0
-
-    elif keep_side in ('left', 'right'):
-        # For each row in the fracture line, find the column threshold
-        rows = points[:, 0]
-        cols = points[:, 1]
-
-        sort_idx = np.argsort(rows)
-        rows_sorted = rows[sort_idx]
-        cols_sorted = cols[sort_idx]
-
-        _, unique_idx = np.unique(rows_sorted, return_index=True)
-        rows_unique = rows_sorted[unique_idx]
-        cols_unique = cols_sorted[unique_idx]
-
-        if len(rows_unique) < 2:
-            return fracture
-
-        row_range = np.arange(max(0, int(rows_unique[0])), min(h, int(rows_unique[-1]) + 1))
-        col_interp = np.interp(row_range, rows_unique, cols_unique)
-
-        for r, c in zip(row_range, col_interp):
-            r_int = int(np.clip(r, 0, h - 1))
-            c_int = int(np.clip(c, 0, w - 1))
-            if keep_side == 'left':
-                fracture[r_int, c_int:] = 0
-            else:
-                fracture[r_int, :c_int] = 0
+    # Keep mask = everywhere except the remove zone
+    fracture = np.ones((h, w), dtype=np.uint8)
+    fracture[remove_mask] = 0
 
     return fracture
 
