@@ -204,13 +204,13 @@ def generate_synthetic_dataset(source_dataset_id, name, completeness_bins, image
     source_areas = {}  # cache {image_id: tooth_area}
 
     total_generated = 0
-    # Derive tolerance from bin spacing (half the gap between bins, min 0.10)
+    # Derive tolerance from bin spacing
     sorted_bins = sorted(completeness_bins)
     if len(sorted_bins) > 1:
         bin_gaps = [sorted_bins[i+1] - sorted_bins[i] for i in range(len(sorted_bins)-1)]
-        tolerance = max(min(bin_gaps) / 2, 0.10)
+        tolerance = max(min(bin_gaps) / 2, 0.05)
     else:
-        tolerance = 0.15
+        tolerance = 0.08  # single bin: tight ±8% range
     absolute_min = max(sorted_bins[0] - tolerance, 0.05)
 
     for label in source.labels.all():

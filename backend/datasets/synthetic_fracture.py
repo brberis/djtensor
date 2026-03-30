@@ -240,14 +240,10 @@ def _find_contour_at_col(mask, col):
 
 
 def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness=0.4,
-                            min_angle_change=20, max_angle_change=110):
+                            min_angle_change=20, max_angle_change=110,
+                            curvature=0.0, tooth_mask=None):
     """
     Generate a fracture path as a multi-segment walk with real direction changes.
-
-    Instead of a straight line with perpendicular noise, this builds the path
-    as a sequence of segments where each segment has its own direction. The
-    crack changes angle 2-4 times along its length, simulating how real
-    fractures change direction when crossing material boundaries.
 
     Args:
         start: (row, col) start point.
@@ -257,9 +253,11 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
         micro_roughness: Fine-scale surface roughness.
         min_angle_change: Minimum direction change in degrees at each turn.
         max_angle_change: Maximum direction change in degrees at each turn.
+        curvature: How much the path follows the tooth contour (0=straight, 1=follows shape).
+        tooth_mask: Binary tooth mask for curvature calculation.
 
     Returns:
-        Nx2 array of (row, col) points.
+        Tuple of (Nx2 array of (row, col) points, list of direction change positions).
     """
     start = np.array(start, dtype=float)
     end = np.array(end, dtype=float)
@@ -318,6 +316,23 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
     sigma = max(n_points // 40, 2)
     rows = ndimage.gaussian_filter1d(rows, sigma=sigma)
     cols = ndimage.gaussian_filter1d(cols, sigma=sigma)
+
+    # Apply curvature: pull the path toward the tooth's center line.
+    # At each point, find the local tooth center and blend toward it.
+    if curvature > 0 and tooth_mask is not None:
+        h_m, w_m = tooth_mask.shape
+        for i in range(len(rows)):
+            r_i = int(np.clip(rows[i], 0, h_m - 1))
+            c_i = int(np.clip(cols[i], 0, w_m - 1))
+            # Find tooth center at this row or column
+            row_pixels = np.where(tooth_mask[r_i, :])[0]
+            col_pixels = np.where(tooth_mask[:, c_i])[0]
+            if len(row_pixels) > 0:
+                center_c = (row_pixels[0] + row_pixels[-1]) / 2
+                cols[i] += (center_c - cols[i]) * curvature * 0.3
+            if len(col_pixels) > 0:
+                center_r = (col_pixels[0] + col_pixels[-1]) / 2
+                rows[i] += (center_r - rows[i]) * curvature * 0.3
 
     # Add local fracture noise perpendicular to each segment
     noise = _generate_fracture_noise(n_points, roughness=roughness,
@@ -423,6 +438,8 @@ def _fracture_root_loss(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6) * 0.7,
         micro_roughness=edge_params.get('micro_roughness', 0.4) * 0.6,
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
     return _rasterize_fracture_line(points, mask.shape, keep_side='above')
 
@@ -444,6 +461,8 @@ def _fracture_tip_loss(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6) * 1.3,
         micro_roughness=edge_params.get('micro_roughness', 0.4) * 1.2,
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
     return _rasterize_fracture_line(points, mask.shape, keep_side='below')
 
@@ -471,6 +490,8 @@ def _fracture_lateral_break(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6) * 1.4,
         micro_roughness=edge_params.get('micro_roughness', 0.4) * 1.3,
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
     keep_side = 'left' if remove_left else 'right'
     return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
@@ -500,6 +521,8 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6),
         micro_roughness=edge_params.get('micro_roughness', 0.4),
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
 
     test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
@@ -536,6 +559,8 @@ def _fracture_transverse_snap(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6),
         micro_roughness=edge_params.get('micro_roughness', 0.4),
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
     keep_side = 'left' if remove_left else 'right'
     return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
@@ -570,6 +595,8 @@ def _fracture_oblique_front(mask, fraction, edge_params):
         start, end, n_points,
         roughness=edge_params.get('roughness', 0.6) * 1.2,
         micro_roughness=edge_params.get('micro_roughness', 0.4),
+        curvature=edge_params.get('curvature', 0.0),
+        tooth_mask=mask,
     )
 
     test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
@@ -605,6 +632,92 @@ def _keep_largest_fragment(keep_mask):
     sizes = ndimage.sum(keep_mask, labeled, range(1, num + 1))
     largest = np.argmax(sizes) + 1
     return (labeled == largest).astype(np.uint8)
+
+
+def _validate_fragment_shape(fragment_mask, min_solidity=0.75, window_size=10):
+    """
+    Validate that a fragment has a physically plausible shape.
+
+    Two checks:
+    1. Solidity: ratio of fragment area to convex hull area. Low solidity
+       means deep concavities or thin peninsulas that can't exist on a
+       real broken tooth.
+    2. Blank hole scan: slide a window across the fragment's bounding box.
+       If any window that should be inside the tooth is 100% blank, the
+       shape has an impossible internal gap.
+
+    Returns:
+        True if shape is valid, False if it should be rejected.
+    """
+    if np.sum(fragment_mask) < 100:
+        return False
+
+    # Check 1: Solidity (area / convex hull area)
+    from scipy.spatial import ConvexHull
+    points = np.argwhere(fragment_mask > 0)
+    if len(points) < 10:
+        return False
+
+    try:
+        hull = ConvexHull(points)
+        # Fill the convex hull to count its area
+        from PIL import Image as PILImage, ImageDraw
+        h, w = fragment_mask.shape
+        hull_img = PILImage.new('L', (w, h), 0)
+        draw = ImageDraw.Draw(hull_img)
+        hull_vertices = points[hull.vertices]
+        hull_polygon = [(int(c), int(r)) for r, c in hull_vertices]
+        draw.polygon(hull_polygon, fill=255)
+        hull_area = np.sum(np.array(hull_img) > 127)
+        fragment_area = np.sum(fragment_mask > 0)
+
+        solidity = fragment_area / max(hull_area, 1)
+        if solidity < min_solidity:
+            return False
+    except Exception:
+        pass  # ConvexHull can fail on degenerate shapes — allow through
+
+    # Check 2: Thin neck / protrusion check at multiple scales.
+    # Erode progressively — if the fragment splits at any level, it has
+    # a thin neck or peninsula that can't exist on a real broken tooth.
+    for erosion_px in [4, 8, 12]:
+        eroded = ndimage.binary_erosion(fragment_mask, iterations=erosion_px)
+        if np.sum(eroded) > 100:
+            labeled_eroded, n_eroded = ndimage.label(eroded)
+            if n_eroded > 1:
+                return False
+
+    # Check 3: Blank hole scan within the bounding box
+    rows = np.any(fragment_mask, axis=1)
+    cols = np.any(fragment_mask, axis=0)
+    if not np.any(rows) or not np.any(cols):
+        return False
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    # Small margin — scan close to edges to catch concave notches
+    margin = window_size // 2
+    scan_rmin = rmin + margin
+    scan_rmax = rmax - margin
+    scan_cmin = cmin + margin
+    scan_cmax = cmax - margin
+
+    if scan_rmax <= scan_rmin or scan_cmax <= scan_cmin:
+        return True
+
+    # Scan ~8% of positions
+    n_samples = max(20, int(0.08 * (scan_rmax - scan_rmin) * (scan_cmax - scan_cmin) / (window_size ** 2)))
+    n_samples = min(n_samples, 300)
+
+    for _ in range(n_samples):
+        r = np.random.randint(scan_rmin, scan_rmax)
+        c = np.random.randint(scan_cmin, scan_cmax)
+        window = fragment_mask[r:r+window_size, c:c+window_size]
+        if window.shape[0] == window_size and window.shape[1] == window_size:
+            if np.sum(window) == 0:
+                return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1046,21 +1159,44 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
         if 'edge_params' in profile_override:
             profile['edge_params'] = {**profile['edge_params'], **profile_override['edge_params']}
 
-    fracture_mask, effective_edge_params = generate_fracture_mask(
-        tooth_mask, target_completeness,
-        species_weights=profile['fracture_types'],
-        edge_params=profile['edge_params'],
-    )
+    # Generate fracture with shape validation — retry if impossible shape
+    max_shape_attempts = 15
+    for _attempt in range(max_shape_attempts):
+        fracture_mask, effective_edge_params = generate_fracture_mask(
+            tooth_mask, target_completeness,
+            species_weights=profile['fracture_types'],
+            edge_params=profile['edge_params'],
+        )
+
+        # Clean the fragment: remove thin protrusions, fill internal holes,
+        # keep only the largest solid piece.
+        raw_fragment = (tooth_mask & fracture_mask).astype(np.uint8)
+        raw_fragment = _keep_largest_fragment(raw_fragment)
+
+        # Aggressive opening: erode away thin spikes/necks, dilate back
+        cleaned = ndimage.binary_opening(raw_fragment, iterations=10)
+        # Fill any internal holes created by the fracture
+        cleaned = ndimage.binary_fill_holes(cleaned)
+        # Smooth closing to round rough edges
+        cleaned = ndimage.binary_closing(cleaned, iterations=4)
+        # Keep only largest piece (opening may have split the fragment)
+        cleaned = _keep_largest_fragment(cleaned.astype(np.uint8))
+        # Final fill holes
+        cleaned = ndimage.binary_fill_holes(cleaned).astype(np.uint8)
+
+        # Update fracture_mask so apply_fracture uses the cleaned shape
+        fracture_mask = np.where(tooth_mask, cleaned, 0).astype(np.uint8)
+        result_mask = cleaned
+
+        if _validate_fragment_shape(result_mask):
+            break
+    # If all attempts fail, use the last one anyway
 
     result_img = apply_fracture(
         image_path, tooth_mask, fracture_mask,
         edge_params=effective_edge_params,
     )
 
-    # Compute actual completeness (using cleaned mask — largest fragment only)
-    result_mask = _keep_largest_fragment(
-        (tooth_mask & fracture_mask).astype(np.uint8)
-    )
     result_area = compute_tooth_area(result_mask)
     ref = reference_area or original_area
     actual_completeness = compute_completeness(result_area, ref)

@@ -270,6 +270,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         from .segmentation import segment_tooth, compute_tooth_area
         from django.core.files.base import ContentFile
         import io
+        import numpy as np
 
         image = self.get_object()
         if not image.source_image:
@@ -292,16 +293,18 @@ class ImageViewSet(viewsets.ModelViewSet):
             if image.dataset and image.dataset.generation_config:
                 bins = image.dataset.generation_config.get('completeness_bins', [])
             absolute_min = (min(bins) - 0.10) if bins else 0.10
-            min_acceptable = max(target - 0.20, absolute_min, 0.10)
-            max_acceptable = min(target + 0.15, 0.98)  # never 100% for fragments
-            max_attempts = 10
+            min_acceptable = max(target - 0.25, absolute_min, 0.05)
+            max_acceptable = min(target + 0.20, 0.98)
+            max_attempts = 50
 
             result_img = None
             actual_compl = None
             for attempt in range(max_attempts):
+                # Boost target slightly to compensate for morphological cleanup shrinkage
+                boost = np.random.uniform(0.02, 0.08)
                 result_img, actual_compl = generate_synthetic_fragment(
                     src.image.path,
-                    target_completeness=target,
+                    target_completeness=min(target + boost, 0.98),
                     species=label_name,
                     profile_override=profile_override,
                 )
