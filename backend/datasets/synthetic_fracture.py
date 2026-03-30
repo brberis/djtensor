@@ -296,8 +296,21 @@ def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness
         angle_change = np.radians(angle_change) * np.random.choice([-1, 1])
         new_angle = base_angle + angle_change
 
-        # New waypoint
+        # New waypoint — clamp to stay near the tooth area
         waypoint = current + seg_dist * np.array([np.sin(new_angle), np.cos(new_angle)])
+        # Don't let waypoints wander too far from the start-end line
+        # Project onto the line and limit perpendicular distance
+        line_vec = end - start
+        line_len = np.linalg.norm(line_vec)
+        if line_len > 0:
+            line_dir = line_vec / line_len
+            to_wp = waypoint - start
+            proj = np.dot(to_wp, line_dir)
+            perp_dist = np.linalg.norm(to_wp - proj * line_dir)
+            max_perp = line_len * 0.35  # max 35% of line length sideways
+            if perp_dist > max_perp:
+                perp_vec = to_wp - proj * line_dir
+                waypoint = start + proj * line_dir + perp_vec * (max_perp / perp_dist)
         waypoints.append(waypoint)
         current = waypoint
         remaining_dist = np.linalg.norm(end - current)
@@ -1197,12 +1210,12 @@ def generate_synthetic_fragment(image_path, target_completeness, reference_area=
         raw_fragment = (tooth_mask & fracture_mask).astype(np.uint8)
         raw_fragment = _keep_largest_fragment(raw_fragment)
 
-        # Aggressive opening: erode away thin spikes/necks, dilate back
-        cleaned = ndimage.binary_opening(raw_fragment, iterations=10)
-        # Fill any internal holes created by the fracture
+        # Light opening: remove thin spikes but preserve overall shape
+        cleaned = ndimage.binary_opening(raw_fragment, iterations=4)
+        # Fill any internal holes
         cleaned = ndimage.binary_fill_holes(cleaned)
-        # Smooth closing to round rough edges
-        cleaned = ndimage.binary_closing(cleaned, iterations=4)
+        # Light closing to smooth rough edges
+        cleaned = ndimage.binary_closing(cleaned, iterations=2)
         # Keep only largest piece (opening may have split the fragment)
         cleaned = _keep_largest_fragment(cleaned.astype(np.uint8))
         # Final fill holes
