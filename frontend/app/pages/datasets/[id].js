@@ -125,6 +125,8 @@ export default function DatasetDetail() {
   const [deletingDataset, setDeletingDataset] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
+  const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
+  const [regenerating, setRegenerating] = useState(false);
 
   const fileInputRefs = useRef({});
   const menuRef = useRef(null);
@@ -316,6 +318,32 @@ export default function DatasetDetail() {
       console.error('Failed to queue synthetic generation:', e);
     } finally {
       setGeneratingSynthetic(false);
+    }
+  };
+
+  const handleRegenerate = async (imageId) => {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/datasets/image/${imageId}/regenerate`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        // Update the active image with new data
+        setActiveImage(prev => ({ ...prev, ...data, image: data.image + '?v=' + Date.now() }));
+        // Refresh the label's image list
+        const labelId = activeImage.label;
+        const pageNum = page[labelId] || 1;
+        const imgRes = await fetch(`/api/datasets/image/?dataset=${id}&label=${labelId}&page=${pageNum}`);
+        const imgData = await imgRes.json();
+        setImages(prev => ({ ...prev, [labelId]: imgData.results || [] }));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || 'Failed to regenerate');
+      }
+    } catch (e) {
+      console.error('Failed to regenerate:', e);
+      alert('Failed to regenerate image');
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -589,27 +617,71 @@ export default function DatasetDetail() {
                   </div>
                   {activeImage && (
                     <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
-                      <div className="rounded-lg bg-gray-100 p-3">
+                      <div className="relative rounded-lg bg-white ring-1 ring-gray-200 p-3">
                         {activeImage.source_image_data && (
-                          <>
-                            <p className="text-xs font-medium text-gray-500 mb-1">Original</p>
-                            <ArchivedImage
-                              src={normalizeMediaUrl(activeImage.source_image_data.image)}
-                              alt="Original tooth"
-                              width={420}
-                              height={200}
-                              className="mx-auto max-h-[200px] rounded-lg object-contain mb-3"
-                            />
-                            <p className="text-xs font-medium text-gray-500 mb-1">Transformed</p>
-                          </>
+                          <div className="absolute top-2 right-2 z-10 flex gap-1">
+                            <button
+                              onClick={() => setImageViewMode(imageViewMode === 'original' ? 'transformed' : 'original')}
+                              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                                imageViewMode === 'original'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              Original
+                            </button>
+                            <button
+                              onClick={() => setImageViewMode(imageViewMode === 'side-by-side' ? 'transformed' : 'side-by-side')}
+                              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                                imageViewMode === 'side-by-side'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              Side by side
+                            </button>
+                          </div>
                         )}
-                        <ArchivedImage
-                          src={normalizeMediaUrl(activeImage.image)}
-                          alt={activeImage.file_name || "dataset image"}
-                          width={420}
-                          height={activeImage.source_image_data ? 200 : 420}
-                          className={`mx-auto rounded-lg object-contain ${activeImage.source_image_data ? 'max-h-[200px]' : 'max-h-[420px]'}`}
-                        />
+                        {imageViewMode === 'side-by-side' && activeImage.source_image_data ? (
+                          <div className="grid grid-cols-2 gap-2 pt-8">
+                            <div className="rounded-lg bg-white ring-1 ring-gray-200 p-2">
+                              <p className="text-[10px] font-medium text-gray-400 mb-1">Original</p>
+                              <ArchivedImage
+                                src={normalizeMediaUrl(activeImage.source_image_data.image)}
+                                alt="Original tooth"
+                                width={200}
+                                height={200}
+                                className="mx-auto max-h-[200px] rounded object-contain"
+                              />
+                            </div>
+                            <div className="rounded-lg bg-white ring-1 ring-gray-200 p-2">
+                              <p className="text-[10px] font-medium text-gray-400 mb-1">Transformed</p>
+                              <ArchivedImage
+                                src={normalizeMediaUrl(activeImage.image)}
+                                alt={activeImage.file_name || "dataset image"}
+                                width={200}
+                                height={200}
+                                className="mx-auto max-h-[200px] rounded object-contain"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={activeImage.source_image_data ? 'pt-8' : ''}>
+                            <div className="relative">
+                              <ArchivedImage
+                                src={normalizeMediaUrl(
+                                  imageViewMode === 'original' && activeImage.source_image_data
+                                    ? activeImage.source_image_data.image
+                                    : activeImage.image
+                                )}
+                                alt={activeImage.file_name || "dataset image"}
+                                width={420}
+                                height={420}
+                                className="mx-auto max-h-[420px] rounded-lg object-contain transition-opacity duration-300"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <dl className="space-y-3 text-sm">
                         <div><dt className="font-medium text-gray-500">File name</dt><dd className="text-gray-900 break-all">{activeImage.file_name || activeImage.image?.split('/').pop()}</dd></div>
@@ -650,6 +722,17 @@ export default function DatasetDetail() {
                           </div>
                         )}
                         <div><dt className="font-medium text-gray-500">Created</dt><dd className="text-gray-900">{new Date(activeImage.created_at).toLocaleString()}</dd></div>
+                        {activeImage.source_image_data && (
+                          <div className="pt-2">
+                            <button
+                              onClick={() => handleRegenerate(activeImage.id)}
+                              disabled={regenerating}
+                              className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {regenerating ? 'Regenerating...' : 'Regenerate'}
+                            </button>
+                          </div>
+                        )}
                       </dl>
                     </div>
                   )}
@@ -872,7 +955,7 @@ export default function DatasetDetail() {
                         key={`search-${image.id}`}
                         type="button"
                         className="relative group"
-                        onClick={() => setActiveImage(image)}
+                        onClick={() => { setActiveImage(image); setImageViewMode('transformed'); }}
                       >
                         <ArchivedImage
                           src={normalizeMediaUrl(image.image)}
@@ -1013,7 +1096,7 @@ export default function DatasetDetail() {
                         )}
                         <button
                           type="button"
-                          onClick={() => setActiveImage(image)}
+                          onClick={() => { setActiveImage(image); setImageViewMode('transformed'); }}
                           className="block"
                           title="View image details"
                         >

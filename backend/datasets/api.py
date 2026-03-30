@@ -263,6 +263,62 @@ class ImageViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
+    def regenerate(self, request, pk=None):
+        """Regenerate a single synthetic image from its source."""
+        from .synthetic_fracture import generate_synthetic_fragment
+        from .segmentation import segment_tooth, compute_tooth_area
+        from django.core.files.base import ContentFile
+        import io
+
+        image = self.get_object()
+        if not image.source_image:
+            return Response({'error': 'Not a synthetic image'}, status=status.HTTP_400_BAD_REQUEST)
+
+        src = image.source_image
+        target = image.target_completeness or 0.8
+        label_name = image.label.name if image.label else 'default'
+
+        # Load species profile if dataset has generation_config
+        profile_override = None
+        if image.dataset and image.dataset.generation_config:
+            overrides = image.dataset.generation_config.get('profile_overrides')
+            if overrides and label_name in overrides:
+                profile_override = overrides[label_name]
+
+        try:
+            result_img, actual_compl = generate_synthetic_fragment(
+                src.image.path,
+                target_completeness=target,
+                species=label_name,
+                profile_override=profile_override,
+            )
+
+            buf = io.BytesIO()
+            result_img.save(buf, format='PNG')
+            buf.seek(0)
+
+            # Compute tooth_area from source
+            src_area = src.tooth_area
+            if src_area is None:
+                mask = segment_tooth(src.image.path)
+                src_area = compute_tooth_area(mask)
+                src.tooth_area = src_area
+                src.save(update_fields=['tooth_area'])
+
+            result_area = int(actual_compl * src_area) if src_area else None
+
+            # Replace the image file
+            old_name = image.image.name.split('/')[-1]
+            image.image.save(old_name, ContentFile(buf.getvalue()), save=False)
+            image.completeness = actual_compl
+            image.tooth_area = result_area
+            image.save(update_fields=['image', 'completeness', 'tooth_area'])
+
+            return Response(ImageSerializer(image, context={'request': request}).data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=False, methods=['post'])
     def bulk_delete(self, request):
         dataset_id = request.data.get('dataset_id')

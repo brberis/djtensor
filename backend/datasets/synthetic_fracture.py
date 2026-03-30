@@ -984,11 +984,13 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
     visible_alpha = ndimage.gaussian_filter(visible_alpha, sigma=1.0)
     visible_alpha = np.clip(visible_alpha * 2, 0.0, 1.0)
 
-    bg = np.full_like(img_array, background_color, dtype=np.float32)
-    result = img_array * visible_alpha[:, :, np.newaxis] + \
-             bg * (1.0 - visible_alpha[:, :, np.newaxis])
+    # Output RGBA with transparency so synthetic images match the original
+    # PNG format. This prevents the model from learning background differences.
+    alpha_channel = (visible_alpha * 255).astype(np.uint8)
+    rgb = np.clip(img_array, 0, 255).astype(np.uint8)
+    rgba = np.dstack([rgb, alpha_channel])
 
-    return PILImage.fromarray(np.clip(result, 0, 255).astype(np.uint8))
+    return PILImage.fromarray(rgba, mode='RGBA')
 
 
 def generate_synthetic_fragment(image_path, target_completeness, reference_area=None,
