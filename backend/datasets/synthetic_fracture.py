@@ -69,20 +69,21 @@ def get_species_profile(species, profiles=None):
 
 def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=None):
     """
-    Generate realistic fracture displacement — smooth flowing curves with
-    gentle undulations, matching real fossil tooth fracture patterns.
+    Generate realistic tooth fracture displacement based on how real teeth break.
 
-    Real fractures are NOT zigzag. They follow smooth curves with:
-      - Broad gentle waviness (the main fracture path)
-      - Subtle bumps (surface irregularities of the material)
-      - Very slight micro-texture (barely visible)
+    Real tooth fractures show:
+    - Conchoidal steps: sudden shelves where enamel flakes at different depths
+    - Asymmetric scallops: uneven curved sections following crystal boundaries
+    - Direction changes: the crack shifts direction 2-4 times as it crosses
+      material layers (enameloid -> dentine -> osteodentine)
+    - Sharp notches: where the crack path jumps between layers
 
-    Based on study of real fragments in the Fragment Teeth Test dataset.
+    The result should look organic and irregular — not smooth, not zigzag.
 
     Args:
         length: Number of points along the fracture line.
-        roughness: Overall curve amplitude (0=flat, 1=more wavy).
-        micro_roughness: Subtle bump intensity.
+        roughness: Overall amplitude (0=flat, 1=very irregular).
+        micro_roughness: Fine detail intensity.
         seed: Optional random seed.
 
     Returns:
@@ -95,42 +96,75 @@ def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=No
 
     displacement = np.zeros(length)
 
-    # Scale 1: Broad gentle curvature (the main fracture path)
-    # Very low frequency, moderate amplitude — smooth flowing curve
-    n_control = max(3, rng.randint(3, 6))
-    control_points = rng.randn(n_control)
-    large = np.interp(
-        np.linspace(0, 1, length),
-        np.linspace(0, 1, n_control),
-        control_points
-    )
-    # Smooth heavily
-    if length > 10:
-        kernel_size = max(length // 8, 5)
-        kernel = np.ones(kernel_size) / kernel_size
-        large = np.convolve(large, kernel, mode='same')
-    displacement += large * roughness * 10.0
+    # Layer 1: Direction changes — crack shifts 2-4 times across material zones
+    n_segments = rng.randint(2, 5)
+    margin = max(length // 10, 3)
+    breakpoints = sorted(rng.randint(margin, max(length - margin, margin + 1),
+                                      size=max(n_segments - 1, 1)))
+    breakpoints = [0] + list(breakpoints) + [length]
+    segment_slopes = rng.uniform(-1.5, 1.5, size=n_segments) * roughness * 15.0
 
-    # Scale 2: Gentle bumps (material irregularities)
-    # Medium-low frequency, low amplitude
-    n_bumps = max(5, length // 15)
+    piecewise = np.zeros(length)
+    offset = 0.0
+    for seg_i in range(min(n_segments, len(breakpoints) - 1)):
+        start = breakpoints[seg_i]
+        end = breakpoints[seg_i + 1]
+        seg_len = end - start
+        if seg_len <= 0:
+            continue
+        t = np.linspace(0, 1, seg_len)
+        piecewise[start:end] = offset + t * segment_slopes[seg_i]
+        offset = piecewise[end - 1]
+
+    # Smooth transitions (not sharp corners, but not overly smooth)
+    transition_sigma = max(length // 25, 3)
+    piecewise = ndimage.gaussian_filter1d(piecewise, sigma=transition_sigma)
+    displacement += piecewise
+
+    # Layer 2: Conchoidal scallops — asymmetric curved sections
+    # These are wider than bumps, with steep rise and gradual fall (or vice versa)
+    n_scallops = rng.randint(3, max(7, length // 30))
+    for _ in range(n_scallops):
+        center = rng.randint(0, length)
+        width = rng.randint(max(length // 20, 5), max(length // 6, 10))
+        amplitude = rng.uniform(0.5, 1.5) * roughness * 8.0 * rng.choice([-1, 1])
+        # Asymmetric: steep on one side, gradual on other
+        steepness = rng.uniform(0.2, 0.8)
+        for j in range(length):
+            d = (j - center) / max(width, 1)
+            if -1 < d < 0:
+                displacement[j] += amplitude * (1 - abs(d / steepness) ** 2) * max(0, 1 + d)
+            elif 0 <= d < 1:
+                displacement[j] += amplitude * (1 - abs(d / (1 - steepness)) ** 2) * max(0, 1 - d)
+
+    # Layer 3: Sharp notches — sudden local dips where crack jumps layers
+    n_notches = rng.randint(1, max(4, length // 50))
+    for _ in range(n_notches):
+        pos = rng.randint(0, length)
+        notch_width = rng.randint(3, max(8, length // 40))
+        notch_depth = rng.uniform(3, 8) * roughness * rng.choice([-1, 1])
+        start = max(0, pos - notch_width // 2)
+        end = min(length, pos + notch_width // 2)
+        window = np.hanning(end - start)
+        displacement[start:end] += notch_depth * window
+
+    # Layer 4: Medium-frequency irregularity (material grain)
+    n_bumps = max(8, length // 8)
     bumps = rng.randn(n_bumps)
     bumps_interp = np.interp(
         np.linspace(0, 1, length),
         np.linspace(0, 1, n_bumps),
         bumps
     )
-    # Smooth to keep bumps gentle
     if length > 10:
-        k2 = max(length // 20, 3)
+        k2 = max(length // 30, 3)
         bumps_interp = np.convolve(bumps_interp, np.ones(k2) / k2, mode='same')
-    displacement += bumps_interp * roughness * 4.0
+    displacement += bumps_interp * roughness * 6.0
 
-    # Scale 3: Very subtle micro-texture (barely visible surface roughness)
-    micro = rng.randn(length) * micro_roughness * 1.0
+    # Layer 5: Fine micro-texture (surface roughness of broken material)
+    micro = rng.randn(length) * micro_roughness * 2.0
     if length > 5:
-        kernel = np.ones(5) / 5
-        micro = np.convolve(micro, kernel, mode='same')
+        micro = np.convolve(micro, np.ones(3) / 3, mode='same')
     displacement += micro
 
     return displacement
@@ -709,6 +743,12 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
 
     func = FRACTURE_FUNCTIONS.get(fracture_type, _fracture_tip_loss)
     fracture_mask = func(mask, fraction_to_remove, effective_edge_params)
+
+    # Randomly decide if dentine is visible (facing camera) or hidden (facing away).
+    # ~35% of fractures expose dentine to the back — not visible in the photo.
+    show_dentine = np.random.random() > 0.35
+    effective_edge_params['show_dentine'] = show_dentine
+
     return fracture_mask, effective_edge_params
 
 
@@ -786,95 +826,85 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
     keep_mask = tooth_mask.astype(bool) & fracture_mask.astype(bool)
     keep_mask = _keep_largest_fragment(keep_mask.astype(np.uint8)).astype(bool)
 
+    # Check if dentine should be visible (fracture facing camera vs facing away)
+    show_dentine = edge_params.get('show_dentine', True)
+
     # Step 3: Compute dentine color (lighter than tooth surface)
     dentine_base = _compute_dentine_color(img_array, tooth_mask, keep_mask)
 
-    # Step 4: Fill the REMOVED side of the fracture with dentine
-    # This simulates the visible cross-section of the broken tooth
     removed = tooth_mask.astype(bool) & ~keep_mask
     edge_width = edge_params.get('edge_3d_width', 20)
 
-    if np.any(removed) and np.any(keep_mask):
-        # Distance from each removed pixel to the nearest KEPT pixel
-        dist_from_kept = ndimage.distance_transform_edt(~keep_mask)
+    if show_dentine:
+        # Step 4: Fill the REMOVED side of the fracture with dentine
+        # This simulates the visible cross-section of the broken tooth
+        if np.any(removed) and np.any(keep_mask):
+            dist_from_kept = ndimage.distance_transform_edt(~keep_mask)
 
-        # The cross-section fill width varies:
-        # - Wider in the center of the tooth (thicker there)
-        # - Narrower at the edges
-        # Use distance from tooth boundary as a proxy for thickness
-        dist_from_bg = ndimage.distance_transform_edt(tooth_mask)
-        max_thickness = np.max(dist_from_bg) if np.max(dist_from_bg) > 0 else 1
-        thickness_factor = np.clip(dist_from_bg / max_thickness, 0, 1)
+            dist_from_bg = ndimage.distance_transform_edt(tooth_mask)
+            max_thickness = np.max(dist_from_bg) if np.max(dist_from_bg) > 0 else 1
+            thickness_factor = np.clip(dist_from_bg / max_thickness, 0, 1)
 
-        # Effective fill width: base * thickness_factor + random variation
-        width_noise = np.random.randn(h, w).astype(np.float32) * 0.2
-        width_noise = ndimage.gaussian_filter(width_noise, sigma=15)
-        effective_fill = edge_width * thickness_factor * (1.0 + width_noise)
-        effective_fill = np.clip(effective_fill, 3, edge_width * 2.5)
+            width_noise = np.random.randn(h, w).astype(np.float32) * 0.2
+            width_noise = ndimage.gaussian_filter(width_noise, sigma=15)
+            effective_fill = edge_width * thickness_factor * (1.0 + width_noise)
+            effective_fill = np.clip(effective_fill, 3, edge_width * 2.5)
 
-        # Dentine fill zone: removed pixels close to the fracture boundary
-        dentine_zone = removed & (dist_from_kept <= effective_fill)
+            dentine_zone = removed & (dist_from_kept <= effective_fill)
 
-        if np.any(dentine_zone):
-            # Multi-scale texture: fine grain + medium patches + subtle streaks
-            grain_fine = np.random.randn(h, w).astype(np.float32) * 6
-            grain_fine = ndimage.gaussian_filter(grain_fine, sigma=1.5)
+            if np.any(dentine_zone):
+                grain_fine = np.random.randn(h, w).astype(np.float32) * 6
+                grain_fine = ndimage.gaussian_filter(grain_fine, sigma=1.5)
 
-            # Medium patches (porous texture of osteodentine)
-            patches = np.random.randn(h, w).astype(np.float32) * 12
-            patches = ndimage.gaussian_filter(patches, sigma=6)
+                patches = np.random.randn(h, w).astype(np.float32) * 12
+                patches = ndimage.gaussian_filter(patches, sigma=6)
 
-            # Subtle color variation per channel (some areas more yellow, some more gray)
-            color_var_r = np.random.randn(h, w).astype(np.float32) * 8
-            color_var_r = ndimage.gaussian_filter(color_var_r, sigma=10)
-            color_var_g = np.random.randn(h, w).astype(np.float32) * 6
-            color_var_g = ndimage.gaussian_filter(color_var_g, sigma=10)
+                color_var_r = np.random.randn(h, w).astype(np.float32) * 8
+                color_var_r = ndimage.gaussian_filter(color_var_r, sigma=10)
+                color_var_g = np.random.randn(h, w).astype(np.float32) * 6
+                color_var_g = ndimage.gaussian_filter(color_var_g, sigma=10)
 
-            # Blend: full dentine near fracture, fading to background at outer edge
-            blend = np.zeros((h, w), dtype=np.float32)
-            blend[dentine_zone] = 1.0 - np.clip(
-                dist_from_kept[dentine_zone] / np.maximum(effective_fill[dentine_zone], 1),
-                0, 1
-            ) ** 0.6
+                blend = np.zeros((h, w), dtype=np.float32)
+                blend[dentine_zone] = 1.0 - np.clip(
+                    dist_from_kept[dentine_zone] / np.maximum(effective_fill[dentine_zone], 1),
+                    0, 1
+                ) ** 0.6
 
-            dentine_fill = np.zeros_like(img_array)
-            dentine_fill[:, :, 0] = dentine_base[0] + grain_fine + patches + color_var_r
-            dentine_fill[:, :, 1] = dentine_base[1] + grain_fine + patches + color_var_g
-            dentine_fill[:, :, 2] = dentine_base[2] + grain_fine + patches * 0.7
-            dentine_fill = np.clip(dentine_fill, 0, 255)
+                dentine_fill = np.zeros_like(img_array)
+                dentine_fill[:, :, 0] = dentine_base[0] + grain_fine + patches + color_var_r
+                dentine_fill[:, :, 1] = dentine_base[1] + grain_fine + patches + color_var_g
+                dentine_fill[:, :, 2] = dentine_base[2] + grain_fine + patches * 0.7
+                dentine_fill = np.clip(dentine_fill, 0, 255)
 
-            # Apply dentine fill to the removed zone
-            blend_3d = blend[:, :, np.newaxis]
-            bg_color = np.full_like(img_array, background_color, dtype=np.float32)
-            img_array[dentine_zone] = (
-                dentine_fill[dentine_zone] * blend[dentine_zone, np.newaxis] +
-                bg_color[dentine_zone] * (1 - blend[dentine_zone, np.newaxis])
-            )
+                bg_color = np.full_like(img_array, background_color, dtype=np.float32)
+                img_array[dentine_zone] = (
+                    dentine_fill[dentine_zone] * blend[dentine_zone, np.newaxis] +
+                    bg_color[dentine_zone] * (1 - blend[dentine_zone, np.newaxis])
+                )
 
-    # Step 5: Also paint dentine on the KEPT side (inner surface near fracture)
-    if np.any(removed) and np.any(keep_mask):
-        dist_to_removed = ndimage.distance_transform_edt(~removed)
-        inner_band = keep_mask & (dist_to_removed > 0) & (dist_to_removed <= max(edge_width // 3, 4))
-        if np.any(inner_band):
-            inner_blend = 1.0 - np.clip(dist_to_removed[inner_band] / max(edge_width // 3, 4), 0, 1) ** 0.5
-            grain_inner = np.random.randn(np.sum(inner_band)).astype(np.float32) * 6
-            for c in range(3):
-                ch = img_array[:, :, c]
-                ch[inner_band] = ch[inner_band] * (1 - inner_blend) + (dentine_base[c] + grain_inner) * inner_blend
-                img_array[:, :, c] = ch
+        # Step 5: Also paint dentine on the KEPT side (inner surface near fracture)
+        if np.any(removed) and np.any(keep_mask):
+            dist_to_removed = ndimage.distance_transform_edt(~removed)
+            inner_band = keep_mask & (dist_to_removed > 0) & (dist_to_removed <= max(edge_width // 3, 4))
+            if np.any(inner_band):
+                inner_blend = 1.0 - np.clip(dist_to_removed[inner_band] / max(edge_width // 3, 4), 0, 1) ** 0.5
+                grain_inner = np.random.randn(np.sum(inner_band)).astype(np.float32) * 6
+                for c in range(3):
+                    ch = img_array[:, :, c]
+                    ch[inner_band] = ch[inner_band] * (1 - inner_blend) + (dentine_base[c] + grain_inner) * inner_blend
+                    img_array[:, :, c] = ch
 
-    # Step 6: Dark shadow line at the fracture boundary
+    # Step 6: Dark shadow line at the fracture boundary (always visible)
     if np.any(removed) and np.any(keep_mask):
         dist_to_removed2 = ndimage.distance_transform_edt(~removed)
         shadow = keep_mask & (dist_to_removed2 > 0) & (dist_to_removed2 <= 2.0)
         if np.any(shadow):
             img_array[shadow] *= 0.5
 
-    # Step 7: Composite — include both kept fragment AND dentine fill zone
+    # Step 7: Composite — include kept fragment (and dentine fill if visible)
     visible_mask = keep_mask.copy()
-    if np.any(removed) and np.any(keep_mask):
+    if show_dentine and np.any(removed) and np.any(keep_mask):
         dist_from_kept_final = ndimage.distance_transform_edt(~keep_mask)
-        # Recompute fill width for visibility mask
         dist_from_bg_final = ndimage.distance_transform_edt(tooth_mask)
         max_t = np.max(dist_from_bg_final) if np.max(dist_from_bg_final) > 0 else 1
         t_factor = np.clip(dist_from_bg_final / max_t, 0, 1)
