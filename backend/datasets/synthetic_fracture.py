@@ -96,13 +96,37 @@ def _generate_fracture_noise(length, roughness=0.6, micro_roughness=0.4, seed=No
 
     displacement = np.zeros(length)
 
-    # Layer 1: Direction changes — crack shifts 2-4 times across material zones
-    n_segments = rng.randint(2, 5)
-    margin = max(length // 10, 3)
+    # Layer 1: Direction changes — crack shifts direction frequently.
+    # No segment should be straight for more than ~25% of the total length.
+    # Longer fractures get more direction changes (3-6 for typical lengths).
+    min_segments = max(3, length // 40)
+    max_segments = max(min_segments + 1, length // 20)
+    n_segments = rng.randint(min_segments, max_segments + 1)
+    margin = max(length // 15, 3)
     breakpoints = sorted(rng.randint(margin, max(length - margin, margin + 1),
                                       size=max(n_segments - 1, 1)))
     breakpoints = [0] + list(breakpoints) + [length]
-    segment_slopes = rng.uniform(-1.5, 1.5, size=n_segments) * roughness * 15.0
+    # Ensure no segment exceeds 25% of total length — split any that do
+    refined = [0]
+    for i in range(len(breakpoints) - 1):
+        seg_start = breakpoints[i]
+        seg_end = breakpoints[i + 1]
+        max_seg = max(length // 4, 10)
+        while seg_end - seg_start > max_seg:
+            split = seg_start + rng.randint(max_seg // 3, max_seg)
+            refined.append(min(split, seg_end - 5))
+            seg_start = refined[-1]
+        refined.append(seg_end)
+    breakpoints = refined
+    n_segments = len(breakpoints) - 1
+    # Alternate slope directions for more visible changes, with random amplitude
+    segment_slopes = np.zeros(n_segments)
+    for i in range(n_segments):
+        base_dir = 1.0 if i % 2 == 0 else -1.0
+        segment_slopes[i] = base_dir * rng.uniform(0.5, 2.0) * roughness * 15.0
+        # Randomly flip some to avoid predictable alternation
+        if rng.random() < 0.3:
+            segment_slopes[i] *= -1
 
     piecewise = np.zeros(length)
     offset = 0.0
@@ -215,6 +239,103 @@ def _find_contour_at_col(mask, col):
     return rows[0], rows[-1]
 
 
+def _generate_fracture_path(start, end, n_points, roughness=0.6, micro_roughness=0.4,
+                            min_angle_change=10, max_angle_change=110):
+    """
+    Generate a fracture path as a multi-segment walk with real direction changes.
+
+    Instead of a straight line with perpendicular noise, this builds the path
+    as a sequence of segments where each segment has its own direction. The
+    crack changes angle 2-4 times along its length, simulating how real
+    fractures change direction when crossing material boundaries.
+
+    Args:
+        start: (row, col) start point.
+        end: (row, col) end point.
+        n_points: Total number of points to generate.
+        roughness: Controls amplitude of local noise on each segment.
+        micro_roughness: Fine-scale surface roughness.
+        min_angle_change: Minimum direction change in degrees at each turn.
+        max_angle_change: Maximum direction change in degrees at each turn.
+
+    Returns:
+        Nx2 array of (row, col) points.
+    """
+    start = np.array(start, dtype=float)
+    end = np.array(end, dtype=float)
+    total_dist = np.linalg.norm(end - start)
+    if total_dist < 5:
+        t = np.linspace(0, 1, n_points)
+        return np.column_stack([
+            start[0] + t * (end[0] - start[0]),
+            start[1] + t * (end[1] - start[1]),
+        ])
+
+    # Number of direction changes: 2-4 for most fractures
+    n_turns = np.random.randint(2, 5)
+
+    # Generate waypoints: the crack goes through these turning points
+    # Each segment covers 15-45% of the remaining distance
+    waypoints = [start]
+    current = start.copy()
+    remaining_dist = total_dist
+
+    for i in range(n_turns):
+        if remaining_dist < 10:
+            break
+        # This segment covers a random fraction of remaining distance
+        seg_frac = np.random.uniform(0.15, 0.45)
+        seg_dist = remaining_dist * seg_frac
+
+        # Direction: starts pointing toward end, but changes angle
+        to_end = end - current
+        base_angle = np.arctan2(to_end[0], to_end[1])
+
+        # Random angle deviation
+        angle_change = np.random.uniform(min_angle_change, max_angle_change)
+        angle_change = np.radians(angle_change) * np.random.choice([-1, 1])
+        new_angle = base_angle + angle_change
+
+        # New waypoint
+        waypoint = current + seg_dist * np.array([np.sin(new_angle), np.cos(new_angle)])
+        waypoints.append(waypoint)
+        current = waypoint
+        remaining_dist = np.linalg.norm(end - current)
+
+    waypoints.append(end)
+
+    # Interpolate smooth path through waypoints using cubic-like interpolation
+    # First, compute cumulative distances for parameterization
+    waypoints = np.array(waypoints)
+    dists = np.cumsum(np.r_[0, np.linalg.norm(np.diff(waypoints, axis=0), axis=1)])
+    dists /= dists[-1]  # normalize to [0, 1]
+
+    t = np.linspace(0, 1, n_points)
+    rows = np.interp(t, dists, waypoints[:, 0])
+    cols = np.interp(t, dists, waypoints[:, 1])
+
+    # Smooth the transitions so turns are not sharp corners
+    sigma = max(n_points // 20, 3)
+    rows = ndimage.gaussian_filter1d(rows, sigma=sigma)
+    cols = ndimage.gaussian_filter1d(cols, sigma=sigma)
+
+    # Add local fracture noise perpendicular to each segment
+    noise = _generate_fracture_noise(n_points, roughness=roughness,
+                                      micro_roughness=micro_roughness)
+
+    # Compute local perpendicular direction at each point
+    dr = np.gradient(rows)
+    dc = np.gradient(cols)
+    length_local = np.sqrt(dr ** 2 + dc ** 2) + 1e-8
+    perp_r = -dc / length_local
+    perp_c = dr / length_local
+
+    rows += noise * perp_r
+    cols += noise * perp_c
+
+    return np.column_stack([rows, cols]), dists[1:-1].tolist()
+
+
 # ---------------------------------------------------------------------------
 # Fracture line rasterization
 # ---------------------------------------------------------------------------
@@ -307,71 +428,40 @@ def _fracture_root_loss(mask, fraction, edge_params):
     rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
     height = rmax - rmin
-    width = cmax - cmin
 
-    # Cut position: from bottom, removing fraction of the tooth
     cut_row = int(rmax - height * fraction)
     cut_row = np.clip(cut_row, rmin + 5, rmax - 5)
 
-    # Generate fracture line following the tooth contour with noise
-    n_points = max(width + 20, 50)
-    base_cols = np.linspace(cmin - 10, cmax + 10, n_points)
+    n_points = max((cmax - cmin) + 20, 50)
+    start = (cut_row, cmin - 10)
+    end = (cut_row, cmax + 10)
 
-    # Base fracture line with curvature following the tooth shape
-    curvature = edge_params.get('curvature', 0.3)
-    base_rows = np.full(n_points, float(cut_row))
-
-    # Add curvature: fracture follows the tooth width profile
-    for i, c in enumerate(base_cols):
-        c_int = int(np.clip(c, 0, w - 1))
-        top, bot = _find_contour_at_col(mask, c_int)
-        if top is not None and bot is not None:
-            local_center = (top + bot) / 2
-            base_rows[i] += (local_center - cut_row) * curvature * 0.3
-
-    # Apply multi-scale fracture noise
-    noise = _generate_fracture_noise(
-        n_points,
-        roughness=edge_params.get('roughness', 0.6),
-        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
+        roughness=edge_params.get('roughness', 0.6) * 0.7,
+        micro_roughness=edge_params.get('micro_roughness', 0.4) * 0.6,
     )
-    fracture_rows = base_rows + noise
-
-    points = np.stack([fracture_rows, base_cols], axis=1)
     return _rasterize_fracture_line(points, mask.shape, keep_side='above')
 
 
 def _fracture_tip_loss(mask, fraction, edge_params):
-    """Break losing the crown apex/tip."""
+    """Break losing the crown apex/tip. More irregular than root breaks."""
     rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
     height = rmax - rmin
-    width = cmax - cmin
 
     cut_row = int(rmin + height * fraction)
     cut_row = np.clip(cut_row, rmin + 5, rmax - 5)
 
-    n_points = max(width + 20, 50)
-    base_cols = np.linspace(cmin - 10, cmax + 10, n_points)
+    n_points = max((cmax - cmin) + 20, 50)
+    start = (cut_row, cmin - 10)
+    end = (cut_row, cmax + 10)
 
-    curvature = edge_params.get('curvature', 0.3)
-    base_rows = np.full(n_points, float(cut_row))
-
-    for i, c in enumerate(base_cols):
-        c_int = int(np.clip(c, 0, w - 1))
-        top, bot = _find_contour_at_col(mask, c_int)
-        if top is not None and bot is not None:
-            local_center = (top + bot) / 2
-            base_rows[i] += (local_center - cut_row) * curvature * 0.3
-
-    noise = _generate_fracture_noise(
-        n_points,
-        roughness=edge_params.get('roughness', 0.6),
-        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
+        roughness=edge_params.get('roughness', 0.6) * 1.3,
+        micro_roughness=edge_params.get('micro_roughness', 0.4) * 1.2,
     )
-    fracture_rows = base_rows + noise
-
-    points = np.stack([fracture_rows, base_cols], axis=1)
     return _rasterize_fracture_line(points, mask.shape, keep_side='below')
 
 
@@ -386,35 +476,19 @@ def _fracture_lateral_break(mask, fraction, edge_params):
     cut_frac = fraction if remove_left else (1.0 - fraction)
     cut_col = int(cmin + width * cut_frac)
 
-    # Diagonal angle: slight tilt
     angle = np.random.uniform(0.05, 0.25) * np.random.choice([-1, 1])
+    start_col = cut_col + int(angle * height * -0.5)
+    end_col = cut_col + int(angle * height * 0.5)
 
     n_points = max(height + 20, 50)
-    base_rows = np.linspace(rmin - 10, rmax + 10, n_points)
+    start = (rmin - 10, start_col)
+    end = (rmax + 10, end_col)
 
-    # Base column with diagonal tilt
-    base_cols = np.full(n_points, float(cut_col))
-    for i, r in enumerate(base_rows):
-        t = (r - rmin) / max(height, 1)
-        base_cols[i] += angle * height * (t - 0.5)
-
-    # Add curvature following the tooth contour
-    curvature = edge_params.get('curvature', 0.3)
-    for i, r in enumerate(base_rows):
-        r_int = int(np.clip(r, 0, h - 1))
-        left, right = _find_contour_at_row(mask, r_int)
-        if left is not None and right is not None:
-            local_center = (left + right) / 2
-            base_cols[i] += (local_center - cut_col) * curvature * 0.2
-
-    noise = _generate_fracture_noise(
-        n_points,
-        roughness=edge_params.get('roughness', 0.6),
-        micro_roughness=edge_params.get('micro_roughness', 0.4),
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
+        roughness=edge_params.get('roughness', 0.6) * 1.4,
+        micro_roughness=edge_params.get('micro_roughness', 0.4) * 1.3,
     )
-    fracture_cols = base_cols + noise
-
-    points = np.stack([base_rows, fracture_cols], axis=1)
     keep_side = 'left' if remove_left else 'right'
     return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
 
@@ -426,15 +500,12 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
     height = rmax - rmin
     width = cmax - cmin
 
-    # Choose an angle for the diagonal (30-60 degrees from horizontal)
     angle_deg = np.random.uniform(25, 55) * np.random.choice([-1, 1])
     angle_rad = np.radians(angle_deg)
 
-    # Fracture passes through a point at the target fraction height
     center_row = rmin + height * (1.0 - fraction * 0.7)
     center_col = cmin + width * np.random.uniform(0.3, 0.7)
 
-    # Generate line endpoints extending beyond tooth
     half_diag = max(height, width)
     start = (center_row - half_diag * np.sin(angle_rad),
              center_col - half_diag * np.cos(angle_rad))
@@ -442,30 +513,16 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
            center_col + half_diag * np.cos(angle_rad))
 
     n_points = max(int(2 * half_diag), 80)
-    t = np.linspace(0, 1, n_points)
-    base_rows = start[0] + t * (end[0] - start[0])
-    base_cols = start[1] + t * (end[1] - start[1])
-
-    noise = _generate_fracture_noise(
-        n_points,
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
         roughness=edge_params.get('roughness', 0.6),
         micro_roughness=edge_params.get('micro_roughness', 0.4),
     )
 
-    # Apply noise perpendicular to the fracture direction
-    perp_row = -np.cos(angle_rad)
-    perp_col = np.sin(angle_rad)
-    fracture_rows = base_rows + noise * perp_row
-    fracture_cols = base_cols + noise * perp_col
-
-    points = np.stack([fracture_rows, fracture_cols], axis=1)
-
-    # Determine which side to keep based on which has more tooth
     test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
     keep_above = np.sum(mask & test_mask)
     keep_below = np.sum(mask & ~test_mask)
 
-    # Keep the larger piece (closer to target completeness)
     target_area = compute_tooth_area(mask) * (1.0 - fraction)
     if abs(keep_above - target_area) < abs(keep_below - target_area):
         return _rasterize_fracture_line(points, mask.shape, keep_side='above')
@@ -474,64 +531,43 @@ def _fracture_diagonal_snap(mask, fraction, edge_params):
 
 
 def _fracture_transverse_snap(mask, fraction, edge_params):
-    """
-    Vertical/near-vertical fracture across the tooth (transverse break).
-
-    Cuts roughly perpendicular to the long axis, like a tooth snapped
-    in half. Exposes a wide cross-section of dentine because the break
-    goes through the thickest part of the tooth.
-    """
+    """Vertical/near-vertical fracture across the tooth (transverse break)."""
     rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
     height = rmax - rmin
     width = cmax - cmin
 
-    # Vertical cut position: remove fraction from one side
     remove_left = np.random.random() < 0.5
     cut_frac = fraction if remove_left else (1.0 - fraction)
     cut_col = int(cmin + width * cut_frac)
 
-    # Near-vertical angle: small tilt (0-15 degrees)
     angle = np.random.uniform(-0.12, 0.12)
+    start_col = cut_col + int(angle * height * -0.5)
+    end_col = cut_col + int(angle * height * 0.5)
 
     n_points = max(height + 20, 50)
-    base_rows = np.linspace(rmin - 10, rmax + 10, n_points)
-    base_cols = np.full(n_points, float(cut_col))
+    start = (rmin - 10, start_col)
+    end = (rmax + 10, end_col)
 
-    for i, r in enumerate(base_rows):
-        t = (r - rmin) / max(height, 1)
-        base_cols[i] += angle * height * (t - 0.5)
-
-    noise = _generate_fracture_noise(
-        n_points,
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
         roughness=edge_params.get('roughness', 0.6),
         micro_roughness=edge_params.get('micro_roughness', 0.4),
     )
-    fracture_cols = base_cols + noise
-
-    points = np.stack([base_rows, fracture_cols], axis=1)
     keep_side = 'left' if remove_left else 'right'
     return _rasterize_fracture_line(points, mask.shape, keep_side=keep_side)
 
 
 def _fracture_oblique_front(mask, fraction, edge_params):
-    """
-    Oblique fracture biased toward the front (labial) face of the tooth.
-
-    The cut angle is steep (55-80 degrees from horizontal), exposing a
-    wide band of dentine on the front-facing side. This is common in
-    real fossils where the enameloid/labial face shears off.
-    """
+    """Oblique fracture biased toward the front (labial) face."""
     rmin, rmax, cmin, cmax = _get_tooth_bbox(mask)
     h, w = mask.shape
     height = rmax - rmin
     width = cmax - cmin
 
-    # Steep angle (55-80 degrees) — more vertical than diagonal_snap
     angle_deg = np.random.uniform(55, 80) * np.random.choice([-1, 1])
     angle_rad = np.radians(angle_deg)
 
-    # Fracture center biased toward front (left or right side)
     front_side = np.random.choice(['left', 'right'])
     if front_side == 'left':
         center_col = cmin + width * np.random.uniform(0.2, 0.4)
@@ -547,24 +583,12 @@ def _fracture_oblique_front(mask, fraction, edge_params):
            center_col + half_diag * np.cos(angle_rad))
 
     n_points = max(int(2 * half_diag), 80)
-    t = np.linspace(0, 1, n_points)
-    base_rows = start[0] + t * (end[0] - start[0])
-    base_cols = start[1] + t * (end[1] - start[1])
-
-    noise = _generate_fracture_noise(
-        n_points,
+    points, _ = _generate_fracture_path(
+        start, end, n_points,
         roughness=edge_params.get('roughness', 0.6) * 1.2,
         micro_roughness=edge_params.get('micro_roughness', 0.4),
     )
 
-    perp_row = -np.cos(angle_rad)
-    perp_col = np.sin(angle_rad)
-    fracture_rows = base_rows + noise * perp_row
-    fracture_cols = base_cols + noise * perp_col
-
-    points = np.stack([fracture_rows, fracture_cols], axis=1)
-
-    # Keep the side that's closer to target completeness
     test_mask = _rasterize_fracture_line(points, mask.shape, keep_side='above')
     keep_above = np.sum(mask & test_mask)
     keep_below = np.sum(mask & ~test_mask)
@@ -744,10 +768,23 @@ def generate_fracture_mask(mask, target_completeness, species_weights=None, edge
     func = FRACTURE_FUNCTIONS.get(fracture_type, _fracture_tip_loss)
     fracture_mask = func(mask, fraction_to_remove, effective_edge_params)
 
-    # Randomly decide if dentine is visible (facing camera) or hidden (facing away).
-    # ~35% of fractures expose dentine to the back — not visible in the photo.
-    show_dentine = np.random.random() > 0.35
-    effective_edge_params['show_dentine'] = show_dentine
+    # Dentine exposure: aligned with fracture direction changes.
+    # When the crack changes angle, one segment may face the camera (dentine
+    # visible) while the next segment faces away (no dentine).
+    p_no_dentine = effective_edge_params.get('dentine_hidden_prob', 0.20)
+    p_full_dentine = effective_edge_params.get('dentine_full_prob', 0.15)
+
+    roll = np.random.random()
+    if roll < p_no_dentine:
+        dentine_range = None
+    elif roll < p_no_dentine + p_full_dentine:
+        dentine_range = (0.0, 1.0)
+    else:
+        # Pick a random contiguous segment (25-65% of the fracture length)
+        seg_length = np.random.uniform(0.25, 0.65)
+        seg_start = np.random.uniform(0.0, 1.0 - seg_length)
+        dentine_range = (seg_start, seg_start + seg_length)
+    effective_edge_params['dentine_range'] = dentine_range
 
     return fracture_mask, effective_edge_params
 
@@ -826,14 +863,39 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
     keep_mask = tooth_mask.astype(bool) & fracture_mask.astype(bool)
     keep_mask = _keep_largest_fragment(keep_mask.astype(np.uint8)).astype(bool)
 
-    # Check if dentine should be visible (fracture facing camera vs facing away)
-    show_dentine = edge_params.get('show_dentine', True)
+    # Dentine exposure range: None = no dentine, (0,1) = full, (start, end) = partial
+    dentine_range = edge_params.get('dentine_range', (0.0, 1.0))
 
     # Step 3: Compute dentine color (lighter than tooth surface)
     dentine_base = _compute_dentine_color(img_array, tooth_mask, keep_mask)
 
     removed = tooth_mask.astype(bool) & ~keep_mask
     edge_width = edge_params.get('edge_3d_width', 20)
+
+    # Build spatial mask for where dentine is visible along the fracture
+    if dentine_range is not None:
+        # Compute normalized position along the fracture boundary.
+        # Use column position (for horizontal fractures) or row position
+        # (for vertical) normalized to [0, 1] across the tooth bbox.
+        rmin_t, rmax_t, cmin_t, cmax_t = np.where(tooth_mask)[0].min(), np.where(tooth_mask)[0].max(), \
+                                          np.where(tooth_mask)[1].min(), np.where(tooth_mask)[1].max()
+        # Use the longer axis for progress direction
+        if (cmax_t - cmin_t) >= (rmax_t - rmin_t):
+            col_progress = (np.arange(w) - cmin_t) / max(cmax_t - cmin_t, 1)
+            progress_map = np.broadcast_to(col_progress[np.newaxis, :], (h, w))
+        else:
+            row_progress = (np.arange(h) - rmin_t) / max(rmax_t - rmin_t, 1)
+            progress_map = np.broadcast_to(row_progress[:, np.newaxis], (h, w))
+        dr_start, dr_end = dentine_range
+        dentine_spatial = (progress_map >= dr_start) & (progress_map <= dr_end)
+
+        # In the exposed region, allow wider dentine (up to 3x) for dramatic exposure
+        exposed_width_mult = np.random.uniform(1.5, 3.0)
+    else:
+        dentine_spatial = np.zeros((h, w), dtype=bool)
+        exposed_width_mult = 1.0
+
+    show_dentine = dentine_range is not None
 
     if show_dentine:
         # Step 4: Fill the REMOVED side of the fracture with dentine
@@ -847,10 +909,13 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
 
             width_noise = np.random.randn(h, w).astype(np.float32) * 0.2
             width_noise = ndimage.gaussian_filter(width_noise, sigma=15)
-            effective_fill = edge_width * thickness_factor * (1.0 + width_noise)
-            effective_fill = np.clip(effective_fill, 3, edge_width * 2.5)
+            # In exposed regions, widen the dentine dramatically
+            width_mult = np.where(dentine_spatial, exposed_width_mult, 1.0)
+            effective_fill = edge_width * thickness_factor * (1.0 + width_noise) * width_mult
+            effective_fill = np.clip(effective_fill, 3, edge_width * 4.0)
 
-            dentine_zone = removed & (dist_from_kept <= effective_fill)
+            # Only show dentine where the spatial mask allows
+            dentine_zone = removed & (dist_from_kept <= effective_fill) & dentine_spatial
 
             if np.any(dentine_zone):
                 grain_fine = np.random.randn(h, w).astype(np.float32) * 6
@@ -885,7 +950,7 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
         # Step 5: Also paint dentine on the KEPT side (inner surface near fracture)
         if np.any(removed) and np.any(keep_mask):
             dist_to_removed = ndimage.distance_transform_edt(~removed)
-            inner_band = keep_mask & (dist_to_removed > 0) & (dist_to_removed <= max(edge_width // 3, 4))
+            inner_band = keep_mask & (dist_to_removed > 0) & (dist_to_removed <= max(edge_width // 3, 4)) & dentine_spatial
             if np.any(inner_band):
                 inner_blend = 1.0 - np.clip(dist_to_removed[inner_band] / max(edge_width // 3, 4), 0, 1) ** 0.5
                 grain_inner = np.random.randn(np.sum(inner_band)).astype(np.float32) * 6
@@ -901,16 +966,17 @@ def apply_fracture(image_path, tooth_mask, fracture_mask, edge_params=None,
         if np.any(shadow):
             img_array[shadow] *= 0.5
 
-    # Step 7: Composite — include kept fragment (and dentine fill if visible)
+    # Step 7: Composite — include kept fragment (and dentine fill where visible)
     visible_mask = keep_mask.copy()
     if show_dentine and np.any(removed) and np.any(keep_mask):
         dist_from_kept_final = ndimage.distance_transform_edt(~keep_mask)
         dist_from_bg_final = ndimage.distance_transform_edt(tooth_mask)
         max_t = np.max(dist_from_bg_final) if np.max(dist_from_bg_final) > 0 else 1
         t_factor = np.clip(dist_from_bg_final / max_t, 0, 1)
-        eff_fill_final = edge_width * t_factor
-        eff_fill_final = np.clip(eff_fill_final, 3, edge_width * 2.5)
-        dentine_visible = removed & (dist_from_kept_final <= eff_fill_final)
+        width_mult_final = np.where(dentine_spatial, exposed_width_mult, 1.0)
+        eff_fill_final = edge_width * t_factor * width_mult_final
+        eff_fill_final = np.clip(eff_fill_final, 3, edge_width * 4.0)
+        dentine_visible = removed & (dist_from_kept_final <= eff_fill_final) & dentine_spatial
         visible_mask = visible_mask | dentine_visible
 
     # Feather only the outer boundary (tooth edge against background)
