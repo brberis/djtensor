@@ -314,11 +314,18 @@ export default function DatasetDetail() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      setShowSyntheticDialog(false);
-      // Navigate to the new synthetic dataset page
-      if (data.dataset_id) {
-        router.push(`/datasets/${data.dataset_id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setShowSyntheticDialog(false);
+        setGeneratingSynthetic(false);
+        // Navigate to the new synthetic dataset page
+        if (data.dataset_id) {
+          router.push(`/datasets/${data.dataset_id}`);
+          return;
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.message || 'Failed to generate synthetic dataset');
       }
     } catch (e) {
       console.error('Failed to queue synthetic generation:', e);
