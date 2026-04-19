@@ -66,7 +66,9 @@ class DatasetViewSet(viewsets.ModelViewSet):
             user_studies = StudyMembership.objects.filter(
                 user=self.request.user
             ).values_list('study_id', flat=True)
-            qs = qs.filter(study__in=user_studies)
+            qs = qs.filter(
+                Q(study__in=user_studies) | Q(shared__in=user_studies)
+            ).distinct()
         return qs
     filter_backends = (DjangoFilterBackend,)
     filterset_fields = ['study', 'for_testing']
@@ -89,6 +91,55 @@ class DatasetViewSet(viewsets.ModelViewSet):
             return Response({'error': dataset_lock_reason(dataset)}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
 
+    @action(detail=True, methods=['get', 'post'])
+    def share(self, request, pk=None):
+        """GET: list studies and current sharing state. POST: set shared studies.
+
+        Sharing does not copy images; only M2M pointers are updated. Only users
+        who can edit the dataset's owner study (owner/editor) may change sharing.
+        """
+        from feature_extractor.permissions import effective_role
+        from feature_extractor.models import StudyMembership
+
+        dataset = self.get_object()
+
+        if request.method == 'GET':
+            if request.user.is_superuser:
+                studies_qs = Study.objects.all().order_by('display_order', '-created_at')
+            else:
+                user_study_ids = StudyMembership.objects.filter(
+                    user=request.user
+                ).values_list('study_id', flat=True)
+                studies_qs = Study.objects.filter(id__in=user_study_ids).order_by('display_order', '-created_at')
+            return Response({
+                'owner_study': dataset.study_id,
+                'shared': list(dataset.shared.values_list('id', flat=True)),
+                'studies': [{'id': s.id, 'name': s.name} for s in studies_qs],
+            })
+
+        # POST
+        owner_study = dataset.study
+        if owner_study is None:
+            if not request.user.is_superuser:
+                return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            role = effective_role(request.user, owner_study)
+            if role not in ('owner', 'editor'):
+                return Response({'error': 'Only owners/editors of the source study can share'}, status=status.HTTP_403_FORBIDDEN)
+
+        raw_ids = request.data.get('study_ids', [])
+        try:
+            ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response({'error': 'study_ids must be a list of integers'}, status=status.HTTP_400_BAD_REQUEST)
+
+        valid = list(Study.objects.filter(id__in=ids).values_list('id', flat=True))
+        dataset.shared.set(valid)
+        return Response({
+            'owner_study': dataset.study_id,
+            'shared': sorted(valid),
+        })
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
     def compute_completeness(self, request, pk=None):
         dataset = self.get_object()
@@ -107,9 +158,26 @@ class DatasetViewSet(viewsets.ModelViewSet):
         dataset = self.get_object()
         bins = request.data.get('completeness_bins', [0.8, 0.6, 0.4])
         images_per_bin = int(request.data.get('images_per_bin', 10))
+        use_all_sources = bool(request.data.get('use_all_sources', False))
         name = request.data.get('name', f"Synthetic from {dataset.name}")
         profile_overrides = request.data.get('profile_overrides')
         augmentations = request.data.get('augmentations')
+        target_study_id = request.data.get('target_study_id')
+
+        # Resolve target study: the study the new dataset should live in.
+        # Defaults to the source dataset's study. Must be a study the user can
+        # edit (superusers bypass).
+        target_study = dataset.study
+        if target_study_id is not None:
+            try:
+                target_study = Study.objects.get(pk=int(target_study_id))
+            except (Study.DoesNotExist, TypeError, ValueError):
+                return Response({'error': 'Invalid target_study_id'}, status=status.HTTP_400_BAD_REQUEST)
+            if not request.user.is_superuser:
+                from feature_extractor.permissions import effective_role
+                role = effective_role(request.user, target_study)
+                if role not in ('owner', 'editor'):
+                    return Response({'error': 'No edit permission on target study'}, status=status.HTTP_403_FORBIDDEN)
 
         # Handle name collisions
         base_name = name
@@ -124,7 +192,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
 
         # Create dataset record synchronously so we can return the ID
         syn_dataset = Dataset.objects.create(
-            study=dataset.study,
+            study=target_study,
             name=name,
             description=f"Synthetic fragments from {dataset.name}. Bins: {bins}",
             resolution=dataset.resolution,
@@ -136,6 +204,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
             generation_config={
                 'completeness_bins': bins,
                 'images_per_bin': images_per_bin,
+                'use_all_sources': use_all_sources,
                 'profile_overrides': profile_overrides,
                 'augmentations': augmentations,
             },
@@ -143,7 +212,10 @@ class DatasetViewSet(viewsets.ModelViewSet):
         syn_dataset.labels.set(dataset.labels.all())
 
         # Queue Celery task to populate the dataset with images
-        generate_synthetic_dataset.delay(syn_dataset.id, bins, images_per_bin, profile_overrides, augmentations)
+        generate_synthetic_dataset.delay(
+            syn_dataset.id, bins, images_per_bin, profile_overrides, augmentations,
+            use_all_sources=use_all_sources,
+        )
         return Response({'status': 'queued', 'name': name, 'dataset_id': syn_dataset.id}, status=status.HTTP_202_ACCEPTED)
 
 

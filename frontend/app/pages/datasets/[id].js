@@ -117,6 +117,7 @@ export default function DatasetDetail() {
   const [syntheticName, setSyntheticName] = useState('');
   const [syntheticBins, setSyntheticBins] = useState([0.8, 0.6, 0.4]);
   const [syntheticImagesPerBin, setSyntheticImagesPerBin] = useState(10);
+  const [syntheticUseAllSources, setSyntheticUseAllSources] = useState(false);
   const [generatingSynthetic, setGeneratingSynthetic] = useState(false);
   const [fractureProfiles, setFractureProfiles] = useState(null);
   const [profileOverrides, setProfileOverrides] = useState({});
@@ -292,11 +293,14 @@ export default function DatasetDetail() {
   const handleGenerateSynthetic = async () => {
     setGeneratingSynthetic(true);
     try {
+      const selectedStudy = typeof window !== 'undefined' ? localStorage.getItem('selectedStudy') : null;
       const payload = {
         name: syntheticName || `Synthetic from ${dataset?.name}`,
         completeness_bins: syntheticBins,
         images_per_bin: syntheticImagesPerBin,
+        use_all_sources: syntheticUseAllSources,
       };
+      if (selectedStudy) payload.target_study_id = parseInt(selectedStudy);
       // Only send overrides if any species was customized
       if (Object.keys(profileOverrides).length > 0) {
         payload.profile_overrides = profileOverrides;
@@ -1299,14 +1303,31 @@ export default function DatasetDetail() {
 
                   <div>
                     <label className="text-sm font-medium text-gray-700">Images per Species per Bin</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={syntheticImagesPerBin}
-                      onChange={(e) => setSyntheticImagesPerBin(Math.max(1, parseInt(e.target.value) || 1))}
-                      className={`mt-1 block w-24 ${theme.classes.input}`}
-                    />
+                    <div className="mt-1 flex items-center gap-3">
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={syntheticImagesPerBin}
+                        onChange={(e) => setSyntheticImagesPerBin(Math.max(1, parseInt(e.target.value) || 1))}
+                        disabled={syntheticUseAllSources}
+                        className={`block w-24 ${theme.classes.input} ${syntheticUseAllSources ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      />
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={syntheticUseAllSources}
+                          onChange={(e) => setSyntheticUseAllSources(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Max (use all source images per class)</span>
+                      </label>
+                    </div>
+                    {syntheticUseAllSources && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Each source image is used once per bin. Classes with fewer images produce fewer fragments — output follows source class balance.
+                      </p>
+                    )}
                   </div>
 
                   {/* Per-species fracture profiles */}
@@ -1505,8 +1526,20 @@ export default function DatasetDetail() {
                   )}
 
                   <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
-                    Estimated output: ~{syntheticBins.length * syntheticImagesPerBin * labels.length} images
-                    ({syntheticBins.length} bins x {syntheticImagesPerBin} images x {labels.length} species)
+                    {syntheticUseAllSources ? (() => {
+                      const totalSources = labels.reduce((sum, l) => sum + (l.image_count || 0), 0);
+                      return (
+                        <>
+                          Estimated output: ~{syntheticBins.length * totalSources} images
+                          ({syntheticBins.length} bins x {totalSources} source images across {labels.length} species)
+                        </>
+                      );
+                    })() : (
+                      <>
+                        Estimated output: ~{syntheticBins.length * syntheticImagesPerBin * labels.length} images
+                        ({syntheticBins.length} bins x {syntheticImagesPerBin} images x {labels.length} species)
+                      </>
+                    )}
                   </div>
                 </div>
 

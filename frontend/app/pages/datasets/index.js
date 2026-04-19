@@ -14,14 +14,16 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import AddDataset from '../../components/addDataset';
 import GenerateDataset from '../../components/generateDataset';
+import ShareDatasetDialog from '../../components/shareDatasetDialog';
 import { TableSpinnerRow } from '../../components/Spinner';
-import { CircleStackIcon } from '@heroicons/react/24/outline';
+import { CircleStackIcon, ShareIcon } from '@heroicons/react/24/outline';
 
 export default function Datasets({ base }) {
   const [datasets, setDatasets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpenAddDataset, setIsOpenAddDataset] = useState(false);
   const [isOpenGenerateDataset, setIsOpenGenerateDataset] = useState(false);
+  const [shareDataset, setShareDataset] = useState(null);
   const [refresh, setRefresh] = useState(false);
   const [action, setAction] = useState('');
   const [baseSet, setBaseSet] = useState(false);
@@ -77,6 +79,11 @@ export default function Datasets({ base }) {
     setRefresh(prev => !prev);
   };
 
+  const handleShareClose = (changed) => {
+    setShareDataset(null);
+    if (changed) setRefresh(prev => !prev);
+  };
+
   const incomingAction = async (action) => {
     if (action === 'Create Base Dataset') {
       setIsOpenAddDataset(true);
@@ -117,6 +124,9 @@ export default function Datasets({ base }) {
     <Layout incomingAction={incomingAction} action={action}>
       {isOpenAddDataset && <AddDataset isOpen={isOpenAddDataset} onClose={handleClose} />}
       {isOpenGenerateDataset && <GenerateDataset isOpen={isOpenGenerateDataset} onClose={handleClose} />}
+      {shareDataset && (
+        <ShareDatasetDialog isOpen={!!shareDataset} onClose={handleShareClose} dataset={shareDataset} />
+      )}
 
       {/* Page header */}
       <div className="sm:flex sm:items-center sm:justify-between mb-6">
@@ -137,14 +147,15 @@ export default function Datasets({ base }) {
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Resolution</th>
               <th scope="col" className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
+              <th scope="col" className="px-4 py-3.5 text-right text-sm font-semibold text-gray-900"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {isLoading ? (
-              <TableSpinnerRow colSpan={4} />
+              <TableSpinnerRow colSpan={5} />
             ) : datasets.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-12 text-center">
+                <td colSpan={5} className="px-4 py-12 text-center">
                   <CircleStackIcon className="mx-auto h-12 w-12 text-gray-300" />
                   <h3 className="mt-2 text-sm font-semibold text-gray-900">No datasets</h3>
                   <p className="mt-1 text-sm text-gray-500">Get started by creating a base dataset.</p>
@@ -161,6 +172,17 @@ export default function Datasets({ base }) {
                   <td className="px-4 py-4 text-sm text-gray-500 max-w-xs truncate">{dataset.description}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm text-gray-500">{dataset.resolution}px</td>
                   <td className="whitespace-nowrap px-4 py-4 text-sm">{getTypeBadge(dataset)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right text-sm">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setShareDataset(dataset); }}
+                      title="Share with other studies"
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                      <ShareIcon className="h-4 w-4" aria-hidden="true" />
+                      Share
+                    </button>
+                  </td>
                 </tr>
               ))
             )}

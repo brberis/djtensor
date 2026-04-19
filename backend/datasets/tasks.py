@@ -130,7 +130,8 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
 
 @shared_task
 def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin,
-                               profile_overrides=None, augmentations=None):
+                               profile_overrides=None, augmentations=None,
+                               use_all_sources=False):
     """
     Populate a synthetic dataset with fragmentary tooth images.
 
@@ -144,9 +145,13 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
     Args:
         syn_dataset_id: ID of the pre-created synthetic dataset.
         completeness_bins: List of target completeness values, e.g. [0.8, 0.6, 0.4].
-        images_per_bin: Number of images to generate per species per bin.
+        images_per_bin: Number of images to generate per species per bin. Ignored
+            when use_all_sources is True.
         profile_overrides: Optional dict of {species_name: profile_dict} to override defaults.
         augmentations: Optional dict of augmentation flags (e.g. {'grayscale': True, 'horizontal_flip': True}).
+        use_all_sources: If True, emit one fragment per source image per bin (max
+            per class, no oversampling). If a generated fragment falls out of
+            tolerance it is retried once with a fresh random cut before being skipped.
     """
     from .models import Dataset, Image, Label
     from .synthetic_fracture import generate_synthetic_fragment
@@ -196,76 +201,100 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
 
         for target_compl in completeness_bins:
             generated = 0
-            max_attempts = images_per_bin * 5  # retry budget
-            attempts = 0
             min_acceptable = max(target_compl - tolerance, absolute_min, 0.05)
             max_acceptable = min(target_compl + tolerance, 0.98)  # never 100% for fragments
 
-            while generated < images_per_bin and attempts < max_attempts:
-                attempts += 1
-                src_img = random.choice(source_images)
-                try:
-                    result_img, actual_compl = generate_synthetic_fragment(
-                        src_img.image.path,
-                        target_completeness=target_compl,
-                        species=label.name,
-                        profile_override=species_override,
-                    )
+            def emit_fragment(src_img, actual_compl, result_img):
+                nonlocal generated
+                if augmentation_pipeline is not None:
+                    import tensorflow as tf
+                    img_array = np.array(result_img, dtype=np.float32)
+                    batch = tf.expand_dims(img_array, 0)
+                    augmented = augmentation_pipeline(batch, training=True)
+                    aug_np = np.clip(augmented.numpy()[0], 0, 255).astype(np.uint8)
+                    result_img = PILImage.fromarray(aug_np)
 
-                    # Filter: skip if completeness is too far from target
-                    if actual_compl < min_acceptable or actual_compl > max_acceptable:
-                        logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
-                        continue
+                buf = io.BytesIO()
+                result_img.save(buf, format='PNG')
+                buf.seek(0)
 
-                    # Apply augmentation pipeline if selected
-                    if augmentation_pipeline is not None:
-                        import tensorflow as tf
-                        img_array = np.array(result_img, dtype=np.float32)
-                        batch = tf.expand_dims(img_array, 0)
-                        augmented = augmentation_pipeline(batch, training=True)
-                        aug_np = np.clip(augmented.numpy()[0], 0, 255).astype(np.uint8)
-                        result_img = PILImage.fromarray(aug_np)
+                filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
+                content = ContentFile(buf.getvalue(), name=filename)
 
-                    buf = io.BytesIO()
-                    result_img.save(buf, format='PNG')
-                    buf.seek(0)
+                if src_img.id not in source_areas:
+                    src_area = src_img.tooth_area
+                    if src_area is None:
+                        try:
+                            mask = segment_tooth(src_img.image.path)
+                            src_area = compute_tooth_area(mask)
+                            src_img.tooth_area = src_area
+                            src_img.save(update_fields=['tooth_area'])
+                        except Exception:
+                            src_area = 0
+                    source_areas[src_img.id] = src_area
 
-                    filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
-                    content = ContentFile(buf.getvalue(), name=filename)
+                orig_area = source_areas[src_img.id]
+                result_tooth_area = int(actual_compl * orig_area) if orig_area else None
 
-                    # Compute exact tooth_area from source original
-                    if src_img.id not in source_areas:
-                        src_area = src_img.tooth_area
-                        if src_area is None:
-                            try:
-                                mask = segment_tooth(src_img.image.path)
-                                src_area = compute_tooth_area(mask)
-                                src_img.tooth_area = src_area
-                                src_img.save(update_fields=['tooth_area'])
-                            except Exception:
-                                src_area = 0
-                        source_areas[src_img.id] = src_area
+                Image.objects.create(
+                    dataset=syn_dataset,
+                    image=content,
+                    label=label,
+                    source_image=src_img,
+                    target_completeness=target_compl,
+                    tooth_area=result_tooth_area,
+                    completeness=actual_compl,
+                )
+                generated += 1
 
-                    orig_area = source_areas[src_img.id]
-                    result_tooth_area = int(actual_compl * orig_area) if orig_area else None
+            if use_all_sources:
+                # Iterate each source once; retry each up to per_source_retries
+                # until one fragment lands in tolerance.
+                per_source_retries = 30
+                bin_target = len(source_images)
+                source_iter = list(source_images)
+                random.shuffle(source_iter)
+                for src_img in source_iter:
+                    for _ in range(per_source_retries):
+                        try:
+                            result_img, actual_compl = generate_synthetic_fragment(
+                                src_img.image.path,
+                                target_completeness=target_compl,
+                                species=label.name,
+                                profile_override=species_override,
+                            )
+                            if actual_compl < min_acceptable or actual_compl > max_acceptable:
+                                continue
+                            emit_fragment(src_img, actual_compl, result_img)
+                            total_generated += 1
+                            break
+                        except Exception as e:
+                            logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
+                            break
+            else:
+                bin_target = images_per_bin
+                max_attempts = images_per_bin * 5
+                attempts = 0
+                while generated < bin_target and attempts < max_attempts:
+                    src_img = random.choice(source_images)
+                    attempts += 1
+                    try:
+                        result_img, actual_compl = generate_synthetic_fragment(
+                            src_img.image.path,
+                            target_completeness=target_compl,
+                            species=label.name,
+                            profile_override=species_override,
+                        )
+                        if actual_compl < min_acceptable or actual_compl > max_acceptable:
+                            logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
+                            continue
+                        emit_fragment(src_img, actual_compl, result_img)
+                        total_generated += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
 
-                    Image.objects.create(
-                        dataset=syn_dataset,
-                        image=content,
-                        label=label,
-                        source_image=src_img,
-                        target_completeness=target_compl,
-                        tooth_area=result_tooth_area,
-                        completeness=actual_compl,
-                    )
-                    generated += 1
-                    total_generated += 1
-
-                except Exception as e:
-                    logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
-
-            if generated < images_per_bin:
-                logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{images_per_bin} after {attempts} attempts")
+            if generated < bin_target:
+                logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{bin_target}")
 
     logger.info(f"Synthetic dataset '{name}' created with {total_generated} images")
 
