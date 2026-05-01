@@ -119,6 +119,8 @@ export default function DatasetDetail() {
   const [syntheticImagesPerBin, setSyntheticImagesPerBin] = useState(10);
   const [syntheticUseAllSources, setSyntheticUseAllSources] = useState(false);
   const [generatingSynthetic, setGeneratingSynthetic] = useState(false);
+  const [syntheticStudies, setSyntheticStudies] = useState([]);
+  const [syntheticTargetStudy, setSyntheticTargetStudy] = useState('');
   const [fractureProfiles, setFractureProfiles] = useState(null);
   const [profileOverrides, setProfileOverrides] = useState({});
   const [expandedSpecies, setExpandedSpecies] = useState(null);
@@ -308,14 +310,17 @@ export default function DatasetDetail() {
   const handleGenerateSynthetic = async () => {
     setGeneratingSynthetic(true);
     try {
-      const selectedStudy = typeof window !== 'undefined' ? localStorage.getItem('selectedStudy') : null;
       const payload = {
         name: syntheticName || `Synthetic from ${dataset?.name}`,
         completeness_bins: syntheticBins,
         images_per_bin: syntheticImagesPerBin,
         use_all_sources: syntheticUseAllSources,
       };
-      if (selectedStudy) payload.target_study_id = parseInt(selectedStudy);
+      // Honour the target-study picker; empty string falls back to the
+      // backend default (source dataset's study).
+      if (syntheticTargetStudy) {
+        payload.target_study_id = parseInt(syntheticTargetStudy);
+      }
       // Only send overrides if any species was customized
       if (Object.keys(profileOverrides).length > 0) {
         payload.profile_overrides = profileOverrides;
@@ -885,6 +890,19 @@ export default function DatasetDetail() {
                                   .then(data => setFractureProfiles(data))
                                   .catch(console.error);
                               }
+                              // Default the target study to whatever is currently selected
+                              // in the navbar; user can override in the dialog before submit.
+                              const currentStudy = typeof window !== 'undefined'
+                                ? localStorage.getItem('selectedStudy') || ''
+                                : '';
+                              setSyntheticTargetStudy(currentStudy);
+                              fetch('/api/feature_extractor/studies/')
+                                .then(r => r.json())
+                                .then(data => {
+                                  const list = Array.isArray(data) ? data : data.results || [];
+                                  setSyntheticStudies(list);
+                                })
+                                .catch(console.error);
                               setShowSyntheticDialog(true);
                             }
                           }}
@@ -1290,6 +1308,23 @@ export default function DatasetDetail() {
                       onChange={(e) => setSyntheticName(e.target.value)}
                       className={`mt-1 block w-full ${theme.classes.input}`}
                     />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Target Study</label>
+                    <select
+                      value={syntheticTargetStudy}
+                      onChange={(e) => setSyntheticTargetStudy(e.target.value)}
+                      className={`mt-1 block w-full ${theme.classes.select}`}
+                    >
+                      <option value="">— Source dataset&apos;s study —</option>
+                      {syntheticStudies.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      The new synthetic dataset will be created in this study. Defaults to the study currently selected in the navbar.
+                    </p>
                   </div>
 
                   <div>
