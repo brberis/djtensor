@@ -128,6 +128,91 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
     logger.info(f"Completeness computed for {len(to_update)} images in dataset {dataset.name}")
 
 
+def _synth_attempt_worker(args):
+    """Single fragment-generation attempt for a process pool worker.
+
+    Pure CPU; touches no DB and no Django/TensorFlow state. Returns enough
+    metadata for the parent process to decide whether to keep the result
+    and to write the corresponding Image row.
+
+    Worker-side encoding to PNG bytes avoids pickling huge PIL.Image objects
+    back across the process boundary.
+    """
+    src_id, src_path, target_compl, species, profile_override = args
+    from .synthetic_fracture import generate_synthetic_fragment
+    import io
+    try:
+        result_img, actual_compl = generate_synthetic_fragment(
+            src_path,
+            target_completeness=target_compl,
+            species=species,
+            profile_override=profile_override,
+        )
+        buf = io.BytesIO()
+        result_img.save(buf, format='PNG')
+        return ('ok', src_id, target_compl, float(actual_compl), buf.getvalue(), None)
+    except Exception as exc:
+        return ('err', src_id, target_compl, None, None, str(exc))
+
+
+def _synth_source_worker(args):
+    """Per-source retry loop for a process pool worker (use_all_sources mode).
+
+    Tries up to max_retries to land actual_completeness inside the tolerance
+    band. If none of the attempts land in band, returns the closest-to-target
+    result as a fallback.
+    """
+    (src_id, src_path, target_compl, species, profile_override,
+     min_acceptable, max_acceptable, max_retries) = args
+    from .synthetic_fracture import generate_synthetic_fragment
+    import io
+    best = None  # (abs_error, actual_compl, png_bytes)
+    last_error = None
+    for _ in range(max_retries):
+        try:
+            result_img, actual_compl = generate_synthetic_fragment(
+                src_path,
+                target_completeness=target_compl,
+                species=species,
+                profile_override=profile_override,
+            )
+        except Exception as exc:
+            last_error = str(exc)
+            break
+        buf = io.BytesIO()
+        result_img.save(buf, format='PNG')
+        png_bytes = buf.getvalue()
+        if min_acceptable <= actual_compl <= max_acceptable:
+            return ('ok', src_id, target_compl, float(actual_compl), png_bytes, False)
+        err = abs(actual_compl - target_compl)
+        if best is None or err < best[0]:
+            best = (err, actual_compl, png_bytes)
+    if best is not None:
+        return ('ok', src_id, target_compl, float(best[1]), best[2], True)
+    return ('err', src_id, target_compl, None, None, last_error or 'no result')
+
+
+def _synth_pool_workers():
+    """Number of parallel processes for synthetic-fragment generation.
+
+    Honours the SYNTHETIC_FRAGMENT_WORKERS env var; otherwise uses up to
+    4 processes or os.cpu_count(), whichever is smaller. Capped to keep
+    peak memory bounded since each worker holds ~few-hundred MB of
+    numpy/PIL state during generation.
+    """
+    import os as _os
+    override = _os.environ.get('SYNTHETIC_FRAGMENT_WORKERS')
+    if override:
+        try:
+            n = int(override)
+            if n >= 1:
+                return n
+        except ValueError:
+            pass
+    cpu = _os.cpu_count() or 1
+    return max(1, min(cpu, 4))
+
+
 @shared_task
 def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin,
                                profile_overrides=None, augmentations=None,
@@ -154,12 +239,13 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
             tolerance it is retried once with a fresh random cut before being skipped.
     """
     from .models import Dataset, Image, Label
-    from .synthetic_fracture import generate_synthetic_fragment
     from django.core.files.base import ContentFile
     from PIL import Image as PILImage
     import io
     import random
     import numpy as np
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor, as_completed
 
     syn_dataset = Dataset.objects.get(pk=syn_dataset_id)
     source = syn_dataset.source_dataset
@@ -189,114 +275,142 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
         tolerance = 0.08  # single bin: tight ±8% range
     absolute_min = max(sorted_bins[0] - tolerance, 0.05)
 
-    for label in source.labels.all():
-        source_images = list(Image.objects.filter(dataset=source, label=label))
-        if not source_images:
-            continue
+    # Use spawn so worker processes get a clean interpreter and don't inherit
+    # Django/TF state from the celery task process — fork-after-TF can break
+    # CUDA in surprising ways if anything touches the GPU.
+    mp_ctx = multiprocessing.get_context('spawn')
+    pool_workers = _synth_pool_workers()
+    logger.info(f"Synthetic generation using {pool_workers} parallel worker(s)")
+    src_image_by_id = {}  # populated as we encounter sources
 
-        # Get species-specific profile override if provided
-        species_override = None
-        if profile_overrides and label.name in profile_overrides:
-            species_override = profile_overrides[label.name]
+    def emit_fragment(src_img, target_compl, actual_compl, png_bytes, label, generated):
+        """Apply augmentation (parent-side, TF-only) and persist the Image row."""
+        if augmentation_pipeline is not None:
+            import tensorflow as tf
+            with PILImage.open(io.BytesIO(png_bytes)) as pil_img:
+                img_array = np.array(pil_img.convert('RGB'), dtype=np.float32)
+            batch = tf.expand_dims(img_array, 0)
+            augmented = augmentation_pipeline(batch, training=True)
+            aug_np = np.clip(augmented.numpy()[0], 0, 255).astype(np.uint8)
+            buf = io.BytesIO()
+            PILImage.fromarray(aug_np).save(buf, format='PNG')
+            png_bytes = buf.getvalue()
 
-        for target_compl in completeness_bins:
-            generated = 0
-            min_acceptable = max(target_compl - tolerance, absolute_min, 0.05)
-            max_acceptable = min(target_compl + tolerance, 0.98)  # never 100% for fragments
+        filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
+        content = ContentFile(png_bytes, name=filename)
 
-            def emit_fragment(src_img, actual_compl, result_img):
-                nonlocal generated
-                if augmentation_pipeline is not None:
-                    import tensorflow as tf
-                    img_array = np.array(result_img, dtype=np.float32)
-                    batch = tf.expand_dims(img_array, 0)
-                    augmented = augmentation_pipeline(batch, training=True)
-                    aug_np = np.clip(augmented.numpy()[0], 0, 255).astype(np.uint8)
-                    result_img = PILImage.fromarray(aug_np)
+        if src_img.id not in source_areas:
+            src_area = src_img.tooth_area
+            if src_area is None:
+                try:
+                    mask = segment_tooth(src_img.image.path)
+                    src_area = compute_tooth_area(mask)
+                    src_img.tooth_area = src_area
+                    src_img.save(update_fields=['tooth_area'])
+                except Exception:
+                    src_area = 0
+            source_areas[src_img.id] = src_area
 
-                buf = io.BytesIO()
-                result_img.save(buf, format='PNG')
-                buf.seek(0)
+        orig_area = source_areas[src_img.id]
+        result_tooth_area = int(actual_compl * orig_area) if orig_area else None
 
-                filename = f"syn_{label.name}_{int(target_compl * 100)}pct_{generated}_{src_img.id}.png"
-                content = ContentFile(buf.getvalue(), name=filename)
+        Image.objects.create(
+            dataset=syn_dataset,
+            image=content,
+            label=label,
+            source_image=src_img,
+            target_completeness=target_compl,
+            tooth_area=result_tooth_area,
+            completeness=actual_compl,
+        )
 
-                if src_img.id not in source_areas:
-                    src_area = src_img.tooth_area
-                    if src_area is None:
-                        try:
-                            mask = segment_tooth(src_img.image.path)
-                            src_area = compute_tooth_area(mask)
-                            src_img.tooth_area = src_area
-                            src_img.save(update_fields=['tooth_area'])
-                        except Exception:
-                            src_area = 0
-                    source_areas[src_img.id] = src_area
+    with ProcessPoolExecutor(max_workers=pool_workers, mp_context=mp_ctx) as executor:
+        for label in source.labels.all():
+            source_images = list(Image.objects.filter(dataset=source, label=label))
+            if not source_images:
+                continue
 
-                orig_area = source_areas[src_img.id]
-                result_tooth_area = int(actual_compl * orig_area) if orig_area else None
+            for src_img in source_images:
+                src_image_by_id[src_img.id] = src_img
 
-                Image.objects.create(
-                    dataset=syn_dataset,
-                    image=content,
-                    label=label,
-                    source_image=src_img,
-                    target_completeness=target_compl,
-                    tooth_area=result_tooth_area,
-                    completeness=actual_compl,
-                )
-                generated += 1
+            # Get species-specific profile override if provided
+            species_override = None
+            if profile_overrides and label.name in profile_overrides:
+                species_override = profile_overrides[label.name]
 
-            if use_all_sources:
-                # Iterate each source once; retry each up to per_source_retries
-                # until one fragment lands in tolerance.
-                per_source_retries = 30
-                bin_target = len(source_images)
-                source_iter = list(source_images)
-                random.shuffle(source_iter)
-                for src_img in source_iter:
-                    for _ in range(per_source_retries):
-                        try:
-                            result_img, actual_compl = generate_synthetic_fragment(
-                                src_img.image.path,
-                                target_completeness=target_compl,
-                                species=label.name,
-                                profile_override=species_override,
-                            )
-                            if actual_compl < min_acceptable or actual_compl > max_acceptable:
-                                continue
-                            emit_fragment(src_img, actual_compl, result_img)
-                            total_generated += 1
-                            break
-                        except Exception as e:
-                            logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
-                            break
-            else:
-                bin_target = images_per_bin
-                max_attempts = images_per_bin * 5
-                attempts = 0
-                while generated < bin_target and attempts < max_attempts:
-                    src_img = random.choice(source_images)
-                    attempts += 1
-                    try:
-                        result_img, actual_compl = generate_synthetic_fragment(
-                            src_img.image.path,
-                            target_completeness=target_compl,
-                            species=label.name,
-                            profile_override=species_override,
-                        )
-                        if actual_compl < min_acceptable or actual_compl > max_acceptable:
-                            logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
+            for target_compl in completeness_bins:
+                min_acceptable = max(target_compl - tolerance, absolute_min, 0.05)
+                max_acceptable = min(target_compl + tolerance, 0.98)  # never 100% for fragments
+
+                if use_all_sources:
+                    # Each source contributes exactly one fragment per bin. The
+                    # per-source retry loop runs inside the worker so the parent
+                    # only collects (best-or-fallback, png_bytes) per source.
+                    per_source_retries = 30
+                    bin_target = len(source_images)
+                    shuffled = list(source_images)
+                    random.shuffle(shuffled)
+                    args_iter = (
+                        (src.id, src.image.path, target_compl, label.name, species_override,
+                         min_acceptable, max_acceptable, per_source_retries)
+                        for src in shuffled
+                    )
+                    generated = 0
+                    fallback_used = 0
+                    for status, src_id, _, actual_compl, png_bytes, extra in executor.map(
+                            _synth_source_worker, args_iter):
+                        src_img = src_image_by_id.get(src_id)
+                        if status != 'ok' or src_img is None:
+                            logger.warning(f"Failed to generate fragment for image {src_id} at {target_compl}: {extra}")
                             continue
-                        emit_fragment(src_img, actual_compl, result_img)
+                        emit_fragment(src_img, target_compl, actual_compl, png_bytes, label, generated)
+                        generated += 1
                         total_generated += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to generate fragment for image {src_img.id} at {target_compl}: {e}")
+                        if extra:  # fallback flag from worker
+                            fallback_used += 1
+                    if fallback_used:
+                        logger.info(f"{label.name} {target_compl:.0%}: emitted {fallback_used} closest-to-target fallback fragments")
+                else:
+                    # Random-sampling mode: dispatch up to images_per_bin*5 attempts
+                    # to the pool, collect the first images_per_bin successes (in
+                    # tolerance band), and cancel the remainder once we have enough.
+                    bin_target = images_per_bin
+                    max_attempts = images_per_bin * 5
+                    attempts_args = []
+                    for _ in range(max_attempts):
+                        src = random.choice(source_images)
+                        attempts_args.append(
+                            (src.id, src.image.path, target_compl, label.name, species_override)
+                        )
 
-            if generated < bin_target:
-                logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{bin_target}")
+                    futures = [executor.submit(_synth_attempt_worker, a) for a in attempts_args]
+                    generated = 0
+                    try:
+                        for fut in as_completed(futures):
+                            if generated >= bin_target:
+                                break
+                            status, src_id, _, actual_compl, png_bytes, error = fut.result()
+                            if status != 'ok':
+                                logger.warning(f"Failed to generate fragment for image {src_id} at {target_compl}: {error}")
+                                continue
+                            if actual_compl < min_acceptable or actual_compl > max_acceptable:
+                                logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
+                                continue
+                            src_img = src_image_by_id.get(src_id)
+                            if src_img is None:
+                                continue
+                            emit_fragment(src_img, target_compl, actual_compl, png_bytes, label, generated)
+                            generated += 1
+                            total_generated += 1
+                    finally:
+                        # Cancel any not-yet-running attempts once we have enough
+                        for fut in futures:
+                            fut.cancel()
 
-    logger.info(f"Synthetic dataset '{name}' created with {total_generated} images")
+                if generated < bin_target:
+                    logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{bin_target}")
+
+    logger.info(f"Synthetic dataset '{syn_dataset.name}' created with {total_generated} images")
 
     # Trigger archive creation
     create_dataset_archive.delay(syn_dataset.id)
