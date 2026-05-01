@@ -156,8 +156,9 @@ def train_model(training_session_id, *args, **kwargs):
     
     session_instance = TrainingSession.objects.get(id=training_session_id)
     model_instance = TFModel.objects.get(id=session_instance.model.id)
-    model_batch_size = model_instance.batch_size
-    model_epochs = model_instance.epochs
+    model_batch_size = session_instance.batch_size if session_instance.batch_size is not None else model_instance.batch_size
+    model_epochs = session_instance.num_epochs if session_instance.num_epochs is not None else model_instance.epochs
+    model_learning_rate = session_instance.learning_rate if session_instance.learning_rate is not None else 0.005
     model_validation_split = model_instance.validation_split
     model_fine_tuning = model_instance.fine_tuning
     model_data_augmentation = model_instance.data_augmentation
@@ -181,6 +182,7 @@ def train_model(training_session_id, *args, **kwargs):
         logger.info(f"Training model {model_instance.name} with id {model_instance.id}")
         logger.info(f"Batch size: {model_batch_size}")
         logger.info(f"Epochs: {model_epochs}")
+        logger.info(f"Learning rate: {model_learning_rate}")
         logger.info(f"Validation split: {model_validation_split}")
         
         logger.info('Starting training...')
@@ -455,7 +457,7 @@ def train_model(training_session_id, *args, **kwargs):
         logger.info("Starting model training...")
 
         model.compile(
-            optimizer=tf.keras.optimizers.SGD(learning_rate=0.005, momentum=0.9), 
+            optimizer=tf.keras.optimizers.SGD(learning_rate=model_learning_rate, momentum=0.9),
             loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=0.1),
             metrics=['accuracy'])
 
@@ -486,14 +488,17 @@ def train_model(training_session_id, *args, **kwargs):
 
         save_all_images_callback = SaveAllImagesCallback(post_train_ds, steps_per_epoch)
 
-        # Fit the model and get the History object
+        # Fit the model and get the History object. verbose=2 emits one
+        # summary line per epoch instead of carriage-return progress bars,
+        # which read cleanly through the Redis log pipe.
         history_obj = model.fit(
             post_train_ds,
-            epochs=model_epochs, 
+            epochs=model_epochs,
             steps_per_epoch=steps_per_epoch,
             validation_data=val_ds,
             validation_steps=validation_steps,
-            # callbacks=[save_all_images_callback] 
+            verbose=2,
+            # callbacks=[save_all_images_callback]
             )
 
         hist = history_obj.history 
