@@ -22,7 +22,13 @@ from .model_config import model_handle_map, model_image_size_map
 from django.core.files import File
 from django.utils.text import get_valid_filename
 from uuid import uuid4
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageFile
+
+# Tolerate slightly-truncated PNG/JPEG files. Synthetic-fragment generation
+# occasionally writes images that PIL flags as truncated even though the
+# pixel data is essentially complete. Without this flag, a single bad file
+# in remove_alpha() aborts the whole training run.
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 import tensorflow_addons as tfa
 import tensorflow.keras.backend as K
 import gc
@@ -88,11 +94,18 @@ def convert_alpha_to_white(image_path):
 
 def remove_alpha(data_dir):
     """Iterates through all images in the data directory and converts them to remove transparency, saving in-place."""
+    skipped = 0
     for root, _, files in os.walk(data_dir):
         for file in files:
             if file.endswith(".png") or file.endswith(".jpg"):
                 file_path = os.path.join(root, file)
-                convert_alpha_to_white(file_path)
+                try:
+                    convert_alpha_to_white(file_path)
+                except Exception as exc:
+                    skipped += 1
+                    logger.warning(f"remove_alpha: skipped {file_path}: {exc}")
+    if skipped:
+        logger.warning(f"remove_alpha: skipped {skipped} unreadable image(s)")
                 
 
 # custom layer to convert RGB to Grayscale
