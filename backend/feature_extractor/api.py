@@ -534,6 +534,9 @@ class TrainingSessionViewSet(viewsets.ModelViewSet):
             notes=source.notes,
             dataset=source.dataset,
             model=source.model,
+            batch_size=source.batch_size,
+            num_epochs=source.num_epochs,
+            learning_rate=source.learning_rate,
             status='Pending',
             created_by=request.user,
         )
