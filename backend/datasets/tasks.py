@@ -244,8 +244,11 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
     import io
     import random
     import numpy as np
-    import multiprocessing
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    # billiard is Celery's fork-friendly multiprocessing replacement; required
+    # because Celery prefork workers are daemonic and Python's stdlib
+    # multiprocessing refuses fork-from-daemon ("daemonic processes are not
+    # allowed to have children").
+    from billiard.pool import Pool as BilliardPool
 
     syn_dataset = Dataset.objects.get(pk=syn_dataset_id)
     source = syn_dataset.source_dataset
@@ -275,10 +278,6 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
         tolerance = 0.08  # single bin: tight ±8% range
     absolute_min = max(sorted_bins[0] - tolerance, 0.05)
 
-    # Use spawn so worker processes get a clean interpreter and don't inherit
-    # Django/TF state from the celery task process — fork-after-TF can break
-    # CUDA in surprising ways if anything touches the GPU.
-    mp_ctx = multiprocessing.get_context('spawn')
     pool_workers = _synth_pool_workers()
     logger.info(f"Synthetic generation using {pool_workers} parallel worker(s)")
     src_image_by_id = {}  # populated as we encounter sources
@@ -324,7 +323,8 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
             completeness=actual_compl,
         )
 
-    with ProcessPoolExecutor(max_workers=pool_workers, mp_context=mp_ctx) as executor:
+    pool = BilliardPool(processes=pool_workers)
+    try:
         for label in source.labels.all():
             source_images = list(Image.objects.filter(dataset=source, label=label))
             if not source_images:
@@ -350,14 +350,14 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
                     bin_target = len(source_images)
                     shuffled = list(source_images)
                     random.shuffle(shuffled)
-                    args_iter = (
+                    args_iter = [
                         (src.id, src.image.path, target_compl, label.name, species_override,
                          min_acceptable, max_acceptable, per_source_retries)
                         for src in shuffled
-                    )
+                    ]
                     generated = 0
                     fallback_used = 0
-                    for status, src_id, _, actual_compl, png_bytes, extra in executor.map(
+                    for status, src_id, _, actual_compl, png_bytes, extra in pool.imap_unordered(
                             _synth_source_worker, args_iter):
                         src_img = src_image_by_id.get(src_id)
                         if status != 'ok' or src_img is None:
@@ -372,8 +372,9 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
                         logger.info(f"{label.name} {target_compl:.0%}: emitted {fallback_used} closest-to-target fallback fragments")
                 else:
                     # Random-sampling mode: dispatch up to images_per_bin*5 attempts
-                    # to the pool, collect the first images_per_bin successes (in
-                    # tolerance band), and cancel the remainder once we have enough.
+                    # to the pool, collect the first images_per_bin in-tolerance
+                    # successes, then break out (remaining queued items are simply
+                    # consumed and discarded — each attempt is cheap to drop).
                     bin_target = images_per_bin
                     max_attempts = images_per_bin * 5
                     attempts_args = []
@@ -383,32 +384,29 @@ def generate_synthetic_dataset(syn_dataset_id, completeness_bins, images_per_bin
                             (src.id, src.image.path, target_compl, label.name, species_override)
                         )
 
-                    futures = [executor.submit(_synth_attempt_worker, a) for a in attempts_args]
                     generated = 0
-                    try:
-                        for fut in as_completed(futures):
-                            if generated >= bin_target:
-                                break
-                            status, src_id, _, actual_compl, png_bytes, error = fut.result()
-                            if status != 'ok':
-                                logger.warning(f"Failed to generate fragment for image {src_id} at {target_compl}: {error}")
-                                continue
-                            if actual_compl < min_acceptable or actual_compl > max_acceptable:
-                                logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
-                                continue
-                            src_img = src_image_by_id.get(src_id)
-                            if src_img is None:
-                                continue
-                            emit_fragment(src_img, target_compl, actual_compl, png_bytes, label, generated)
-                            generated += 1
-                            total_generated += 1
-                    finally:
-                        # Cancel any not-yet-running attempts once we have enough
-                        for fut in futures:
-                            fut.cancel()
+                    result_iter = pool.imap_unordered(_synth_attempt_worker, attempts_args)
+                    for status, src_id, _, actual_compl, png_bytes, error in result_iter:
+                        if generated >= bin_target:
+                            break
+                        if status != 'ok':
+                            logger.warning(f"Failed to generate fragment for image {src_id} at {target_compl}: {error}")
+                            continue
+                        if actual_compl < min_acceptable or actual_compl > max_acceptable:
+                            logger.info(f"Skipped {label.name} target={target_compl:.0%} actual={actual_compl:.0%} (out of range)")
+                            continue
+                        src_img = src_image_by_id.get(src_id)
+                        if src_img is None:
+                            continue
+                        emit_fragment(src_img, target_compl, actual_compl, png_bytes, label, generated)
+                        generated += 1
+                        total_generated += 1
 
                 if generated < bin_target:
                     logger.warning(f"{label.name} {target_compl:.0%}: only generated {generated}/{bin_target}")
+    finally:
+        pool.close()
+        pool.join()
 
     logger.info(f"Synthetic dataset '{syn_dataset.name}' created with {total_generated} images")
 
