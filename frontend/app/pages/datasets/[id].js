@@ -238,6 +238,21 @@ export default function DatasetDetail() {
     fetchAllData();
   }, [fetchAllData]);
 
+  // Sync the navbar study selector to this dataset's study so a shared dataset
+  // URL lands the recipient in the correct study context (one-time reload).
+  useEffect(() => {
+    if (!user || !dataset?.study) return;
+    if (typeof window === 'undefined') return;
+    const datasetStudy = String(dataset.study);
+    const current = localStorage.getItem(`selectedStudy_${user.id}`)
+      || localStorage.getItem('selectedStudy');
+    if (current !== datasetStudy) {
+      localStorage.setItem(`selectedStudy_${user.id}`, datasetStudy);
+      localStorage.setItem('selectedStudy', datasetStudy);
+      window.location.reload();
+    }
+  }, [user, dataset?.study]);
+
   useEffect(() => {
     fetch('/api/feature_extractor/site-settings/')
       .then(r => r.json())

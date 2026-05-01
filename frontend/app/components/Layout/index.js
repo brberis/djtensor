@@ -60,10 +60,15 @@ const Layout = (props) => {
   const { user, loading, logout } = useAuth();
   const { canMutate } = usePermissions();
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated, preserving the original target
+  // so deep links (e.g. shared dataset URLs) survive the login round-trip.
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/login');
+      const current = router.asPath;
+      const next = current && current !== '/' && !current.startsWith('/login')
+        ? `/login?next=${encodeURIComponent(current)}`
+        : '/login';
+      router.replace(next);
     }
   }, [user, loading, router]);
 

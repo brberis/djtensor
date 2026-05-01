@@ -22,12 +22,20 @@ export default function LoginPage() {
   const { user, loading, login } = useAuth();
   const router = useRouter();
 
-  // Redirect to home if already logged in
+  // Only allow same-origin paths through ?next= to prevent open-redirects.
+  const safeNext = (() => {
+    const raw = router.query.next;
+    if (typeof raw !== 'string') return '/';
+    if (!raw.startsWith('/') || raw.startsWith('//')) return '/';
+    return raw;
+  })();
+
+  // Redirect to original target (or home) if already logged in
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/');
+      router.replace(safeNext);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, safeNext]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +44,7 @@ export default function LoginPage() {
 
     const result = await login(email, password);
     if (result.success) {
-      router.push('/');
+      router.push(safeNext);
     } else {
       setError(result.error);
       setSubmitting(false);
