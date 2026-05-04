@@ -726,7 +726,7 @@ export default function DatasetDetail() {
                         <div><dt className="font-medium text-gray-500">Resolution</dt><dd className="text-gray-900">{activeImage.image_width && activeImage.image_height ? `${activeImage.image_width} x ${activeImage.image_height}` : (dataset?.resolution ? `${dataset.resolution} x ${dataset.resolution}` : "Unknown")}</dd></div>
                         {activeImage.file_size ? (<div><dt className="font-medium text-gray-500">Size</dt><dd className="text-gray-900">{formatBytes(activeImage.file_size)}</dd></div>) : null}
                         <div><dt className="font-medium text-gray-500">Label</dt><dd className="text-gray-900">{labels.find((l) => l.id === activeImage.label)?.name || activeImage.label}</dd></div>
-                        {canSeeSyntheticTools && activeImage.completeness != null && (
+                        {activeImage.completeness != null && (
                           <div>
                             <dt className="font-medium text-gray-500">Tooth Completeness</dt>
                             <dd className="text-gray-900">
@@ -741,13 +741,13 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
-                        {canSeeSyntheticTools && activeImage.target_completeness != null && (
+                        {activeImage.target_completeness != null && (
                           <div>
                             <dt className="font-medium text-gray-500">Target Completeness</dt>
                             <dd className="text-gray-900">{Math.round(activeImage.target_completeness * 100)}%</dd>
                           </div>
                         )}
-                        {canSeeSyntheticTools && activeImage.source_image_data?.tooth_area && activeImage.tooth_area && (
+                        {activeImage.source_image_data?.tooth_area && activeImage.tooth_area && (
                           <div>
                             <dt className="font-medium text-gray-500">Pixel Comparison</dt>
                             <dd className="text-gray-900 text-xs">
@@ -1159,7 +1159,7 @@ export default function DatasetDetail() {
                             className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
                           />
                         </button>
-                        {canSeeSyntheticTools && image.completeness != null && (
+                        {image.completeness != null && (
                           <div className={`absolute right-1 top-1 z-10 rounded px-1 py-0.5 text-[10px] font-bold ${
                             image.completeness > 0.8 ? 'bg-green-500/80 text-white' :
                             image.completeness > 0.5 ? 'bg-amber-500/80 text-white' :
