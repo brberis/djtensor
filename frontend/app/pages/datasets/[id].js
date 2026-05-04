@@ -241,18 +241,27 @@ export default function DatasetDetail() {
   }, [fetchAllData]);
 
   // Sync the navbar study selector to this dataset's study so a shared dataset
-  // URL lands the recipient in the correct study context (one-time reload).
+  // URL lands the recipient in the correct study context. On first visit (no
+  // prior selectedStudy) we just write localStorage and let the Layout pick
+  // it up — reloading mid-load throws away in-flight image fetches and the
+  // page renders empty until the user reloads again. We only force a reload
+  // when the user *had* a different study selected and we want the navbar
+  // dropdown to reflect the dataset's study immediately.
   useEffect(() => {
     if (!user || !dataset?.study) return;
     if (typeof window === 'undefined') return;
     const datasetStudy = String(dataset.study);
     const current = localStorage.getItem(`selectedStudy_${user.id}`)
       || localStorage.getItem('selectedStudy');
-    if (current !== datasetStudy) {
-      localStorage.setItem(`selectedStudy_${user.id}`, datasetStudy);
-      localStorage.setItem('selectedStudy', datasetStudy);
+    if (current === datasetStudy) return;
+    localStorage.setItem(`selectedStudy_${user.id}`, datasetStudy);
+    localStorage.setItem('selectedStudy', datasetStudy);
+    if (current) {
+      // User had a different study selected — reload so the navbar updates.
       window.location.reload();
     }
+    // First visit (current was empty/null): no reload. Layout's own effect
+    // will pick up the freshly-written value on its next mount.
   }, [user, dataset?.study]);
 
   useEffect(() => {
