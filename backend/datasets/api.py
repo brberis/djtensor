@@ -69,9 +69,21 @@ class DatasetViewSet(viewsets.ModelViewSet):
             qs = qs.filter(
                 Q(study__in=user_studies) | Q(shared__in=user_studies)
             ).distinct()
+        # Handle ?study=<id> manually so it matches both owned and shared
+        # datasets — DjangoFilterBackend's default exact-FK filter would only
+        # return datasets owned by that study and silently hide shared ones,
+        # which broke the "Create New Test" dialog (test datasets are usually
+        # shared into SF-* studies rather than owned).
+        study_param = self.request.query_params.get('study')
+        if study_param:
+            try:
+                study_id = int(study_param)
+                qs = qs.filter(Q(study_id=study_id) | Q(shared__id=study_id)).distinct()
+            except (TypeError, ValueError):
+                pass
         return qs
     filter_backends = (DjangoFilterBackend,)
-    filterset_fields = ['study', 'for_testing']
+    filterset_fields = ['for_testing']
 
     def update(self, request, *args, **kwargs):
         dataset = self.get_object()
