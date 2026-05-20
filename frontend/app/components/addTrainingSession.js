@@ -58,6 +58,9 @@ export default function AddSession({ isOpen, onClose }) {
       dataset_id: formData.get('dataset'),
       model_id: formData.get('model'),
       notes: formData.get('description'),
+      batch_size: parseInt(formData.get('batchSize'), 10),
+      num_epochs: parseInt(formData.get('epochs'), 10),
+      learning_rate: parseFloat(formData.get('learningRate')),
     };
 
     setIsLoading(true);
@@ -168,15 +171,15 @@ export default function AddSession({ isOpen, onClose }) {
                       <div className="grid grid-cols-3 gap-4">
                         <div>
                           <label htmlFor="batchSize" className={theme.classes.label}>Batch Size</label>
-                          <input id="batchSize" name="batchSize" type="number" required defaultValue="32" className={`mt-1.5 ${theme.classes.input}`} />
+                          <input id="batchSize" name="batchSize" type="number" required defaultValue="16" className={`mt-1.5 ${theme.classes.input}`} />
                         </div>
                         <div>
                           <label htmlFor="epochs" className={theme.classes.label}>Epochs</label>
-                          <input id="epochs" name="epochs" type="number" required defaultValue="10" className={`mt-1.5 ${theme.classes.input}`} />
+                          <input id="epochs" name="epochs" type="number" required defaultValue="20" className={`mt-1.5 ${theme.classes.input}`} />
                         </div>
                         <div>
                           <label htmlFor="learningRate" className={theme.classes.label}>Learning Rate</label>
-                          <input id="learningRate" name="learningRate" type="text" required defaultValue="0.001" className={`mt-1.5 ${theme.classes.input}`} />
+                          <input id="learningRate" name="learningRate" type="text" required defaultValue="0.005" className={`mt-1.5 ${theme.classes.input}`} />
                         </div>
                       </div>
 

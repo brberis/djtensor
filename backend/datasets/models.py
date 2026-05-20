@@ -21,7 +21,7 @@ RESOLUTIONS = [
 
 class Dataset(models.Model):
     study = models.ForeignKey('feature_extractor.Study', related_name='datasets', blank=True, null=True, on_delete=models.CASCADE)
-    name = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     labels = models.ManyToManyField('Label', related_name='datasets')
     resolution = models.CharField(max_length=10, choices=RESOLUTIONS, default='224')
@@ -41,6 +41,14 @@ class Dataset(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['study', 'name'],
+                name='unique_dataset_name_per_study',
+            ),
+        ]
 
     def __str__(self):
         return self.name
