@@ -128,6 +128,123 @@ def compute_completeness_for_dataset(dataset_id, reference_dataset_id=None):
     logger.info(f"Completeness computed for {len(to_update)} images in dataset {dataset.name}")
 
 
+@shared_task
+def compute_completeness_mm2_for_dataset(
+    dataset_id,
+    reference_dataset_id=None,
+    assumed_tick_spacing_mm=10.0,
+    require_existing_calibration=False,
+):
+    """
+    Phase 2 mm-anchored completeness pass.
+
+    Parallel to compute_completeness_for_dataset. Computes:
+      - Image.mm_per_pixel, scale_bar_*, tooth_area_mm2 for each image that
+        carries a detectable scale bar.
+      - SpeciesReferenceArea.avg_area_mm2 / sample_count_mm2 for the
+        reference dataset, built only from images that calibrated cleanly.
+      - Image.completeness_mm2 = tooth_area_mm2 / reference_mm2.
+
+    Does not touch the px-based fields, so the historical px metric remains
+    available for comparison.
+
+    Set require_existing_calibration=True to skip re-running the detector
+    when an image already has mm_per_pixel set (useful for incremental
+    runs).
+    """
+    from .models import Dataset, Image, SpeciesReferenceArea
+    from .scale_calibration import detect_scale_bar
+
+    dataset = Dataset.objects.get(pk=dataset_id)
+    ref_dataset_id = reference_dataset_id or dataset_id
+
+    def _calibrate_one(img):
+        """Run the detector for one Image row, returning (mm_per_pixel, tooth_area_mm2)
+        or (None, None) on failure. Persists the calibration to the row."""
+        if require_existing_calibration and img.mm_per_pixel is not None and img.tooth_area_mm2 is not None:
+            return img.mm_per_pixel, img.tooth_area_mm2
+        try:
+            result = detect_scale_bar(
+                img.image.path,
+                assumed_tick_spacing_mm=assumed_tick_spacing_mm,
+            )
+        except Exception as exc:
+            logger.warning(f"scale_calibration failed for image {img.id}: {exc}")
+            return None, None
+        if result.mm_per_pixel is None:
+            return None, None
+        tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+        if tooth is None:
+            return None, None
+        tooth_area_mm2 = float(tooth.area_px) * (result.mm_per_pixel ** 2)
+        img.mm_per_pixel = result.mm_per_pixel
+        img.scale_bar_detected = result.bar_bbox is not None
+        img.scale_bar_source = 'heuristic_whitelist'
+        img.scale_bar_bbox = list(result.bar_bbox) if result.bar_bbox else None
+        img.tooth_area_mm2 = tooth_area_mm2
+        img.save(update_fields=[
+            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
+            'scale_bar_bbox', 'tooth_area_mm2',
+        ])
+        return result.mm_per_pixel, tooth_area_mm2
+
+    # Step 1: build mm^2 species references from the reference dataset.
+    ref_images = Image.objects.filter(dataset_id=ref_dataset_id).select_related('label')
+    label_areas = {}  # label_id -> [tooth_area_mm2]
+    for img in ref_images:
+        # Synthetic images derived from a complete tooth should not bias the
+        # reference (their pixel area reflects the fracture mask, not a
+        # complete tooth). Mirror the px-task's filter.
+        if img.source_image_id is not None:
+            continue
+        _, tooth_mm2 = _calibrate_one(img)
+        if tooth_mm2 is not None and tooth_mm2 > 0:
+            label_areas.setdefault(img.label_id, []).append(tooth_mm2)
+
+    ref_dataset = Dataset.objects.get(pk=ref_dataset_id)
+    reference_mm2 = {}  # label_id -> avg_area_mm2
+    import numpy as _np
+    for label_id, areas in label_areas.items():
+        avg_mm2 = float(_np.mean(areas))
+        SpeciesReferenceArea.objects.update_or_create(
+            label_id=label_id,
+            dataset=ref_dataset,
+            defaults={
+                # Do NOT touch avg_area / sample_count (px) here; only set the
+                # mm fields. The px reference may have been computed at a
+                # different time on a different image set.
+                'avg_area_mm2': avg_mm2,
+                'sample_count_mm2': len(areas),
+            },
+        )
+        reference_mm2[label_id] = avg_mm2
+
+    # Step 2: compute completeness_mm2 for each target-dataset image.
+    target_images = Image.objects.filter(dataset=dataset).select_related('label')
+    written = 0
+    for img in target_images:
+        # Skip synthetic derivatives just like the px pass does.
+        if img.source_image_id is not None and img.completeness_mm2 is not None:
+            continue
+        if dataset.id == ref_dataset_id:
+            tooth_mm2 = img.tooth_area_mm2
+        else:
+            _, tooth_mm2 = _calibrate_one(img)
+        ref_mm2 = reference_mm2.get(img.label_id)
+        if tooth_mm2 is None or not ref_mm2 or ref_mm2 <= 0:
+            continue
+        compl = max(0.0, min(1.0, tooth_mm2 / ref_mm2))
+        img.completeness_mm2 = compl
+        img.save(update_fields=['completeness_mm2'])
+        written += 1
+
+    logger.info(
+        "Phase 2 mm^2 completeness computed for %d images in dataset %s "
+        "(reference dataset %s, species refs built: %d)",
+        written, dataset.name, ref_dataset_id, len(reference_mm2),
+    )
+
+
 def _synth_attempt_worker(args):
     """Single fragment-generation attempt for a process pool worker.
 
