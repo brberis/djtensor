@@ -737,7 +737,7 @@ export default function DatasetDetail() {
                         <div><dt className="font-medium text-gray-500">Label</dt><dd className="text-gray-900">{labels.find((l) => l.id === activeImage.label)?.name || activeImage.label}</dd></div>
                         {activeImage.completeness != null && (
                           <div>
-                            <dt className="font-medium text-gray-500">Tooth Completeness</dt>
+                            <dt className="font-medium text-gray-500">Tooth Completeness (px)</dt>
                             <dd className="text-gray-900">
                               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                                 activeImage.completeness > 0.8 ? 'bg-green-100 text-green-800' :
@@ -747,6 +747,37 @@ export default function DatasetDetail() {
                                 {Math.round(activeImage.completeness * 100)}%
                               </span>
                               {activeImage.tooth_area && <span className="ml-2 text-xs text-gray-400">({activeImage.tooth_area.toLocaleString()} px)</span>}
+                            </dd>
+                          </div>
+                        )}
+                        {activeImage.completeness_mm2 != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Tooth Completeness (mm&sup2;)</dt>
+                            <dd className="text-gray-900">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                                activeImage.completeness_mm2 > 0.8 ? 'bg-green-50 text-green-800 ring-green-300' :
+                                activeImage.completeness_mm2 > 0.5 ? 'bg-amber-50 text-amber-800 ring-amber-300' :
+                                'bg-red-50 text-red-800 ring-red-300'
+                              }`}>
+                                {Math.round(activeImage.completeness_mm2 * 100)}% mm&sup2;
+                              </span>
+                              {activeImage.tooth_area_mm2 != null && (
+                                <span className="ml-2 text-xs text-gray-400">({activeImage.tooth_area_mm2.toFixed(1)} mm&sup2;)</span>
+                              )}
+                            </dd>
+                          </div>
+                        )}
+                        {activeImage.mm_per_pixel != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Scale Calibration</dt>
+                            <dd className="text-gray-900 text-xs">
+                              {activeImage.mm_per_pixel.toFixed(5)} mm/px
+                              {activeImage.scale_bar_source && (
+                                <span className="ml-2 text-gray-400">source: {activeImage.scale_bar_source}</span>
+                              )}
+                              {activeImage.scale_bar_detected === false && (
+                                <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">bar not detected</span>
+                              )}
                             </dd>
                           </div>
                         )}
@@ -763,6 +794,17 @@ export default function DatasetDetail() {
                               {activeImage.tooth_area.toLocaleString()} / {activeImage.source_image_data.tooth_area.toLocaleString()} px
                               <span className="ml-1 text-gray-400">
                                 ({Math.round((activeImage.tooth_area / activeImage.source_image_data.tooth_area) * 100)}%)
+                              </span>
+                            </dd>
+                          </div>
+                        )}
+                        {activeImage.source_image_data?.tooth_area_mm2 != null && activeImage.tooth_area_mm2 != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">mm&sup2; Comparison</dt>
+                            <dd className="text-gray-900 text-xs">
+                              {activeImage.tooth_area_mm2.toFixed(1)} / {activeImage.source_image_data.tooth_area_mm2.toFixed(1)} mm&sup2;
+                              <span className="ml-1 text-gray-400">
+                                ({Math.round((activeImage.tooth_area_mm2 / activeImage.source_image_data.tooth_area_mm2) * 100)}%)
                               </span>
                             </dd>
                           </div>
@@ -1168,13 +1210,26 @@ export default function DatasetDetail() {
                             className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
                           />
                         </button>
-                        {image.completeness != null && (
-                          <div className={`absolute right-1 top-1 z-10 rounded px-1 py-0.5 text-[10px] font-bold ${
-                            image.completeness > 0.8 ? 'bg-green-500/80 text-white' :
-                            image.completeness > 0.5 ? 'bg-amber-500/80 text-white' :
-                            'bg-red-500/80 text-white'
-                          }`}>
-                            {Math.round(image.completeness * 100)}%
+                        {(image.completeness != null || image.completeness_mm2 != null) && (
+                          <div className="absolute right-1 top-1 z-10 flex flex-col items-end gap-0.5">
+                            {image.completeness != null && (
+                              <span className={`rounded px-1 py-0.5 text-[10px] font-bold ${
+                                image.completeness > 0.8 ? 'bg-green-500/80 text-white' :
+                                image.completeness > 0.5 ? 'bg-amber-500/80 text-white' :
+                                'bg-red-500/80 text-white'
+                              }`}>
+                                {Math.round(image.completeness * 100)}%
+                              </span>
+                            )}
+                            {image.completeness_mm2 != null && (
+                              <span className={`rounded px-1 py-0.5 text-[10px] font-bold ring-1 ring-inset ${
+                                image.completeness_mm2 > 0.8 ? 'bg-green-50/95 text-green-800 ring-green-400' :
+                                image.completeness_mm2 > 0.5 ? 'bg-amber-50/95 text-amber-800 ring-amber-400' :
+                                'bg-red-50/95 text-red-800 ring-red-400'
+                              }`} title="Completeness in mm²">
+                                {Math.round(image.completeness_mm2 * 100)}% mm&sup2;
+                              </span>
+                            )}
                           </div>
                         )}
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity p-1">

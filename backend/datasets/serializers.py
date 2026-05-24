@@ -101,6 +101,9 @@ class ImageSerializer(serializers.ModelSerializer):
             'image': self._build_image_url(src),
             'tooth_area': src.tooth_area,
             'completeness': src.completeness,
+            'tooth_area_mm2': src.tooth_area_mm2,
+            'completeness_mm2': src.completeness_mm2,
+            'mm_per_pixel': src.mm_per_pixel,
         }
 
     def _build_image_url(self, obj):
