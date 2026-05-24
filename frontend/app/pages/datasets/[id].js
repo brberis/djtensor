@@ -128,6 +128,10 @@ export default function DatasetDetail() {
   const [deletingDataset, setDeletingDataset] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showParamHelp, setShowParamHelp] = useState(false);
+  const [completenessMetric, setCompletenessMetric] = useState('px');
+  const [emittingProcessed, setEmittingProcessed] = useState(false);
+  const [showEmitModeBDialog, setShowEmitModeBDialog] = useState(false);
+  const [emitModeBPxPerMm, setEmitModeBPxPerMm] = useState(6.0);
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -284,7 +288,10 @@ export default function DatasetDetail() {
       if (referenceDatasetId) {
         body.reference_dataset_id = parseInt(referenceDatasetId);
       }
-      await fetch(`/api/datasets/dataset/${id}/compute-completeness`, {
+      const endpoint = completenessMetric === 'mm2'
+        ? `/api/datasets/dataset/${id}/compute-completeness-mm2`
+        : `/api/datasets/dataset/${id}/compute-completeness`;
+      await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -294,6 +301,33 @@ export default function DatasetDetail() {
       console.error('Failed to queue completeness computation:', e);
     } finally {
       setComputingCompleteness(false);
+    }
+  };
+
+  const handleEmitProcessed = async (mode, modeBPxPerMm = 6.0) => {
+    setEmittingProcessed(true);
+    try {
+      const body = { mode };
+      if (mode === 'B') {
+        body.mode_b_px_per_mm = parseFloat(modeBPxPerMm) || 6.0;
+      }
+      const res = await fetch(`/api/datasets/dataset/${id}/emit-processed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        alert(`Queued PROCESSED Mode ${mode}. A new derived dataset will appear in the Datasets list when the task finishes.`);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Failed to queue PROCESSED Mode ${mode}`);
+      }
+    } catch (e) {
+      console.error('Failed to queue emit_processed:', e);
+      alert('Failed to queue emit_processed');
+    } finally {
+      setEmittingProcessed(false);
+      setShowEmitModeBDialog(false);
     }
   };
 
@@ -893,12 +927,61 @@ export default function DatasetDetail() {
                             .catch(console.error);
                         }
                         setReferenceDatasetId('');
+                        setCompletenessMetric('px');
                         setShowCompletenessDialog(true);
                       }}
                       className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                     >
-                      Compute Completeness
+                      Compute Completeness (px)
                     </button>
+                  )}
+                  {canSeeSyntheticTools && (
+                    <button
+                      onClick={() => {
+                        setShowActionsMenu(false);
+                        if (allDatasets.length === 0) {
+                          fetch('/api/datasets/dataset/')
+                            .then(r => r.json())
+                            .then(data => setAllDatasets(Array.isArray(data) ? data : data.results || []))
+                            .catch(console.error);
+                        }
+                        setReferenceDatasetId('');
+                        setCompletenessMetric('mm2');
+                        setShowCompletenessDialog(true);
+                      }}
+                      className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Compute Completeness (mm&sup2;)
+                    </button>
+                  )}
+                  {canSeeSyntheticTools && !dataset?.synthetic && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Emit PROCESSED</p>
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          if (window.confirm(`Emit a new PROCESSED Mode A dataset from "${dataset?.name}"? This produces 384x384 images with uniform pixel density (Phase I behaviour).`)) {
+                            handleEmitProcessed('A');
+                          }
+                        }}
+                        disabled={emittingProcessed}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Emit PROCESSED Mode A (uniform)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          setEmitModeBPxPerMm(6.0);
+                          setShowEmitModeBDialog(true);
+                        }}
+                        disabled={emittingProcessed}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Emit PROCESSED Mode B (scale-preserving)
+                      </button>
+                    </>
                   )}
                   {canSeeSyntheticTools && !dataset?.for_testing && !dataset?.synthetic && (
                     <>
@@ -1267,10 +1350,17 @@ export default function DatasetDetail() {
           <div className="fixed inset-0 z-10 overflow-y-auto">
             <div className="flex min-h-full items-center justify-center p-4">
               <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
-                <Dialog.Title className="text-lg font-semibold text-gray-900">Compute Tooth Completeness</Dialog.Title>
+                <Dialog.Title className="text-lg font-semibold text-gray-900">
+                  Compute Tooth Completeness {completenessMetric === 'mm2' ? '(mm²)' : '(px)'}
+                </Dialog.Title>
                 <p className="mt-1 text-sm text-gray-500">
                   Select a reference dataset of <strong>complete teeth</strong> to compute completeness percentages against.
                   If none selected, uses the current dataset as its own reference.
+                  {completenessMetric === 'mm2' && (
+                    <span className="block mt-2 text-xs text-amber-700">
+                      mm&sup2; mode requires scale bars in the photos. Images without a detectable bar will be skipped.
+                    </span>
+                  )}
                 </p>
                 <div className="mt-4">
                   <label className="text-sm font-medium text-gray-700">Reference Dataset (complete teeth)</label>
@@ -1303,6 +1393,56 @@ export default function DatasetDetail() {
                     className={computingCompleteness ? theme.classes.btnDisabled : theme.classes.btnPrimary}
                   >
                     {computingCompleteness ? 'Queued...' : 'Compute'}
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+
+      {/* Emit PROCESSED Mode B dialog */}
+      <Transition.Root show={showEmitModeBDialog} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowEmitModeBDialog(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
+          <div className="fixed inset-0 z-10 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4">
+              <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
+                <Dialog.Title className="text-lg font-semibold text-gray-900">
+                  Emit PROCESSED Mode B (scale-preserving)
+                </Dialog.Title>
+                <p className="mt-1 text-sm text-gray-500">
+                  Mode B keeps 1 mm equal to the same number of output pixels in every image, regardless of the source photo&apos;s zoom level. Small teeth occupy a proportionally smaller fraction of the canvas. The source dataset must already be calibrated (mm/px populated on every image).
+                </p>
+                <div className="mt-4">
+                  <label className="text-sm font-medium text-gray-700">Pixels per millimetre</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    value={emitModeBPxPerMm}
+                    onChange={(e) => setEmitModeBPxPerMm(e.target.value)}
+                    className={`mt-1 block w-full ${theme.classes.input}`}
+                  />
+                  <p className="mt-2 text-xs text-gray-400">
+                    Default 6.0 fits a ~64 mm tooth in a 384 px canvas. Lower values give more padding for small teeth; higher values give more detail but risk clipping large ones.
+                  </p>
+                </div>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowEmitModeBDialog(false)}
+                    className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleEmitProcessed('B', emitModeBPxPerMm)}
+                    disabled={emittingProcessed}
+                    className={emittingProcessed ? theme.classes.btnDisabled : theme.classes.btnPrimary}
+                  >
+                    {emittingProcessed ? 'Queued...' : 'Emit Mode B'}
                   </button>
                 </div>
               </Dialog.Panel>

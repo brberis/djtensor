@@ -22,7 +22,13 @@ from rest_framework.response import Response
 from feature_extractor.models import Study
 from .models import Dataset, Image, Label
 from .serializers import DatasetSerializer, ImageSerializer, LabelSerializer
-from .tasks import create_dataset_archive, compute_completeness_for_dataset, generate_synthetic_dataset
+from .tasks import (
+    create_dataset_archive,
+    compute_completeness_for_dataset,
+    compute_completeness_mm2_for_dataset,
+    generate_synthetic_dataset,
+    emit_processed_dataset,
+)
 from .synthetic_fracture import load_fracture_profiles
 from .image_resize import resize_to_dataset, get_target_resolution
 from feature_extractor.permissions import IsSyntheticToolsEnabled
@@ -158,6 +164,56 @@ class DatasetViewSet(viewsets.ModelViewSet):
         reference_dataset_id = request.data.get('reference_dataset_id')
         compute_completeness_for_dataset.delay(dataset.id, reference_dataset_id)
         return Response({'status': 'queued', 'dataset': dataset.name}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='compute-completeness-mm2')
+    def compute_completeness_mm2(self, request, pk=None):
+        """Phase 2 mm-anchored completeness pass. Parallel to compute_completeness."""
+        dataset = self.get_object()
+        reference_dataset_id = request.data.get('reference_dataset_id')
+        assumed_tick_mm = float(request.data.get('assumed_tick_spacing_mm', 10.0))
+        compute_completeness_mm2_for_dataset.delay(
+            dataset.id, reference_dataset_id, assumed_tick_spacing_mm=assumed_tick_mm,
+        )
+        return Response({'status': 'queued', 'dataset': dataset.name, 'metric': 'mm2'}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='emit-processed')
+    def emit_processed(self, request, pk=None):
+        """
+        Queue the Phase 2 image curation step: produce a new derived dataset
+        of 384x384 PROCESSED images from this source. Body params:
+          mode: 'A' (uniform pixel density) or 'B' (scale-preserving). Default 'A'.
+          target_size: edge length of the PROCESSED square. Default 384.
+          mode_b_px_per_mm: pixels per millimetre for Mode B. Default 6.0.
+          name_suffix: optional override for the derived dataset's name suffix.
+        """
+        dataset = self.get_object()
+        mode = (request.data.get('mode') or 'A').upper()
+        if mode not in ('A', 'B'):
+            return Response({'error': "mode must be 'A' or 'B'"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            target_size = int(request.data.get('target_size', 384))
+            mode_b_px_per_mm = float(request.data.get('mode_b_px_per_mm', 6.0))
+        except (TypeError, ValueError):
+            return Response({'error': 'invalid numeric parameter'}, status=status.HTTP_400_BAD_REQUEST)
+        name_suffix = request.data.get('name_suffix') or None
+
+        emit_processed_dataset.delay(
+            dataset.id,
+            mode=mode,
+            target_size=target_size,
+            mode_b_px_per_mm=mode_b_px_per_mm,
+            name_suffix=name_suffix,
+        )
+        return Response(
+            {
+                'status': 'queued',
+                'source_dataset': dataset.name,
+                'mode': mode,
+                'target_size': target_size,
+                'mode_b_px_per_mm': mode_b_px_per_mm if mode == 'B' else None,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     @action(detail=False, methods=['get'], permission_classes=[IsSyntheticToolsEnabled])
     def fracture_profiles(self, request):

@@ -206,17 +206,23 @@ def compute_completeness_mm2_for_dataset(
     import numpy as _np
     for label_id, areas in label_areas.items():
         avg_mm2 = float(_np.mean(areas))
-        SpeciesReferenceArea.objects.update_or_create(
+        # Only set the mm fields, but if this is a fresh row, we have to
+        # also satisfy the NOT NULL constraints on the legacy px fields.
+        # Use get_or_create so an existing px reference is never overwritten.
+        sra, created = SpeciesReferenceArea.objects.get_or_create(
             label_id=label_id,
             dataset=ref_dataset,
             defaults={
-                # Do NOT touch avg_area / sample_count (px) here; only set the
-                # mm fields. The px reference may have been computed at a
-                # different time on a different image set.
+                'avg_area': 0.0,
+                'sample_count': 0,
                 'avg_area_mm2': avg_mm2,
                 'sample_count_mm2': len(areas),
             },
         )
+        if not created:
+            sra.avg_area_mm2 = avg_mm2
+            sra.sample_count_mm2 = len(areas)
+            sra.save(update_fields=['avg_area_mm2', 'sample_count_mm2'])
         reference_mm2[label_id] = avg_mm2
 
     # Step 2: compute completeness_mm2 for each target-dataset image.
