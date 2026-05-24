@@ -188,3 +188,8 @@ backend/mediafiles/
 
 # ui temp development files
 temp/
+
+# stale local backups and orphan model outputs
+*.bak
+*.bak.*
+backend/saliency_map_*.png
