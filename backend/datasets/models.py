@@ -82,6 +82,16 @@ class Image(models.Model):
     source_image = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='synthetic_derivatives')
     target_completeness = models.FloatField(null=True, blank=True)
 
+    # Phase 2: scale-aware (mm/px) calibration and metrics. All nullable so
+    # existing rows are unaffected. Populated by the scale_calibration pipeline
+    # when an image carries a detectable ruler.
+    mm_per_pixel = models.FloatField(null=True, blank=True)
+    scale_bar_detected = models.BooleanField(default=False)
+    scale_bar_source = models.CharField(max_length=20, null=True, blank=True)
+    scale_bar_bbox = models.JSONField(null=True, blank=True)
+    tooth_area_mm2 = models.FloatField(null=True, blank=True)
+    completeness_mm2 = models.FloatField(null=True, blank=True)
+
     def __str__(self):
         return self.image.url
 
@@ -91,6 +101,10 @@ class SpeciesReferenceArea(models.Model):
     dataset = models.ForeignKey(Dataset, related_name='reference_areas', on_delete=models.CASCADE)
     avg_area = models.FloatField()
     sample_count = models.IntegerField()
+    # Phase 2: parallel mm^2 reference, computed only from images that carry a
+    # detectable scale bar. avg_area (px^2) remains the historical reference.
+    avg_area_mm2 = models.FloatField(null=True, blank=True)
+    sample_count_mm2 = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
