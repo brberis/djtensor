@@ -245,6 +245,142 @@ def compute_completeness_mm2_for_dataset(
     )
 
 
+@shared_task
+def emit_processed_dataset(
+    source_dataset_id,
+    mode='A',
+    target_size=384,
+    mode_b_px_per_mm=6.0,
+    name_suffix=None,
+):
+    """
+    Phase 2 image curation pass.
+
+    For each image in the source dataset, runs the heuristic scale-bar
+    detector, masks the bar away, tight-crops to the tooth, and resizes to
+    a square target_size canvas. Two layouts are supported:
+
+      mode 'A'  uniform pixel density: the tooth fills the canvas
+                regardless of physical size. This is Phase I behaviour and
+                destroys absolute size information.
+
+      mode 'B'  scale-preserving: 1 mm in the output equals
+                mode_b_px_per_mm pixels regardless of source mm/px. Small
+                teeth appear small in the canvas.
+
+    Writes a new Dataset that links back to the source via
+    Dataset.source_dataset. Each Image row in the derived dataset is a
+    PROCESSED 384x384 PNG with no scale bar visible. tooth_area_mm2 is
+    carried over from the source image when available. In Mode B the
+    derived image's mm_per_pixel = 1 / mode_b_px_per_mm and is persisted
+    so downstream consumers know the output's physical scale.
+
+    Images for which calibration fails (no scale bar or no tooth blob in
+    the source) are skipped and counted as failures.
+    """
+    from .models import Dataset, Image
+    from .scale_calibration import detect_scale_bar
+    from .image_curation import emit_processed
+    from django.core.files.base import ContentFile
+    import io
+    import os
+
+    source = Dataset.objects.get(pk=source_dataset_id)
+    suffix = name_suffix or f'PROCESSED Mode {mode}'
+    derived = Dataset.objects.create(
+        name=f'{source.name} ({suffix})',
+        description=(
+            f"Derived from dataset {source.id} via emit_processed_dataset "
+            f"mode={mode}, target_size={target_size}, "
+            f"mode_b_px_per_mm={mode_b_px_per_mm}"
+        ),
+        study=source.study,
+        resolution=str(target_size),
+        source_dataset=source,
+        transformation_type=f'processed_mode_{mode.lower()}',
+        synthetic=False,
+        generation_config={
+            'mode': mode,
+            'target_size': target_size,
+            'mode_b_px_per_mm': mode_b_px_per_mm,
+            'source_dataset_id': source_dataset_id,
+        },
+    )
+    derived.labels.set(source.labels.all())
+
+    written = 0
+    failures = 0
+    failure_reasons = {}
+
+    def _bump(key):
+        failure_reasons[key] = failure_reasons.get(key, 0) + 1
+
+    for src_img in Image.objects.filter(dataset=source).select_related('label'):
+        try:
+            result = detect_scale_bar(src_img.image.path)
+        except Exception as e:
+            logger.warning("emit_processed_dataset: detect failed for image %s: %s", src_img.id, e)
+            failures += 1
+            _bump('detect_exception')
+            continue
+
+        tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+        if tooth is None:
+            failures += 1
+            _bump('no_tooth_blob')
+            continue
+        if mode == 'B' and result.mm_per_pixel is None:
+            failures += 1
+            _bump('mode_b_no_calibration')
+            continue
+
+        try:
+            pil_img, info = emit_processed(
+                src_img.image.path,
+                tooth_bbox=tooth.bbox,
+                scale_bar_bbox=result.bar_bbox,
+                mode=mode,
+                target_size=target_size,
+                mode_b_px_per_mm=mode_b_px_per_mm,
+                mm_per_pixel_source=result.mm_per_pixel,
+            )
+        except Exception as e:
+            logger.warning("emit_processed_dataset: emit failed for image %s: %s", src_img.id, e)
+            failures += 1
+            _bump('emit_exception')
+            continue
+
+        buffer = io.BytesIO()
+        pil_img.save(buffer, 'PNG', optimize=True)
+        buffer.seek(0)
+
+        filename = os.path.basename(src_img.image.name)
+        new_img = Image(
+            dataset=derived,
+            label=src_img.label,
+            tooth_area_mm2=src_img.tooth_area_mm2,
+        )
+        if mode == 'B':
+            new_img.mm_per_pixel = 1.0 / float(mode_b_px_per_mm)
+            new_img.scale_bar_detected = False
+            new_img.scale_bar_source = 'inherited'
+        new_img.image.save(filename, ContentFile(buffer.getvalue()), save=False)
+        new_img.save()
+        written += 1
+
+    logger.info(
+        "emit_processed_dataset: derived dataset %s (%s) written=%d failures=%d reasons=%s",
+        derived.id, derived.name, written, failures, failure_reasons,
+    )
+    return {
+        'derived_dataset_id': derived.id,
+        'derived_dataset_name': derived.name,
+        'written': written,
+        'failures': failures,
+        'failure_reasons': failure_reasons,
+    }
+
+
 def _synth_attempt_worker(args):
     """Single fragment-generation attempt for a process pool worker.
 

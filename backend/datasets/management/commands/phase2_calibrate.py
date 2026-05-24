@@ -97,6 +97,24 @@ class Command(BaseCommand):
                  'completeness_mm2 is NOT computed by this command; that '
                  'belongs to the dataset-level reference task.',
         )
+        parser.add_argument(
+            '--emit-processed',
+            action='store_true',
+            help='Also produce 384x384 PROCESSED outputs (Mode A uniform + '
+                 'Mode B scale-preserving) into --out-dir.',
+        )
+        parser.add_argument(
+            '--mode-b-px-per-mm',
+            type=float,
+            default=6.0,
+            help='Pixels per millimetre for Mode B output (default 6.0).',
+        )
+        parser.add_argument(
+            '--target-size',
+            type=int,
+            default=384,
+            help='Edge length of the PROCESSED square output (default 384).',
+        )
 
     def handle(self, *args, **options):
         image_paths: List[str] = options['image_paths']
@@ -161,6 +179,72 @@ class Command(BaseCommand):
                     self.stderr.write(self.style.WARNING(
                         f'  overlay generation failed: {exc!r}'
                     ))
+
+            # Emit PROCESSED outputs in both modes when requested.
+            if options.get('emit_processed') and options.get('out_dir'):
+                tooth_blob = next(
+                    (b for b in result.blobs if b.classification == 'tooth'),
+                    None,
+                )
+                if tooth_blob is None:
+                    self.stderr.write(self.style.WARNING(
+                        '  emit_processed skipped: no tooth blob detected'
+                    ))
+                else:
+                    from datasets.image_curation import emit_processed
+                    target_size = options['target_size']
+                    px_per_mm = options['mode_b_px_per_mm']
+
+                    out_a = os.path.join(
+                        options['out_dir'], f'processed_modeA_{base}.png'
+                    )
+                    try:
+                        img_a, info_a = emit_processed(
+                            path,
+                            tooth_bbox=tooth_blob.bbox,
+                            scale_bar_bbox=result.bar_bbox,
+                            mode='A',
+                            target_size=target_size,
+                        )
+                        img_a.save(out_a, 'PNG')
+                        self.stdout.write(
+                            f'  processed Mode A: {out_a} '
+                            f'(scale={info_a.scale_factor:.4f})'
+                        )
+                    except Exception as exc:  # pylint: disable=broad-except
+                        self.stderr.write(self.style.WARNING(
+                            f'  emit_processed Mode A failed: {exc!r}'
+                        ))
+
+                    if result.mm_per_pixel is None:
+                        self.stderr.write(self.style.WARNING(
+                            '  emit_processed Mode B skipped: '
+                            'no mm/px calibration for this image'
+                        ))
+                    else:
+                        out_b = os.path.join(
+                            options['out_dir'], f'processed_modeB_{base}.png'
+                        )
+                        try:
+                            img_b, info_b = emit_processed(
+                                path,
+                                tooth_bbox=tooth_blob.bbox,
+                                scale_bar_bbox=result.bar_bbox,
+                                mode='B',
+                                target_size=target_size,
+                                mode_b_px_per_mm=px_per_mm,
+                                mm_per_pixel_source=result.mm_per_pixel,
+                            )
+                            img_b.save(out_b, 'PNG')
+                            note = info_b.notes[0] if info_b.notes else ''
+                            self.stdout.write(
+                                f'  processed Mode B: {out_b} '
+                                f'(scale={info_b.scale_factor:.4f}; {note})'
+                            )
+                        except Exception as exc:  # pylint: disable=broad-except
+                            self.stderr.write(self.style.WARNING(
+                                f'  emit_processed Mode B failed: {exc!r}'
+                            ))
 
             # DB write (only when explicit)
             if options['write'] and options['image_id']:
