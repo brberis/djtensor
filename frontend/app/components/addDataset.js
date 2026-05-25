@@ -19,6 +19,7 @@ const resolutions = [
   { res: '224', des: '224x224' },
   { res: '384', des: '384x384' },
   { res: '512', des: '512x512' },
+  { res: 'original', des: 'Original (Phase 2 source — no resize)' },
 ];
 
 export default function AddDataset({ isOpen, onClose }) {

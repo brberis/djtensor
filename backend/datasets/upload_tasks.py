@@ -72,7 +72,8 @@ def process_archive_upload(self, archive_path, dataset_id, label_id):
     try:
         dataset = Dataset.objects.get(pk=dataset_id)
         label = Label.objects.get(pk=label_id)
-        target_resolution = get_target_resolution(dataset)
+        preserve_original = str(dataset.resolution).lower() == 'original'
+        target_resolution = None if preserve_original else get_target_resolution(dataset)
 
         self.update_state(state='PROGRESS', meta={
             'progress': 0, 'current': 0, 'total': 0,
@@ -125,7 +126,11 @@ def process_archive_upload(self, archive_path, dataset_id, label_id):
                     uploaded = ContentFile(file_handle.read())
                     uploaded.name = filename
 
-                resized_file, resize_meta = resize_to_dataset(uploaded, target_resolution)
+                if preserve_original:
+                    resized_file = uploaded
+                    resize_meta = {'preserved_original': True, 'width': None, 'height': None}
+                else:
+                    resized_file, resize_meta = resize_to_dataset(uploaded, target_resolution)
                 file_hash = _compute_content_hash(resized_file)
             except Exception as exc:
                 errors.append({'file': filename, 'reason': str(exc)})
@@ -146,8 +151,9 @@ def process_archive_upload(self, archive_path, dataset_id, label_id):
                         'id': image.id,
                         'file': filename,
                         'hash': file_hash,
-                        'width': resize_meta['width'],
-                        'height': resize_meta['height'],
+                        'width': resize_meta.get('width'),
+                        'height': resize_meta.get('height'),
+                        'preserved_original': resize_meta.get('preserved_original', False),
                     })
                 except Exception as exc:
                     logger.error(f'Failed to create image {filename}: {exc}')

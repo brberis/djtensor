@@ -29,8 +29,17 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
 ARCHIVE_EXTENSIONS = {'.zip', '.tar', '.tar.gz', '.tgz'}
 MAX_FILE_SIZE = 20 * 1024 * 1024
+MAX_FILE_SIZE_ORIGINAL = 200 * 1024 * 1024  # Phase 2 source images can be 70+ MB (Nikon D5100 PNGs).
 MAX_ARCHIVE_SIZE = 500 * 1024 * 1024
 MIN_FREE_DISK_BYTES = 1 * 1024 * 1024 * 1024
+
+
+def dataset_preserves_original(dataset):
+    """Phase 2 source datasets use resolution='original' as a flag meaning
+    'do not resize uploaded images; preserve the source resolution'. This
+    is what scale_calibration + label_ocr need to operate on a viable
+    photograph."""
+    return str(dataset.resolution).lower() == 'original'
 
 
 def dataset_is_locked(dataset):
@@ -121,7 +130,13 @@ def _handle_image_upload(image_files, dataset, label):
     created = []
     duplicates = []
     errors = []
-    target_resolution = get_target_resolution(dataset)
+    preserve_original = dataset_preserves_original(dataset)
+    if preserve_original:
+        target_resolution = None
+        size_limit = MAX_FILE_SIZE_ORIGINAL
+    else:
+        target_resolution = get_target_resolution(dataset)
+        size_limit = MAX_FILE_SIZE
 
     for image_file in image_files:
         ext = get_file_extension(image_file.name)
@@ -129,16 +144,22 @@ def _handle_image_upload(image_files, dataset, label):
             errors.append({'file': image_file.name, 'reason': f'Unsupported format: {ext}'})
             continue
 
-        if image_file.size > MAX_FILE_SIZE:
+        if image_file.size > size_limit:
             errors.append({
                 'file': image_file.name,
-                'reason': f'File too large: {image_file.size // (1024*1024)} MB (max {MAX_FILE_SIZE // (1024*1024)} MB)',
+                'reason': f'File too large: {image_file.size // (1024*1024)} MB (max {size_limit // (1024*1024)} MB)',
             })
             continue
 
         try:
-            resized_file, resize_meta = resize_to_dataset(image_file, target_resolution)
-            file_hash = compute_file_hash(resized_file)
+            if preserve_original:
+                # No resize. Hash the bytes as-is and use the upload directly.
+                resized_file = image_file
+                file_hash = compute_file_hash(resized_file)
+                resize_meta = {'preserved_original': True}
+            else:
+                resized_file, resize_meta = resize_to_dataset(image_file, target_resolution)
+                file_hash = compute_file_hash(resized_file)
         except Exception as exc:
             errors.append({'file': image_file.name, 'reason': str(exc)})
             continue
@@ -159,8 +180,9 @@ def _handle_image_upload(image_files, dataset, label):
                 'id': image.id,
                 'file': image_file.name,
                 'hash': file_hash,
-                'width': resize_meta['width'],
-                'height': resize_meta['height'],
+                'width': resize_meta.get('width'),
+                'height': resize_meta.get('height'),
+                'preserved_original': resize_meta.get('preserved_original', False),
             })
         except Exception as exc:
             logger.error(f'Failed to save image {image_file.name}: {exc}')

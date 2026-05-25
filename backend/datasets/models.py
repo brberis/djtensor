@@ -17,6 +17,7 @@ RESOLUTIONS = [
     ('224', '224'),
     ('384', '384'),
     ('512', '512'),
+    ('original', 'Original (Phase 2 source)'),
 ]
 
 class Dataset(models.Model):

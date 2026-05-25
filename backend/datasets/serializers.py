@@ -18,6 +18,13 @@ class DatasetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dataset
         fields = '__all__'
+        # The 'shared' M2M is populated later via the Studies UI, not at
+        # dataset creation time. Mark it optional so the existing Create
+        # Dataset form (which never sends 'shared') succeeds.
+        extra_kwargs = {
+            'shared': {'required': False, 'allow_empty': True},
+            'labels': {'required': False, 'allow_empty': True},
+        }
 
     def get_is_locked(self, obj):
         return (

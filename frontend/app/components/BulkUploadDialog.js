@@ -61,8 +61,12 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
   const [progress, setProgress] = useState({ current: 0, total: 0, currentFile: '' });
   const [results, setResults] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [datasetResolution, setDatasetResolution] = useState(null);
   const fileInputRef = useRef(null);
   const archiveInputRef = useRef(null);
+
+  const preserveOriginal = String(datasetResolution || '').toLowerCase() === 'original';
+  const maxFileSizeMb = preserveOriginal ? 200 : 20;
 
   useEffect(() => {
     async function fetchLabels() {
@@ -74,8 +78,21 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
         console.error('Failed to fetch labels:', err);
       }
     }
-    if (isOpen) fetchLabels();
-  }, [isOpen]);
+    async function fetchDataset() {
+      if (!datasetId) return;
+      try {
+        const res = await fetch(`/api/datasets/dataset/${datasetId}/`);
+        const data = await res.json();
+        setDatasetResolution(data?.resolution || null);
+      } catch (err) {
+        console.error('Failed to fetch dataset:', err);
+      }
+    }
+    if (isOpen) {
+      fetchLabels();
+      fetchDataset();
+    }
+  }, [isOpen, datasetId]);
 
   const handleClose = (result) => {
     if (uploading) return;
@@ -211,6 +228,11 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
 
                 {/* Body */}
                 <div className="px-6 py-5">
+                  {preserveOriginal && (
+                    <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
+                      <strong>Original resolution dataset.</strong> Images will be saved at full resolution (no resize, no crop). Per-file limit: {maxFileSizeMb} MB. This is the right mode for Phase 2 source uploads (RAW or MASKED photos with a scale bar visible).
+                    </div>
+                  )}
                   {/* Alert */}
                   {results && (
                     <div className={`mb-4 rounded-md p-4 ${results.failed > 0 ? 'bg-yellow-50' : 'bg-green-50'}`}>
