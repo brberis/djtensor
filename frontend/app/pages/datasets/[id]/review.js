@@ -667,7 +667,8 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                                 of the canvas, so the loupe stays inside the visible area. */}
                             {hoverTooth && cursorPct && containerSize && (() => {
                               const zoom = 3;
-                              const loupeSize = 180;
+                              const loupeSize = 320;
+                              const gap = 40;
                               const half = loupeSize / 2;
                               const bgW = containerSize.width * zoom;
                               const bgH = containerSize.height * zoom;
@@ -676,8 +677,8 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                               const bboxRightPct = (img.tooth_bbox[2] / w) * 100;
                               const onLeft = bboxRightPct > 60;
                               const posStyle = onLeft
-                                ? { right: '100%', top: '50%', transform: 'translate(-16px, -50%)' }
-                                : { left: '100%',  top: '50%', transform: 'translate(16px, -50%)' };
+                                ? { right: '100%', top: '50%', transform: `translate(-${gap}px, -50%)` }
+                                : { left: '100%',  top: '50%', transform: `translate(${gap}px, -50%)` };
                               return (
                                 <div
                                   className="absolute pointer-events-none"
