@@ -188,6 +188,7 @@ def compute_completeness_mm2_for_dataset(
         img.scale_bar_detected = result.bar_bbox is not None
         img.scale_bar_source = 'heuristic_whitelist'
         img.scale_bar_bbox = list(result.bar_bbox) if result.bar_bbox else None
+        img.tooth_bbox = list(tooth.bbox)
         img.tooth_area_mm2 = tooth_area_mm2
         img.tooth_width_mm = tooth_width_mm
         img.tooth_height_mm = tooth_height_mm
@@ -195,7 +196,7 @@ def compute_completeness_mm2_for_dataset(
         img.tooth_minor_axis_mm = tooth_minor_mm if tooth_minor_mm > 0 else None
         img.save(update_fields=[
             'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
-            'scale_bar_bbox', 'tooth_area_mm2',
+            'scale_bar_bbox', 'tooth_bbox', 'tooth_area_mm2',
             'tooth_width_mm', 'tooth_height_mm',
             'tooth_major_axis_mm', 'tooth_minor_axis_mm',
         ])

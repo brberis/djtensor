@@ -303,6 +303,9 @@ def _write_to_image_row(image_id: int, result: ScaleBarResult, tooth_area_mm2: O
     img.scale_bar_detected = result.bar_bbox is not None
     img.scale_bar_source = 'heuristic_whitelist'
     img.scale_bar_bbox = list(result.bar_bbox) if result.bar_bbox else None
+    tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+    if tooth is not None:
+        img.tooth_bbox = list(tooth.bbox)
     img.tooth_area_mm2 = tooth_area_mm2
 
     # Per-axis bbox dimensions plus orientation-independent intrinsic axes.
@@ -321,7 +324,7 @@ def _write_to_image_row(image_id: int, result: ScaleBarResult, tooth_area_mm2: O
 
     img.save(update_fields=[
         'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
-        'scale_bar_bbox', 'tooth_area_mm2',
+        'scale_bar_bbox', 'tooth_bbox', 'tooth_area_mm2',
         'tooth_width_mm', 'tooth_height_mm',
         'tooth_major_axis_mm', 'tooth_minor_axis_mm',
     ])

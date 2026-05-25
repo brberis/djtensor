@@ -90,6 +90,10 @@ class Image(models.Model):
     scale_bar_detected = models.BooleanField(default=False)
     scale_bar_source = models.CharField(max_length=20, null=True, blank=True)
     scale_bar_bbox = models.JSONField(null=True, blank=True)
+    # Bounding box of the segmented tooth in source pixel coords
+    # ([x0, y0, x1, y1]). Used by the review inspector to overlay the
+    # detection on top of the original image.
+    tooth_bbox = models.JSONField(null=True, blank=True)
     tooth_area_mm2 = models.FloatField(null=True, blank=True)
     # Axis-aligned bbox dimensions in mm. Useful for cropping but orientation-
     # dependent: a tilted tooth will give an apparently-square bbox.
