@@ -842,9 +842,6 @@ export default function DatasetDetail() {
                             <dt className="font-medium text-gray-500">Scale Calibration</dt>
                             <dd className="text-gray-900 text-xs">
                               {activeImage.mm_per_pixel.toFixed(5)} mm/px
-                              {activeImage.scale_bar_source && (
-                                <span className="ml-2 text-gray-400">source: {activeImage.scale_bar_source}</span>
-                              )}
                               {activeImage.scale_bar_detected === false && (
                                 <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">bar not detected</span>
                               )}
@@ -853,9 +850,7 @@ export default function DatasetDetail() {
                         )}
                         {(activeImage.tooth_major_axis_mm != null
                           || activeImage.tooth_minor_axis_mm != null
-                          || activeImage.tooth_area_mm2 != null
-                          || activeImage.tooth_width_mm != null
-                          || activeImage.tooth_height_mm != null) && (
+                          || activeImage.tooth_area_mm2 != null) && (
                           <div>
                             <dt className="font-medium text-gray-500">Tooth Dimensions</dt>
                             <dd className="text-gray-900 text-xs space-y-0.5">
@@ -867,18 +862,6 @@ export default function DatasetDetail() {
                               )}
                               {activeImage.tooth_area_mm2 != null && (
                                 <div><span className="text-gray-500">Area:</span>   <span className="font-medium">{activeImage.tooth_area_mm2.toFixed(1)} mm&sup2;</span></div>
-                              )}
-                              {(activeImage.tooth_width_mm != null || activeImage.tooth_height_mm != null) && (
-                                <div className="pt-1 text-[10px] text-gray-400">
-                                  bbox (axis-aligned):
-                                  {activeImage.tooth_width_mm != null && (
-                                    <span> {activeImage.tooth_width_mm.toFixed(1)} mm</span>
-                                  )}
-                                  {' × '}
-                                  {activeImage.tooth_height_mm != null && (
-                                    <span>{activeImage.tooth_height_mm.toFixed(1)} mm</span>
-                                  )}
-                                </div>
                               )}
                             </dd>
                           </div>
