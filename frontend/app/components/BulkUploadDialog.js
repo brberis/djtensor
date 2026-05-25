@@ -67,6 +67,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
 
   const preserveOriginal = String(datasetResolution || '').toLowerCase() === 'original';
   const maxFileSizeMb = preserveOriginal ? 200 : 20;
+  const [sourceKind, setSourceKind] = useState('auto'); // auto | raw | masked | processed
 
   useEffect(() => {
     async function fetchLabels() {
@@ -148,6 +149,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
       formData.append('archive', file);
       formData.append('label_id', selectedLabel);
       if (datasetId) formData.append('dataset_id', datasetId);
+      if (preserveOriginal && sourceKind && sourceKind !== 'auto') formData.append('source_kind', sourceKind);
       try {
         const res = await fetch('/api/datasets/image/bulk-upload-archive/', { method: 'POST', body: formData });
         if (res.ok) {
@@ -175,6 +177,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
       chunk.forEach(file => formData.append('images', file));
       formData.append('label_id', selectedLabel);
       if (datasetId) formData.append('dataset_id', datasetId);
+      if (preserveOriginal && sourceKind && sourceKind !== 'auto') formData.append('source_kind', sourceKind);
       try {
         const res = await fetch('/api/datasets/image/bulk-upload/', { method: 'POST', body: formData });
         if (res.ok) {
@@ -267,6 +270,28 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
                       ))}
                     </select>
                   </div>
+
+                  {/* Source-kind selector - only shown on Phase 2 source ('original') datasets */}
+                  {preserveOriginal && (
+                    <div className="mb-4">
+                      <label htmlFor="upload-source-kind" className={theme.classes.label}>Source type</label>
+                      <select
+                        id="upload-source-kind"
+                        value={sourceKind}
+                        onChange={(e) => setSourceKind(e.target.value)}
+                        className={`mt-1.5 ${theme.classes.select}`}
+                        disabled={uploading}
+                      >
+                        <option value="auto">Auto-detect from filename (RAW_ / MASKED_ / PROCESSED_)</option>
+                        <option value="raw">RAW — camera original, catalog label visible (OCR works)</option>
+                        <option value="masked">MASKED — background removed, no catalog label (OCR skipped)</option>
+                        <option value="processed">PROCESSED — 384×384 model-ready, no scale bar</option>
+                      </select>
+                      <p className="mt-1.5 text-[11px] text-gray-500">
+                        Tells the pipeline whether to expect OCR / mm calibration on these files. Auto-detect uses the file-name prefix.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Drop zone */}
                   {!results && (

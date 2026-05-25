@@ -59,9 +59,10 @@ def _is_image_file(filename):
 
 
 @shared_task(bind=True)
-def process_archive_upload(self, archive_path, dataset_id, label_id):
+def process_archive_upload(self, archive_path, dataset_id, label_id, source_kind_override=None):
     from .models import Dataset, Label, Image
     from .tasks import create_dataset_archive
+    from .bulk_upload import infer_source_kind
 
     created = []
     duplicates = []
@@ -141,11 +142,13 @@ def process_archive_upload(self, archive_path, dataset_id, label_id):
                 duplicates.append({'file': filename, 'hash': file_hash})
             else:
                 try:
+                    source_kind = infer_source_kind(filename, dataset, explicit=source_kind_override)
                     image = Image.objects.create(
                         dataset=dataset,
                         label=label,
                         image=resized_file,
                         file_hash=file_hash,
+                        source_kind=source_kind,
                     )
                     created.append({
                         'id': image.id,
@@ -154,6 +157,7 @@ def process_archive_upload(self, archive_path, dataset_id, label_id):
                         'width': resize_meta.get('width'),
                         'height': resize_meta.get('height'),
                         'preserved_original': resize_meta.get('preserved_original', False),
+                        'source_kind': source_kind,
                     })
                 except Exception as exc:
                     logger.error(f'Failed to create image {filename}: {exc}')

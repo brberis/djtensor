@@ -203,14 +203,34 @@ class DatasetViewSet(viewsets.ModelViewSet):
             resolved_counts[status_key] = Image.objects.filter(dataset=dataset, review_status=status_key).count()
 
         # Pipeline progress stats - powers the guided pipeline card on the
-        # dataset detail page. Counts how many images have hit each step.
+        # dataset detail page. Denominators take source_kind into account so
+        # MASKED images aren't flagged as "missing OCR" (they can't carry a
+        # catalog label by construction) and PROCESSED images aren't flagged
+        # as "missing calibration" (the scale bar is cropped out of those).
+        from django.db.models import Q
         total_images = Image.objects.filter(dataset=dataset).count()
+        # OCR-eligible: source_kind == 'raw' OR NULL (unknown source defaults
+        # to "we'll try"). Masked and processed are explicitly excluded.
+        ocr_eligible = Image.objects.filter(dataset=dataset).filter(
+            Q(source_kind='raw') | Q(source_kind__isnull=True)
+        )
+        # Calibration-eligible: anything that hasn't been explicitly tagged
+        # as 'processed' (since processed has the scale bar removed).
+        calib_eligible = Image.objects.filter(dataset=dataset).exclude(source_kind='processed')
         derived = Dataset.objects.filter(source_dataset=dataset).order_by('-id')
         pipeline_stats = {
             'total_images': total_images,
-            'with_ocr': Image.objects.filter(dataset=dataset, museum_specimen_id__isnull=False).count(),
-            'with_calibration': Image.objects.filter(dataset=dataset, mm_per_pixel__isnull=False).count(),
-            'with_completeness': Image.objects.filter(dataset=dataset, completeness_mm2__isnull=False).count(),
+            'ocr_eligible_count':   ocr_eligible.count(),
+            'calib_eligible_count': calib_eligible.count(),
+            'with_ocr':         ocr_eligible.filter(museum_specimen_id__isnull=False).count(),
+            'with_calibration': calib_eligible.filter(mm_per_pixel__isnull=False).count(),
+            'with_completeness': calib_eligible.filter(completeness_mm2__isnull=False).count(),
+            'source_kind_counts': {
+                'raw':       Image.objects.filter(dataset=dataset, source_kind='raw').count(),
+                'masked':    Image.objects.filter(dataset=dataset, source_kind='masked').count(),
+                'processed': Image.objects.filter(dataset=dataset, source_kind='processed').count(),
+                'unknown':   Image.objects.filter(dataset=dataset, source_kind__isnull=True).count(),
+            },
             'derived_datasets_count': derived.count(),
             'derived_datasets': [
                 {'id': d.id, 'name': d.name, 'transformation_type': d.transformation_type}

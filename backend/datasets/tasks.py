@@ -547,6 +547,7 @@ def emit_processed_dataset(
             dataset=derived,
             label=src_img.label,
             tooth_area_mm2=src_img.tooth_area_mm2,
+            source_kind='processed',
         )
         if mode == 'B':
             new_img.mm_per_pixel = 1.0 / float(mode_b_px_per_mm)

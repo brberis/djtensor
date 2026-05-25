@@ -116,6 +116,23 @@ class Image(models.Model):
     tooth_minor_axis_mm = models.FloatField(null=True, blank=True)
     completeness_mm2 = models.FloatField(null=True, blank=True)
 
+    # Phase 2: provenance kind. Distinguishes images straight from Alexa's
+    # camera (carry catalog label + scale bar + background) from her
+    # pre-processed versions (background removed, catalog label dropped)
+    # from downstream model-ready 384x384 outputs. Drives which pipeline
+    # steps are expected to apply, e.g. OCR is only meaningful on RAW.
+    SOURCE_KIND_CHOICES = [
+        ('raw',       'RAW (camera original, label visible)'),
+        ('masked',    'MASKED (background removed, label dropped)'),
+        ('processed', 'PROCESSED (downstream 384x384, model-ready)'),
+    ]
+    source_kind = models.CharField(
+        max_length=16,
+        choices=SOURCE_KIND_CHOICES,
+        null=True, blank=True,
+        db_index=True,
+    )
+
     # Phase 2: museum metadata parsed from FLMNH catalog labels via OCR.
     # Populated by datasets.label_ocr; only meaningful on RAW images that
     # still carry the printed label.

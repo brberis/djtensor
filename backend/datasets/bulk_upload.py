@@ -42,6 +42,31 @@ def dataset_preserves_original(dataset):
     return str(dataset.resolution).lower() == 'original'
 
 
+def infer_source_kind(filename, dataset, explicit=None):
+    """
+    Decide what Image.source_kind to record for an uploaded file.
+
+    Precedence:
+      1. explicit override from the caller (the Bulk Upload dialog).
+      2. filename prefix: RAW_* | MASKED_* | PROCESSED_* (case-insensitive).
+      3. dataset resolution heuristic: anything other than 'original' is
+         treated as 'processed' (sized for the model).
+      4. None when ambiguous.
+    """
+    if explicit and explicit in ('raw', 'masked', 'processed'):
+        return explicit
+    name = (filename or '').lower()
+    if name.startswith('raw_') or name.startswith('raw-'):
+        return 'raw'
+    if name.startswith('masked_') or name.startswith('masked-'):
+        return 'masked'
+    if name.startswith('processed_') or name.startswith('processed-'):
+        return 'processed'
+    if str(dataset.resolution).lower() != 'original':
+        return 'processed'
+    return None
+
+
 def dataset_is_locked(dataset):
     return (
         dataset.training_sessions.filter(status='Completed').exists()
@@ -115,10 +140,17 @@ def bulk_upload(request):
     archive_file = request.FILES.get('archive')
     image_files = request.FILES.getlist('image')
 
+    # Caller may explicitly tag uploads as 'raw', 'masked', or 'processed';
+    # otherwise we'll auto-infer per file.
+    raw_kind = (request.data.get('source_kind') or '').strip().lower() or None
+    if raw_kind and raw_kind not in ('raw', 'masked', 'processed', 'auto'):
+        return Response({'error': "source_kind must be one of: raw, masked, processed, auto"}, status=status.HTTP_400_BAD_REQUEST)
+    source_kind_override = raw_kind if raw_kind in ('raw', 'masked', 'processed') else None
+
     if archive_file:
-        return _handle_archive_upload(archive_file, dataset, label, free_space)
+        return _handle_archive_upload(archive_file, dataset, label, free_space, source_kind_override=source_kind_override)
     if image_files:
-        return _handle_image_upload(image_files, dataset, label)
+        return _handle_image_upload(image_files, dataset, label, source_kind_override=source_kind_override)
 
     return Response(
         {'error': 'No files provided. Send images via "image" field or an archive via "archive" field.'},
@@ -126,7 +158,7 @@ def bulk_upload(request):
     )
 
 
-def _handle_image_upload(image_files, dataset, label):
+def _handle_image_upload(image_files, dataset, label, source_kind_override=None):
     created = []
     duplicates = []
     errors = []
@@ -170,11 +202,13 @@ def _handle_image_upload(image_files, dataset, label):
             continue
 
         try:
+            source_kind = infer_source_kind(image_file.name, dataset, explicit=source_kind_override)
             image = Image.objects.create(
                 dataset=dataset,
                 label=label,
                 image=resized_file,
                 file_hash=file_hash,
+                source_kind=source_kind,
             )
             created.append({
                 'id': image.id,
@@ -183,6 +217,7 @@ def _handle_image_upload(image_files, dataset, label):
                 'width': resize_meta.get('width'),
                 'height': resize_meta.get('height'),
                 'preserved_original': resize_meta.get('preserved_original', False),
+                'source_kind': source_kind,
             })
         except Exception as exc:
             logger.error(f'Failed to save image {image_file.name}: {exc}')
@@ -204,7 +239,7 @@ def _handle_image_upload(image_files, dataset, label):
     }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
-def _handle_archive_upload(archive_file, dataset, label, free_space):
+def _handle_archive_upload(archive_file, dataset, label, free_space, source_kind_override=None):
     ext = get_file_extension(archive_file.name)
     if ext not in ARCHIVE_EXTENSIONS:
         return Response(
@@ -240,7 +275,7 @@ def _handle_archive_upload(archive_file, dataset, label, free_space):
         return Response({'error': f'Failed to save archive: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     # Keep Celery task but image processing itself now includes resize for every image.
-    task = process_archive_upload.delay(archive_path, dataset.id, label.id)
+    task = process_archive_upload.delay(archive_path, dataset.id, label.id, source_kind_override)
 
     return Response({
         'task_id': task.id,

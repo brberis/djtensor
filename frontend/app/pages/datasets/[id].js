@@ -2024,27 +2024,30 @@ export default function DatasetDetail() {
 
 function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, onRunOcr, onComputeMm2, onOpenReview, onEmitModeA, onEmitModeB }) {
   const total = stats?.total_images ?? 0;
+  const ocrEligible   = stats?.ocr_eligible_count   ?? total;
+  const calibEligible = stats?.calib_eligible_count ?? total;
   const ocr = stats?.with_ocr ?? 0;
   const cal = stats?.with_calibration ?? 0;
   const reviewedCount = reviewCounts?.reviewed ?? 0;
   const excludedCount = reviewCounts?.excluded ?? 0;
   const unreviewedCount = reviewCounts?.unreviewed ?? 0;
   const derivedCount = stats?.derived_datasets_count ?? 0;
+  const sourceKinds = stats?.source_kind_counts || {};
 
   // Each step's status: 'done' | 'partial' | 'attention' | 'todo'
   const stepUpload = total > 0 ? 'done' : 'todo';
 
-  // OCR is optional on MASKED images, so partial is OK and considered done
-  // once at least one image was processed AND there are no unresolved flags
-  // specifically about OCR. For the panel, treat "no OCR at all" as todo.
-  const stepOcr = total === 0 ? 'todo'
+  // OCR is only meaningful on RAW (or unknown-source) images; MASKED and
+  // PROCESSED images are excluded from both numerator and denominator.
+  const stepOcr = ocrEligible === 0 ? 'done' // no images need OCR (e.g. all MASKED)
     : ocr === 0 ? 'todo'
-    : ocr < total ? 'partial'
+    : ocr < ocrEligible ? 'partial'
     : 'done';
 
-  const stepCal = total === 0 ? 'todo'
+  // Calibration excludes PROCESSED-tagged images (scale bar already gone).
+  const stepCal = calibEligible === 0 ? 'done'
     : cal === 0 ? 'todo'
-    : cal < total ? 'partial'
+    : cal < calibEligible ? 'partial'
     : 'done';
 
   const stepReview = total === 0 ? 'todo'
@@ -2094,14 +2097,26 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, onRunOcr, o
       <div className="flex items-center justify-between gap-2 mb-4 overflow-x-auto pb-2">
         <Step icon={stepIcon(stepUpload)} dot={stepDot(stepUpload)} label="Upload"     value={`${total} image${total !== 1 ? 's' : ''}`} active={nextStep === 'upload'} />
         <StepLine />
-        <Step icon={stepIcon(stepOcr)}    dot={stepDot(stepOcr)}    label="OCR"        value={`${ocr}/${total}`} active={nextStep === 'ocr'} />
+        <Step icon={stepIcon(stepOcr)}    dot={stepDot(stepOcr)}    label="OCR"        value={ocrEligible === 0 ? 'n/a' : `${ocr}/${ocrEligible} RAW`} active={nextStep === 'ocr'} />
         <StepLine />
-        <Step icon={stepIcon(stepCal)}    dot={stepDot(stepCal)}    label="Calibrate"  value={`${cal}/${total}`} active={nextStep === 'cal'} />
+        <Step icon={stepIcon(stepCal)}    dot={stepDot(stepCal)}    label="Calibrate"  value={calibEligible === 0 ? 'n/a' : `${cal}/${calibEligible}`} active={nextStep === 'cal'} />
         <StepLine />
         <Step icon={stepIcon(stepReview)} dot={stepDot(stepReview)} label="Review"     value={`${reviewedCount} ✓ / ${unreviewedCount} pending / ${excludedCount} ✕`} active={nextStep === 'review'} />
         <StepLine />
         <Step icon={stepIcon(stepEmit)}   dot={stepDot(stepEmit)}   label="Emit"       value={derivedCount > 0 ? `${derivedCount} derived` : 'not yet'} active={nextStep === 'emit'} />
       </div>
+
+      {/* Source-kind breakdown when there's a mix */}
+      {(sourceKinds.raw > 0 || sourceKinds.masked > 0 || sourceKinds.unknown > 0) && (
+        <div className="mb-3 text-[11px] text-gray-500">
+          Image kinds:
+          {sourceKinds.raw > 0    && <> <span className="font-medium text-gray-700">{sourceKinds.raw} RAW</span></>}
+          {sourceKinds.masked > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.masked} MASKED</span></>}
+          {sourceKinds.processed > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.processed} PROCESSED</span></>}
+          {sourceKinds.unknown > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.unknown} unknown</span></>}
+          <span className="text-gray-400"> · OCR applies to RAW only · Calibration applies to RAW + MASKED</span>
+        </div>
+      )}
 
       {/* Next-action CTA */}
       <div className="rounded-md bg-gray-50 ring-1 ring-gray-200 px-4 py-3 flex flex-wrap items-center gap-3">
