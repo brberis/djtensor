@@ -133,6 +133,9 @@ export default function DatasetDetail() {
   const [showEmitModeBDialog, setShowEmitModeBDialog] = useState(false);
   const [emitModeBPxPerMm, setEmitModeBPxPerMm] = useState(6.0);
   const [runningOcr, setRunningOcr] = useState(false);
+  const [showRunOcrConfirm, setShowRunOcrConfirm] = useState(false);
+  const [showEmitModeAConfirm, setShowEmitModeAConfirm] = useState(false);
+  const [actionStatus, setActionStatus] = useState(null);
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -305,8 +308,17 @@ export default function DatasetDetail() {
     }
   };
 
+  const showStatus = (tone, message) => {
+    setActionStatus({ tone, message });
+    // Auto-dismiss after ~8 seconds so the banner doesn't linger.
+    setTimeout(() => {
+      setActionStatus((current) => (current && current.message === message ? null : current));
+    }, 8000);
+  };
+
   const handleRunOcr = async () => {
     setRunningOcr(true);
+    setShowRunOcrConfirm(false);
     try {
       const res = await fetch(`/api/datasets/dataset/${id}/extract-museum-metadata`, {
         method: 'POST',
@@ -314,14 +326,14 @@ export default function DatasetDetail() {
         body: JSON.stringify({}),
       });
       if (res.ok) {
-        alert('Queued FLMNH label OCR. Museum metadata fields will populate on each image as the task progresses.');
+        showStatus('success', 'Queued FLMNH label OCR. Museum metadata fields will populate on each image as the task progresses.');
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || 'Failed to queue OCR');
+        showStatus('error', data.message || data.error || 'Failed to queue OCR');
       }
     } catch (e) {
       console.error('Failed to queue OCR:', e);
-      alert('Failed to queue OCR');
+      showStatus('error', 'Failed to queue OCR');
     } finally {
       setRunningOcr(false);
     }
@@ -340,17 +352,18 @@ export default function DatasetDetail() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        alert(`Queued PROCESSED Mode ${mode}. A new derived dataset will appear in the Datasets list when the task finishes.`);
+        showStatus('success', `Queued PROCESSED Mode ${mode}. A new derived dataset will appear in the Datasets list when the task finishes.`);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || `Failed to queue PROCESSED Mode ${mode}`);
+        showStatus('error', data.message || data.error || `Failed to queue PROCESSED Mode ${mode}`);
       }
     } catch (e) {
       console.error('Failed to queue emit_processed:', e);
-      alert('Failed to queue emit_processed');
+      showStatus('error', 'Failed to queue emit_processed');
     } finally {
       setEmittingProcessed(false);
       setShowEmitModeBDialog(false);
+      setShowEmitModeAConfirm(false);
     }
   };
 
@@ -925,6 +938,30 @@ export default function DatasetDetail() {
         </Dialog>
       </Transition.Root>
 
+      {actionStatus && (
+        <div
+          className={`fixed top-4 right-4 z-40 max-w-md rounded-lg shadow-lg ring-1 ring-black/5 px-4 py-3 text-sm transition-opacity ${
+            actionStatus.tone === 'success'
+              ? 'bg-green-50 text-green-900 ring-green-200'
+              : actionStatus.tone === 'error'
+                ? 'bg-red-50 text-red-900 ring-red-200'
+                : 'bg-blue-50 text-blue-900 ring-blue-200'
+          }`}
+          role="status"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex-1">{actionStatus.message}</span>
+            <button
+              onClick={() => setActionStatus(null)}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="flex items-center gap-x-3">
           <button onClick={() => router.push('/datasets')} className="text-sm text-gray-500 hover:text-gray-700">Datasets</button>
@@ -1020,9 +1057,7 @@ export default function DatasetDetail() {
                       <button
                         onClick={() => {
                           setShowActionsMenu(false);
-                          if (window.confirm(`Run FLMNH label OCR on every image in "${dataset?.name}"? Best run on RAW images that still show the printed catalog label.`)) {
-                            handleRunOcr();
-                          }
+                          setShowRunOcrConfirm(true);
                         }}
                         disabled={runningOcr}
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -1038,9 +1073,7 @@ export default function DatasetDetail() {
                       <button
                         onClick={() => {
                           setShowActionsMenu(false);
-                          if (window.confirm(`Emit a new PROCESSED Mode A dataset from "${dataset?.name}"? This produces 384x384 images with uniform pixel density (Phase I behaviour).`)) {
-                            handleEmitProcessed('A');
-                          }
+                          setShowEmitModeAConfirm(true);
                         }}
                         disabled={emittingProcessed}
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -1477,6 +1510,28 @@ export default function DatasetDetail() {
           </div>
         </Dialog>
       </Transition.Root>
+
+      {/* Run FLMNH Label OCR confirmation */}
+      <ConfirmDialog
+        isOpen={showRunOcrConfirm}
+        onClose={() => setShowRunOcrConfirm(false)}
+        onConfirm={() => handleRunOcr()}
+        title="Run FLMNH Label OCR?"
+        description={`This runs Tesseract OCR on every image in "${dataset?.name}" and parses the printed catalog label into museum_specimen_id, species, completeness category, locality, formation, age, collector, and date. Best on RAW images that still show the label. MASKED images and images without a label blob are skipped quietly.`}
+        confirmLabel={runningOcr ? 'Queueing...' : 'Run OCR'}
+        confirmTone="primary"
+      />
+
+      {/* Emit PROCESSED Mode A confirmation */}
+      <ConfirmDialog
+        isOpen={showEmitModeAConfirm}
+        onClose={() => setShowEmitModeAConfirm(false)}
+        onConfirm={() => handleEmitProcessed('A')}
+        title="Emit PROCESSED Mode A?"
+        description={`Produces a new derived dataset of 384x384 PNGs from "${dataset?.name}". Mode A is the Phase I uniform-pixel-density layout: each tooth is rescaled to fill the canvas, the scale bar is cropped out. Absolute physical size is NOT preserved in the output.`}
+        confirmLabel={emittingProcessed ? 'Queueing...' : 'Emit Mode A'}
+        confirmTone="primary"
+      />
 
       {/* Emit PROCESSED Mode B dialog */}
       <Transition.Root show={showEmitModeBDialog} as={Fragment}>
