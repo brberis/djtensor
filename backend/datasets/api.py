@@ -28,6 +28,7 @@ from .tasks import (
     compute_completeness_mm2_for_dataset,
     generate_synthetic_dataset,
     emit_processed_dataset,
+    extract_museum_metadata_for_dataset,
 )
 from .synthetic_fracture import load_fracture_profiles
 from .image_resize import resize_to_dataset, get_target_resolution
@@ -175,6 +176,13 @@ class DatasetViewSet(viewsets.ModelViewSet):
             dataset.id, reference_dataset_id, assumed_tick_spacing_mm=assumed_tick_mm,
         )
         return Response({'status': 'queued', 'dataset': dataset.name, 'metric': 'mm2'}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='extract-museum-metadata')
+    def extract_museum_metadata(self, request, pk=None):
+        """Run the FLMNH catalog-label OCR pass on every image in this dataset."""
+        dataset = self.get_object()
+        extract_museum_metadata_for_dataset.delay(dataset.id)
+        return Response({'status': 'queued', 'dataset': dataset.name, 'task': 'extract_museum_metadata'}, status=status.HTTP_202_ACCEPTED)
 
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='emit-processed')
     def emit_processed(self, request, pk=None):

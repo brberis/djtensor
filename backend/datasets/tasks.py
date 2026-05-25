@@ -252,6 +252,96 @@ def compute_completeness_mm2_for_dataset(
 
 
 @shared_task
+def extract_museum_metadata_for_dataset(dataset_id):
+    """
+    Phase 2 OCR pass.
+
+    For each Image in the dataset, run the FLMNH catalog-label OCR pipeline
+    and persist the parsed fields. Designed for RAW images that still carry
+    the printed museum label; MASKED images normally have the label cropped
+    out and will produce 'no label blob detected'.
+
+    Persists when at least one field is recovered. Images with all-null
+    output are left untouched so a previous successful OCR pass is never
+    overwritten by a failed re-run.
+    """
+    from .models import Dataset, Image
+    from .label_ocr import extract_specimen_metadata
+    from .scale_calibration import detect_scale_bar
+
+    dataset = Dataset.objects.get(pk=dataset_id)
+    images = Image.objects.filter(dataset=dataset)
+
+    written = 0
+    skipped_no_label = 0
+    skipped_no_text = 0
+    errors = 0
+
+    for img in images:
+        try:
+            # Inform the label detector about the bar + tooth bboxes so it
+            # doesn't try to OCR those.
+            excluded = []
+            try:
+                sb = detect_scale_bar(img.image.path)
+                if sb.bar_bbox:
+                    excluded.append(sb.bar_bbox)
+                tooth = next((b for b in sb.blobs if b.classification == 'tooth'), None)
+                if tooth is not None:
+                    excluded.append(tooth.bbox)
+            except Exception:
+                # Detector failure is non-fatal here; OCR can still try the
+                # label detector on its own.
+                pass
+
+            meta = extract_specimen_metadata(img.image.path, excluded_bboxes=excluded)
+        except Exception as e:
+            logger.warning("extract_museum_metadata: image %s raised %s", img.id, e)
+            errors += 1
+            continue
+
+        if meta.label_bbox is None:
+            skipped_no_label += 1
+            continue
+        if not meta.raw_text:
+            skipped_no_text += 1
+            continue
+
+        img.museum_specimen_id = meta.museum_specimen_id
+        img.museum_species = meta.species
+        img.museum_completeness_category = meta.museum_completeness_category
+        img.museum_metadata = {
+            'locality': meta.locality,
+            'formation': meta.formation,
+            'age': meta.age,
+            'collector': meta.collector,
+            'date': meta.date,
+            'confidence': meta.confidence,
+            'notes': meta.notes,
+            'label_bbox': list(meta.label_bbox) if meta.label_bbox else None,
+        }
+        img.ocr_label_text = meta.raw_text
+        img.save(update_fields=[
+            'museum_specimen_id', 'museum_species', 'museum_completeness_category',
+            'museum_metadata', 'ocr_label_text',
+        ])
+        written += 1
+
+    logger.info(
+        "extract_museum_metadata_for_dataset(%s): written=%d no_label=%d no_text=%d errors=%d",
+        dataset.id, written, skipped_no_label, skipped_no_text, errors,
+    )
+    return {
+        'dataset_id': dataset.id,
+        'dataset_name': dataset.name,
+        'written': written,
+        'skipped_no_label': skipped_no_label,
+        'skipped_no_text': skipped_no_text,
+        'errors': errors,
+    }
+
+
+@shared_task
 def emit_processed_dataset(
     source_dataset_id,
     mode='A',

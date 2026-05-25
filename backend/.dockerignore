@@ -1,0 +1,22 @@
+# Heavy data dirs that should never enter the build context.
+mediafiles/
+staticfiles/
+
+# Per-run caches and bytecode.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local/dev only artifacts.
+*.bak
+*.bak.*
+saliency_map_*.png
+__phase2_*.py
+
+# Project metadata not needed at build time.
+.git/
+.gitignore
+.idea/
+.vscode/

@@ -17,3 +17,4 @@ tf_keras==2.15.1
 tf-keras-vis
 scikit-image==0.23.2
 async_timeout
+pytesseract==0.3.13

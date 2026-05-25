@@ -132,6 +132,7 @@ export default function DatasetDetail() {
   const [emittingProcessed, setEmittingProcessed] = useState(false);
   const [showEmitModeBDialog, setShowEmitModeBDialog] = useState(false);
   const [emitModeBPxPerMm, setEmitModeBPxPerMm] = useState(6.0);
+  const [runningOcr, setRunningOcr] = useState(false);
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -301,6 +302,28 @@ export default function DatasetDetail() {
       console.error('Failed to queue completeness computation:', e);
     } finally {
       setComputingCompleteness(false);
+    }
+  };
+
+  const handleRunOcr = async () => {
+    setRunningOcr(true);
+    try {
+      const res = await fetch(`/api/datasets/dataset/${id}/extract-museum-metadata`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        alert('Queued FLMNH label OCR. Museum metadata fields will populate on each image as the task progresses.');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to queue OCR');
+      }
+    } catch (e) {
+      console.error('Failed to queue OCR:', e);
+      alert('Failed to queue OCR');
+    } finally {
+      setRunningOcr(false);
     }
   };
 
@@ -815,6 +838,43 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
+                        {(activeImage.museum_specimen_id
+                          || activeImage.museum_species
+                          || activeImage.museum_completeness_category
+                          || activeImage.museum_metadata) && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Museum Metadata (OCR)</dt>
+                            <dd className="text-gray-900 text-xs space-y-1">
+                              {activeImage.museum_specimen_id && (
+                                <div><span className="text-gray-500">Specimen ID:</span> <span className="font-medium">{activeImage.museum_specimen_id}</span></div>
+                              )}
+                              {activeImage.museum_species && (
+                                <div><span className="text-gray-500">Species (OCR):</span> <em>{activeImage.museum_species}</em></div>
+                              )}
+                              {activeImage.museum_completeness_category && (
+                                <div><span className="text-gray-500">Museum category:</span> {activeImage.museum_completeness_category}</div>
+                              )}
+                              {activeImage.museum_metadata?.locality && (
+                                <div><span className="text-gray-500">Locality:</span> {activeImage.museum_metadata.locality}</div>
+                              )}
+                              {activeImage.museum_metadata?.formation && (
+                                <div><span className="text-gray-500">Formation:</span> {activeImage.museum_metadata.formation}</div>
+                              )}
+                              {activeImage.museum_metadata?.age && (
+                                <div><span className="text-gray-500">Age:</span> {activeImage.museum_metadata.age}</div>
+                              )}
+                              {activeImage.museum_metadata?.collector && (
+                                <div><span className="text-gray-500">Collector:</span> {activeImage.museum_metadata.collector}</div>
+                              )}
+                              {activeImage.museum_metadata?.date && (
+                                <div><span className="text-gray-500">Date:</span> {activeImage.museum_metadata.date}</div>
+                              )}
+                              {activeImage.museum_metadata?.confidence != null && (
+                                <div className="pt-1 text-gray-400">OCR confidence: {Math.round(activeImage.museum_metadata.confidence * 100)}%</div>
+                              )}
+                            </dd>
+                          </div>
+                        )}
                         {activeImage.target_completeness != null && (
                           <div>
                             <dt className="font-medium text-gray-500">Target Completeness</dt>
@@ -953,6 +1013,23 @@ export default function DatasetDetail() {
                     >
                       Compute Completeness (mm&sup2;)
                     </button>
+                  )}
+                  {canSeeSyntheticTools && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          if (window.confirm(`Run FLMNH label OCR on every image in "${dataset?.name}"? Best run on RAW images that still show the printed catalog label.`)) {
+                            handleRunOcr();
+                          }
+                        }}
+                        disabled={runningOcr}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Run FLMNH Label OCR
+                      </button>
+                    </>
                   )}
                   {canSeeSyntheticTools && !dataset?.synthetic && (
                     <>

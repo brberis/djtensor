@@ -489,9 +489,72 @@ def px_area_to_mm2(area_px: float, mm_per_pixel: float) -> float:
     return float(area_px) * (mm_per_pixel ** 2)
 
 
+# ---------------------------------------------------------------------------
+# Optional OCR confirmation of the scale-bar physical length
+# ---------------------------------------------------------------------------
+
+def read_scale_bar_units(image_path: str, bar_bbox: Tuple[int, int, int, int]) -> Optional[dict]:
+    """
+    OCR the scale-bar crop to find a printed physical length.
+
+    Returns a dict like {'value_mm': 30.0, 'raw_match': '3 cm'} when a
+    convincing match is found, or None when OCR is unavailable / no match.
+    pytesseract is imported lazily so this module remains importable in
+    environments without tesseract installed.
+    """
+    try:
+        import pytesseract
+    except Exception:
+        return None
+
+    try:
+        img = Image.open(image_path)
+        x0, y0, x1, y1 = bar_bbox
+        crop = img.crop((x0, y0, x1 + 1, y1 + 1)).convert('RGB')
+        text = pytesseract.image_to_string(crop, config='--oem 1 --psm 6')
+    except Exception:
+        return None
+
+    if not text:
+        return None
+
+    import re as _re
+    matches = _re.findall(r'(\d+(?:\.\d+)?)\s*(cm|mm|inch|inches|in)\b', text, _re.IGNORECASE)
+    if not matches:
+        return None
+
+    # Pick the largest plausible length (mm). FLMNH bars typically print
+    # "3 cm" (= 30 mm) and "1 inch" (= 25.4 mm). The larger figure is the
+    # total ruler length we care about, not a per-tick subdivision.
+    best_mm = 0.0
+    best_raw = None
+    for value_str, unit in matches:
+        try:
+            value = float(value_str)
+        except ValueError:
+            continue
+        unit_lower = unit.lower()
+        if unit_lower == 'cm':
+            mm = value * 10.0
+        elif unit_lower == 'mm':
+            mm = value
+        elif unit_lower in ('inch', 'inches', 'in'):
+            mm = value * 25.4
+        else:
+            continue
+        if mm > best_mm:
+            best_mm = mm
+            best_raw = f'{value_str} {unit_lower}'
+
+    if best_mm <= 0:
+        return None
+    return {'value_mm': best_mm, 'raw_match': best_raw}
+
+
 __all__ = [
     'BlobInfo',
     'ScaleBarResult',
     'detect_scale_bar',
     'px_area_to_mm2',
+    'read_scale_bar_units',
 ]

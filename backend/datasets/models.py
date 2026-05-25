@@ -92,6 +92,15 @@ class Image(models.Model):
     tooth_area_mm2 = models.FloatField(null=True, blank=True)
     completeness_mm2 = models.FloatField(null=True, blank=True)
 
+    # Phase 2: museum metadata parsed from FLMNH catalog labels via OCR.
+    # Populated by datasets.label_ocr; only meaningful on RAW images that
+    # still carry the printed label.
+    museum_specimen_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    museum_species = models.CharField(max_length=128, null=True, blank=True)
+    museum_completeness_category = models.CharField(max_length=128, null=True, blank=True)
+    museum_metadata = models.JSONField(null=True, blank=True)
+    ocr_label_text = models.TextField(null=True, blank=True)
+
     def __str__(self):
         return self.image.url
 
