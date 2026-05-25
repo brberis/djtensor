@@ -177,10 +177,13 @@ def compute_completeness_mm2_for_dataset(
         if tooth is None:
             return None, None
         tooth_area_mm2 = float(tooth.area_px) * (result.mm_per_pixel ** 2)
-        # Per-axis physical dimensions, computed from the tooth bbox.
+        # Axis-aligned bbox dimensions (orientation-dependent).
         tx0, ty0, tx1, ty1 = tooth.bbox
         tooth_width_mm = (tx1 - tx0 + 1) * result.mm_per_pixel
         tooth_height_mm = (ty1 - ty0 + 1) * result.mm_per_pixel
+        # Orientation-independent intrinsic dimensions.
+        tooth_major_mm = float(tooth.major_axis_px or 0.0) * result.mm_per_pixel
+        tooth_minor_mm = float(tooth.minor_axis_px or 0.0) * result.mm_per_pixel
         img.mm_per_pixel = result.mm_per_pixel
         img.scale_bar_detected = result.bar_bbox is not None
         img.scale_bar_source = 'heuristic_whitelist'
@@ -188,9 +191,13 @@ def compute_completeness_mm2_for_dataset(
         img.tooth_area_mm2 = tooth_area_mm2
         img.tooth_width_mm = tooth_width_mm
         img.tooth_height_mm = tooth_height_mm
+        img.tooth_major_axis_mm = tooth_major_mm if tooth_major_mm > 0 else None
+        img.tooth_minor_axis_mm = tooth_minor_mm if tooth_minor_mm > 0 else None
         img.save(update_fields=[
             'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
-            'scale_bar_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+            'scale_bar_bbox', 'tooth_area_mm2',
+            'tooth_width_mm', 'tooth_height_mm',
+            'tooth_major_axis_mm', 'tooth_minor_axis_mm',
         ])
         return result.mm_per_pixel, tooth_area_mm2
 

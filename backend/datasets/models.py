@@ -91,8 +91,15 @@ class Image(models.Model):
     scale_bar_source = models.CharField(max_length=20, null=True, blank=True)
     scale_bar_bbox = models.JSONField(null=True, blank=True)
     tooth_area_mm2 = models.FloatField(null=True, blank=True)
+    # Axis-aligned bbox dimensions in mm. Useful for cropping but orientation-
+    # dependent: a tilted tooth will give an apparently-square bbox.
     tooth_width_mm = models.FloatField(null=True, blank=True)
     tooth_height_mm = models.FloatField(null=True, blank=True)
+    # Intrinsic shape dimensions via the equivalent-ellipse fit (second
+    # central moments). Orientation-independent: the "length" of the tooth
+    # along its principal axis regardless of how it sits in the photo.
+    tooth_major_axis_mm = models.FloatField(null=True, blank=True)
+    tooth_minor_axis_mm = models.FloatField(null=True, blank=True)
     completeness_mm2 = models.FloatField(null=True, blank=True)
 
     # Phase 2: museum metadata parsed from FLMNH catalog labels via OCR.

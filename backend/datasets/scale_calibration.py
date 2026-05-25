@@ -45,6 +45,10 @@ class BlobInfo:
     fill_ratio: float                 # area / (bbox_w * bbox_h)
     aspect_ratio: float               # max(w, h) / min(w, h), always >= 1
     classification: str               # 'tooth' | 'scale_bar' | 'unknown'
+    # Orientation-independent shape dimensions from the equivalent-ellipse
+    # fit (second central moments). 0.0 when unavailable.
+    major_axis_px: float = 0.0
+    minor_axis_px: float = 0.0
 
 
 @dataclass
@@ -259,6 +263,7 @@ def _label_and_describe_blobs(
         bh = y1 - y0 + 1
         fill = area / float(bw * bh)
         ar = max(bw, bh) / float(min(bw, bh))
+        major_px, minor_px = _ellipse_axis_lengths_px(xs, ys)
         blobs.append(BlobInfo(
             blob_id=bid,
             area_px=area,
@@ -266,9 +271,45 @@ def _label_and_describe_blobs(
             fill_ratio=fill,
             aspect_ratio=ar,
             classification='unknown',
+            major_axis_px=major_px,
+            minor_axis_px=minor_px,
         ))
     blobs.sort(key=lambda b: -b.area_px)
     return blobs
+
+
+def _ellipse_axis_lengths_px(xs: np.ndarray, ys: np.ndarray) -> Tuple[float, float]:
+    """
+    Major and minor axis lengths in pixels of the equivalent ellipse with
+    the same second central moments as the supplied region.
+
+    Orientation-independent: a tooth tilted 45 degrees gives the same axis
+    lengths as one aligned with the image axes, unlike the axis-aligned
+    bbox dimensions.
+
+    This mirrors scikit-image regionprops' `axis_major_length` /
+    `axis_minor_length` so we don't pull in another dependency for this
+    one calculation.
+    """
+    n = xs.size
+    if n < 2:
+        return 0.0, 0.0
+    xf = xs.astype(np.float64)
+    yf = ys.astype(np.float64)
+    cx = xf.mean()
+    cy = yf.mean()
+    mxx = ((xf - cx) ** 2).sum() / n
+    myy = ((yf - cy) ** 2).sum() / n
+    mxy = ((xf - cx) * (yf - cy)).sum() / n
+    tr = mxx + myy
+    det = mxx * myy - mxy * mxy
+    disc = max(0.0, (tr * tr) / 4.0 - det)
+    s = float(np.sqrt(disc))
+    eig1 = tr / 2.0 + s
+    eig2 = tr / 2.0 - s
+    major = 4.0 * float(np.sqrt(max(0.0, eig1)))
+    minor = 4.0 * float(np.sqrt(max(0.0, eig2)))
+    return major, minor
 
 
 def _classify_blobs(blobs: List[BlobInfo], fill_threshold: float, aspect_threshold: float) -> None:

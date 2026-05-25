@@ -305,18 +305,24 @@ def _write_to_image_row(image_id: int, result: ScaleBarResult, tooth_area_mm2: O
     img.scale_bar_bbox = list(result.bar_bbox) if result.bar_bbox else None
     img.tooth_area_mm2 = tooth_area_mm2
 
-    # Per-axis dimensions from the tooth bbox.
+    # Per-axis bbox dimensions plus orientation-independent intrinsic axes.
     tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
     if tooth is not None and result.mm_per_pixel is not None:
         tx0, ty0, tx1, ty1 = tooth.bbox
         img.tooth_width_mm = (tx1 - tx0 + 1) * result.mm_per_pixel
         img.tooth_height_mm = (ty1 - ty0 + 1) * result.mm_per_pixel
+        major_mm = float(tooth.major_axis_px or 0.0) * result.mm_per_pixel
+        minor_mm = float(tooth.minor_axis_px or 0.0) * result.mm_per_pixel
+        img.tooth_major_axis_mm = major_mm if major_mm > 0 else None
+        img.tooth_minor_axis_mm = minor_mm if minor_mm > 0 else None
 
     # completeness_mm2 is left alone; it is computed at the dataset level
     # against the species reference, not per-image.
 
     img.save(update_fields=[
         'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
-        'scale_bar_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+        'scale_bar_bbox', 'tooth_area_mm2',
+        'tooth_width_mm', 'tooth_height_mm',
+        'tooth_major_axis_mm', 'tooth_minor_axis_mm',
     ])
     out.write(f'  WRITE: persisted to Image id={image_id}')
