@@ -126,7 +126,15 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
                 continue
 
         # 5. Calibration succeeded but no museum_specimen_id was parsed.
-        if is_source_dataset and img.mm_per_pixel and not img.museum_specimen_id:
+        # MASKED images by construction cannot carry a catalog label (the
+        # background that held it was removed), and PROCESSED images have
+        # the label cropped out, so neither should flag here.
+        if (
+            is_source_dataset
+            and img.mm_per_pixel
+            and not img.museum_specimen_id
+            and img.source_kind not in ('masked', 'processed')
+        ):
             flags['no_museum_label'].append(img)
             continue
 
