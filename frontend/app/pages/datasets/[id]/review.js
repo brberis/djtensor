@@ -553,11 +553,11 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                         {tickLines.map((t) => (
                           <div
                             key={`tick-${t.key}`}
-                            className="absolute bg-red-500/95 shadow-[0_0_4px_rgba(239,68,68,0.6)] pointer-events-none"
+                            className="absolute bg-red-500 pointer-events-none"
                             style={
                               t.horizontal
-                                ? { left: t.left, top: t.top, width: t.width, height: '2px' }
-                                : { left: t.left, top: t.top, width: '2px', height: t.height }
+                                ? { left: t.left, top: t.top, width: t.width, height: '1px' }
+                                : { left: t.left, top: t.top, width: '1px', height: t.height }
                             }
                           />
                         ))}
@@ -567,49 +567,62 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                             <span className="absolute -top-5 left-0 rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">label</span>
                           </div>
                         )}
-                        {/* Tooth - last so it can intercept hover events for the fill effect */}
+                        {/* Tooth - bbox outline only; the precise tooth-shaped fill appears
+                            on hover via the mask PNG below. */}
                         {toothPct && (
                           <div
-                            className={`absolute rounded-sm cursor-help transition-colors duration-150 ${
-                              hoverTooth
-                                ? 'bg-green-500/35 ring-4 ring-green-500'
-                                : 'ring-4 ring-green-500/80'
+                            className={`absolute rounded-sm transition-opacity duration-150 ${
+                              hoverTooth ? 'ring-4 ring-green-600' : 'ring-4 ring-green-500/80'
                             }`}
                             style={toothPct}
                             onMouseEnter={() => setHoverTooth(true)}
                             onMouseLeave={() => setHoverTooth(false)}
                             title={img.tooth_area_mm2 != null ? `Tooth area: ${img.tooth_area_mm2.toFixed(1)} mm²` : 'Tooth blob'}
                           >
-                            <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">tooth</span>
+                            <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white pointer-events-none">tooth</span>
+
+                            {/* Precise tooth-shape mask PNG. Pre-generated server-side, cropped to
+                                bbox, green where mask=1 and transparent elsewhere. Opacity is 0
+                                when not hovering so it doesn't obscure the underlying photo. */}
+                            {img.tooth_mask_url && (
+                              <img
+                                src={normalizeMediaUrl(img.tooth_mask_url)}
+                                alt=""
+                                aria-hidden="true"
+                                className={`absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-150 ${
+                                  hoverTooth ? 'opacity-90' : 'opacity-0'
+                                }`}
+                              />
+                            )}
+
                             {/* Area badge centered inside on hover */}
                             {hoverTooth && img.tooth_area_mm2 != null && (
                               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <span className="rounded-md bg-white/95 px-3 py-1.5 text-sm font-bold text-green-900 ring-2 ring-green-600 shadow-lg">
+                                <span className="rounded-md bg-white/95 px-3 py-1.5 text-sm font-bold text-green-900 ring-2 ring-green-700 shadow-lg">
                                   {img.tooth_area_mm2.toFixed(1)} mm²
                                 </span>
                               </div>
                             )}
-                          </div>
-                        )}
-                        {/* Floating dimension labels around the tooth bbox */}
-                        {toothPct && toothDims && img.tooth_major_axis_mm != null && (
-                          <div
-                            className="absolute pointer-events-none"
-                            style={{ left: `${toothDims.leftPct}%`, top: `${toothDims.yCenterPct}%`, transform: 'translate(-110%, -50%)' }}
-                          >
-                            <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
-                              L: {img.tooth_major_axis_mm.toFixed(1)} mm
-                            </span>
-                          </div>
-                        )}
-                        {toothPct && toothDims && img.tooth_minor_axis_mm != null && (
-                          <div
-                            className="absolute pointer-events-none"
-                            style={{ left: `${toothDims.xCenterPct}%`, top: `${toothDims.topPct}%`, transform: 'translate(-50%, -130%)' }}
-                          >
-                            <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
-                              W: {img.tooth_minor_axis_mm.toFixed(1)} mm
-                            </span>
+
+                            {/* Length label - inside the bbox at the left edge so it never clips
+                                off-screen and remains visible while hovering. */}
+                            {toothDims && img.tooth_major_axis_mm != null && (
+                              <div className="absolute pointer-events-none" style={{ left: 6, top: '50%', transform: 'translateY(-50%)' }}>
+                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700/95 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                                  L: {img.tooth_major_axis_mm.toFixed(1)} mm
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Width label - at the BOTTOM of the bbox (user request) and
+                                centered horizontally. Inside so it never goes off-canvas. */}
+                            {toothDims && img.tooth_minor_axis_mm != null && (
+                              <div className="absolute pointer-events-none" style={{ left: '50%', bottom: 4, transform: 'translateX(-50%)' }}>
+                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700/95 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                                  W: {img.tooth_minor_axis_mm.toFixed(1)} mm
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

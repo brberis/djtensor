@@ -158,6 +158,47 @@ def compute_completeness_mm2_for_dataset(
     dataset = Dataset.objects.get(pk=dataset_id)
     ref_dataset_id = reference_dataset_id or dataset_id
 
+    def _save_tooth_mask_png(image_path, tooth_bbox, output_path):
+        """Generate a green-tinted PNG of the exact segmented tooth shape,
+        cropped to the bbox. Returns True on success, False on any failure.
+        Cheap: a few hundred ms per image."""
+        try:
+            from .scale_calibration import _foreground_mask
+            from PIL import Image as PILImage
+            import numpy as np
+            from scipy import ndimage as _ndimage
+            import os as _os
+            pil = PILImage.open(image_path)
+            fg, _src = _foreground_mask(pil)
+            if fg is None:
+                return False
+            opened = _ndimage.binary_opening(fg, iterations=3)
+            if opened.sum() < 0.5 * fg.sum():
+                opened = fg
+            labeled, n = _ndimage.label(opened)
+            if n == 0:
+                return False
+            x0, y0, x1, y1 = tooth_bbox
+            cy = max(0, min(labeled.shape[0] - 1, (y0 + y1) // 2))
+            cx = max(0, min(labeled.shape[1] - 1, (x0 + x1) // 2))
+            tooth_label = int(labeled[cy, cx])
+            if tooth_label == 0:
+                return False
+            tooth_pixels = (labeled == tooth_label)
+            cropped = tooth_pixels[y0:y1 + 1, x0:x1 + 1]
+            ch, cw = cropped.shape
+            if ch < 4 or cw < 4:
+                return False
+            rgba = np.zeros((ch, cw, 4), dtype=np.uint8)
+            # Tailwind green-500 with ~70% alpha where the mask is set.
+            rgba[cropped] = [34, 197, 94, 180]
+            _os.makedirs(_os.path.dirname(output_path), exist_ok=True)
+            PILImage.fromarray(rgba, 'RGBA').save(output_path, 'PNG', optimize=True)
+            return True
+        except Exception as exc:
+            logger.warning(f"_save_tooth_mask_png failed for {image_path}: {exc}")
+            return False
+
     def _calibrate_one(img):
         """Run the detector for one Image row, returning (mm_per_pixel, tooth_area_mm2)
         or (None, None) on failure. Persists the calibration to the row."""
@@ -198,12 +239,34 @@ def compute_completeness_mm2_for_dataset(
         img.tooth_height_mm = tooth_height_mm
         img.tooth_major_axis_mm = tooth_major_mm if tooth_major_mm > 0 else None
         img.tooth_minor_axis_mm = tooth_minor_mm if tooth_minor_mm > 0 else None
+
+        # Generate the tooth-shape mask PNG for the review inspector overlay.
+        # Stored next to the source image in a _phase2_masks/ sub-folder.
+        try:
+            import os as _os
+            from django.conf import settings as _settings
+            source_dir = _os.path.dirname(img.image.path)
+            mask_filename = f'{img.id}_tooth_mask.png'
+            mask_dir = _os.path.join(source_dir, '_phase2_masks')
+            mask_full_path = _os.path.join(mask_dir, mask_filename)
+            ok = _save_tooth_mask_png(img.image.path, tooth.bbox, mask_full_path)
+            if ok:
+                # Build a media-served URL from MEDIA_ROOT
+                rel = _os.path.relpath(mask_full_path, _settings.MEDIA_ROOT)
+                img.tooth_mask_url = _settings.MEDIA_URL.rstrip('/') + '/' + rel.replace(_os.sep, '/')
+            else:
+                img.tooth_mask_url = None
+        except Exception as exc:
+            logger.warning(f"failed to generate tooth mask for image {img.id}: {exc}")
+            img.tooth_mask_url = None
+
         img.save(update_fields=[
             'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
             'scale_bar_bbox', 'scale_bar_ticks',
             'tooth_bbox', 'tooth_area_mm2',
             'tooth_width_mm', 'tooth_height_mm',
             'tooth_major_axis_mm', 'tooth_minor_axis_mm',
+            'tooth_mask_url',
         ])
         return result.mm_per_pixel, tooth_area_mm2
 

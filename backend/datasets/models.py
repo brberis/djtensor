@@ -99,6 +99,11 @@ class Image(models.Model):
     # ([x0, y0, x1, y1]). Used by the review inspector to overlay the
     # detection on top of the original image.
     tooth_bbox = models.JSONField(null=True, blank=True)
+    # Relative path to a green-tinted PNG of the exact segmented tooth
+    # shape (cropped to tooth_bbox + small margin). The review inspector
+    # overlays this image on hover so the researcher sees the precise
+    # area that was measured, not a rectangular approximation.
+    tooth_mask_url = models.CharField(max_length=255, null=True, blank=True)
     tooth_area_mm2 = models.FloatField(null=True, blank=True)
     # Axis-aligned bbox dimensions in mm. Useful for cropping but orientation-
     # dependent: a tilted tooth will give an apparently-square bbox.
