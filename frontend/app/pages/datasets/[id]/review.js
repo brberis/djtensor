@@ -15,7 +15,7 @@
  * accordion so reviewers can see who decided what.
  */
 
-import { Fragment, useEffect, useMemo, useState, useCallback } from 'react';
+import { Fragment, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Dialog, Transition } from '@headlessui/react';
 import Layout from '../../../components/Layout';
@@ -411,11 +411,34 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
   const [showTicks, setShowTicks] = useState(true);
   const [showOcrText, setShowOcrText] = useState(false);
   const [hoverTooth, setHoverTooth] = useState(false);
+  // Cursor position (image-percentage, 0..1) and the live-measured displayed
+  // image-container size. Together they let the loupe compute which slice of
+  // the source image to show, at 3x zoom, centered on the cursor.
+  const [cursorPct, setCursorPct] = useState(null);
+  const [containerSize, setContainerSize] = useState(null);
+  const imageContainerRef = useRef(null);
 
   // Reset transient UI state when navigating to a different image.
   useEffect(() => {
     setHoverTooth(false);
     setShowOcrText(false);
+    setCursorPct(null);
+  }, [img?.id]);
+
+  // Track the displayed image container's pixel size so the loupe knows how
+  // to scale the source image at 3x.
+  useEffect(() => {
+    if (!img) return;
+    const measure = () => {
+      const el = imageContainerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    };
+    // Defer one frame so the image has its final layout.
+    const t = setTimeout(measure, 0);
+    window.addEventListener('resize', measure);
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
   }, [img?.id]);
 
   if (!img) return null;
@@ -538,7 +561,7 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                         the photo (tooth chip, L/W dimension labels) remain visible
                         instead of being clipped by the canvas border. */}
                     <div className="relative flex-1 bg-white rounded-lg ring-1 ring-gray-200 flex items-center justify-center p-12">
-                      <div className="relative" style={{ aspectRatio: `${w} / ${h}`, width: '100%', maxHeight: '64vh' }}>
+                      <div ref={imageContainerRef} className="relative" style={{ aspectRatio: `${w} / ${h}`, width: '100%', maxHeight: '64vh' }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={normalizeMediaUrl(img.image)}
@@ -578,7 +601,18 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                             }`}
                             style={toothPct}
                             onMouseEnter={() => setHoverTooth(true)}
-                            onMouseLeave={() => setHoverTooth(false)}
+                            onMouseLeave={() => { setHoverTooth(false); setCursorPct(null); }}
+                            onMouseMove={(e) => {
+                              const el = imageContainerRef.current;
+                              if (!el) return;
+                              const r = el.getBoundingClientRect();
+                              const px = (e.clientX - r.left) / r.width;
+                              const py = (e.clientY - r.top) / r.height;
+                              setCursorPct({
+                                px: Math.max(0, Math.min(1, px)),
+                                py: Math.max(0, Math.min(1, py)),
+                              });
+                            }}
                             title={img.tooth_area_mm2 != null ? `Tooth area: ${img.tooth_area_mm2.toFixed(1)} mm²` : 'Tooth blob'}
                           >
                             <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white pointer-events-none">tooth</span>
@@ -625,6 +659,59 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                                 </span>
                               </div>
                             )}
+
+                            {/* Loupe: appears next to the tooth bbox while hovering. Shows the
+                                source image at 3x zoom centered on the cursor, WITHOUT the
+                                green mask overlay so the researcher sees real detail. Flips
+                                to the LEFT of the bbox when the bbox sits in the right half
+                                of the canvas, so the loupe stays inside the visible area. */}
+                            {hoverTooth && cursorPct && containerSize && (() => {
+                              const zoom = 3;
+                              const loupeSize = 180;
+                              const half = loupeSize / 2;
+                              const bgW = containerSize.width * zoom;
+                              const bgH = containerSize.height * zoom;
+                              const bgX = cursorPct.px * bgW - half;
+                              const bgY = cursorPct.py * bgH - half;
+                              const bboxRightPct = (img.tooth_bbox[2] / w) * 100;
+                              const onLeft = bboxRightPct > 60;
+                              const posStyle = onLeft
+                                ? { right: '100%', top: '50%', transform: 'translate(-16px, -50%)' }
+                                : { left: '100%',  top: '50%', transform: 'translate(16px, -50%)' };
+                              return (
+                                <div
+                                  className="absolute pointer-events-none"
+                                  style={{ ...posStyle, width: loupeSize, height: loupeSize, zIndex: 50 }}
+                                >
+                                  <div
+                                    className="relative w-full h-full overflow-hidden rounded-full bg-black ring-4 ring-white shadow-2xl"
+                                    style={{ boxShadow: '0 8px 28px rgba(0,0,0,0.4), 0 0 0 2px rgba(0,0,0,0.25)' }}
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={normalizeMediaUrl(img.image)}
+                                      alt=""
+                                      style={{
+                                        position: 'absolute',
+                                        width: bgW + 'px',
+                                        height: bgH + 'px',
+                                        left: (-bgX) + 'px',
+                                        top: (-bgY) + 'px',
+                                        maxWidth: 'none',
+                                        maxHeight: 'none',
+                                      }}
+                                    />
+                                    {/* Crosshair at loupe center */}
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="relative h-5 w-5">
+                                        <div className="absolute left-0 right-0 top-1/2 h-px bg-red-500" />
+                                        <div className="absolute top-0 bottom-0 left-1/2 w-px bg-red-500" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
