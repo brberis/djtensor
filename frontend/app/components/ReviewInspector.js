@@ -233,7 +233,6 @@ export default function ReviewInspector({
                                 py: Math.max(0, Math.min(1, py)),
                               });
                             }}
-                            title={img.tooth_area_mm2 != null ? `Tooth area: ${img.tooth_area_mm2.toFixed(1)} mm²` : 'Tooth blob'}
                           >
                             <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white pointer-events-none">tooth</span>
 
