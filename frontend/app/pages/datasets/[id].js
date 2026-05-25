@@ -15,6 +15,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import Layout from '../../components/Layout';
 import BulkUploadDialog from '../../components/BulkUploadDialog';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import ReviewInspector from '../../components/ReviewInspector';
 import { useAuth } from '../../contexts/AuthContext';
 import axios from 'axios';
 import Spinner from '../../components/Spinner';
@@ -100,6 +101,7 @@ export default function DatasetDetail() {
   const [selectionModeByLabel, setSelectionModeByLabel] = useState({});
   const [selectedImagesByLabel, setSelectedImagesByLabel] = useState({});
   const [activeImage, setActiveImage] = useState(null);
+  const [inspectorImage, setInspectorImage] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [renameLabel, setRenameLabel] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -909,6 +911,7 @@ export default function DatasetDetail() {
                         {canSeeSyntheticTools && (
                           <ReviewStatusBlock
                             image={activeImage}
+                            onInspect={() => setInspectorImage(activeImage)}
                             onChanged={async (updated) => {
                               setActiveImage(prev => ({ ...prev, ...updated }));
                               // refetch the dataset-level review summary so the menu badge updates
@@ -2018,6 +2021,32 @@ export default function DatasetDetail() {
           </div>
         </Dialog>
       </Transition.Root>
+
+      <ReviewInspector
+        img={inspectorImage}
+        position={0}
+        total={0}
+        showNav={false}
+        onClose={() => setInspectorImage(null)}
+        onAction={async (imgId, action) => {
+          try {
+            const res = await fetch(`/api/datasets/image/${imgId}/review`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action }),
+            });
+            if (res.ok) {
+              const updated = await res.json();
+              setInspectorImage(prev => prev ? { ...prev, ...updated } : prev);
+              setActiveImage(prev => prev && prev.id === imgId ? { ...prev, ...updated } : prev);
+              try {
+                const r = await fetch(`/api/datasets/dataset/${id}/review-queue`);
+                if (r.ok) setReviewSummary(await r.json());
+              } catch {}
+            }
+          } catch {}
+        }}
+      />
     </Layout>
   );
 }
@@ -2180,8 +2209,9 @@ function StepLine() {
   return <div className="flex-1 h-px bg-gray-200 min-w-[12px]" />;
 }
 
-function ReviewStatusBlock({ image, onChanged }) {
+function ReviewStatusBlock({ image, onChanged, onInspect }) {
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null);
   const status = image.review_status || 'unreviewed';
   const reviewedAt = image.reviewed_at ? new Date(image.reviewed_at).toLocaleString() : null;
   const chipClasses = {
@@ -2207,6 +2237,28 @@ function ReviewStatusBlock({ image, onChanged }) {
     }
   };
 
+  const fileName = image.image?.split('/').pop()?.split('?')[0] || `image #${image.id}`;
+  const confirmConfig = {
+    mark_reviewed: {
+      title: 'Mark as reviewed?',
+      message: `Mark ${fileName} as reviewed. It will be counted as approved in the pipeline.`,
+      confirmLabel: 'Mark Reviewed',
+      tone: 'primary',
+    },
+    mark_unreviewed: {
+      title: 'Reset to unreviewed?',
+      message: `Send ${fileName} back to the unreviewed pool. Any previous reviewed/excluded decision will be cleared but the audit log keeps the history.`,
+      confirmLabel: 'Mark Unreviewed',
+      tone: 'primary',
+    },
+    mark_excluded: {
+      title: 'Exclude from the dataset?',
+      message: `Exclude ${fileName}. It will not be used downstream until you re-include it.`,
+      confirmLabel: 'Exclude',
+      tone: 'danger',
+    },
+  };
+
   return (
     <div>
       <dt className="font-medium text-gray-500">Review Status</dt>
@@ -2220,17 +2272,37 @@ function ReviewStatusBlock({ image, onChanged }) {
           )}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <button type="button" disabled={busy} onClick={() => apply('mark_reviewed')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ${status === 'reviewed' ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
-            {status === 'reviewed' ? 'Re-review' : 'Mark Reviewed'}
-          </button>
-          <button type="button" disabled={busy} onClick={() => apply('mark_unreviewed')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ring-1 ring-inset ${status === 'unreviewed' ? 'bg-gray-50 text-gray-500 ring-gray-200 hover:bg-gray-100' : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50'}`}>
-            Mark Unreviewed
-          </button>
-          <button type="button" disabled={busy} onClick={() => apply('mark_excluded')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ${status === 'excluded' ? 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 hover:bg-red-100' : 'bg-red-600 text-white hover:bg-red-500'}`}>
-            Exclude
-          </button>
+          {onInspect && (
+            <button type="button" onClick={onInspect} className="rounded-md bg-gray-900 px-2 py-1 text-[11px] font-semibold text-white hover:bg-gray-800">
+              Inspect
+            </button>
+          )}
+          {status !== 'reviewed' && (
+            <button type="button" disabled={busy} onClick={() => setPending('mark_reviewed')} className="rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+              Mark Reviewed
+            </button>
+          )}
+          {(status === 'reviewed' || status === 'excluded') && (
+            <button type="button" disabled={busy} onClick={() => setPending('mark_unreviewed')} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50">
+              Mark Unreviewed
+            </button>
+          )}
+          {status !== 'excluded' && (
+            <button type="button" disabled={busy} onClick={() => setPending('mark_excluded')} className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50">
+              Exclude
+            </button>
+          )}
         </div>
       </dd>
+      <ConfirmDialog
+        isOpen={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={() => { const action = pending; setPending(null); if (action) apply(action); }}
+        title={pending ? confirmConfig[pending].title : ''}
+        message={pending ? confirmConfig[pending].message : ''}
+        confirmLabel={pending ? confirmConfig[pending].confirmLabel : 'Confirm'}
+        confirmTone={pending ? confirmConfig[pending].tone : 'primary'}
+      />
     </div>
   );
 }
