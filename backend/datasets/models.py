@@ -90,6 +90,11 @@ class Image(models.Model):
     scale_bar_detected = models.BooleanField(default=False)
     scale_bar_source = models.CharField(max_length=20, null=True, blank=True)
     scale_bar_bbox = models.JSONField(null=True, blank=True)
+    # Detected ruler tick positions along the bar's long axis. Stored as
+    # {"long_axis": "x"|"y", "positions": [int, ...]}. Lets the review
+    # inspector render the centimeter blocks the detector actually used
+    # to compute mm/px.
+    scale_bar_ticks = models.JSONField(null=True, blank=True)
     # Bounding box of the segmented tooth in source pixel coords
     # ([x0, y0, x1, y1]). Used by the review inspector to overlay the
     # detection on top of the original image.

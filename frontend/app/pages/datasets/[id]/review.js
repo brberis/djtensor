@@ -408,7 +408,15 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
   const [showTooth, setShowTooth] = useState(true);
   const [showScaleBar, setShowScaleBar] = useState(true);
   const [showLabel, setShowLabel] = useState(true);
+  const [showTicks, setShowTicks] = useState(true);
   const [showOcrText, setShowOcrText] = useState(false);
+  const [hoverTooth, setHoverTooth] = useState(false);
+
+  // Reset transient UI state when navigating to a different image.
+  useEffect(() => {
+    setHoverTooth(false);
+    setShowOcrText(false);
+  }, [img?.id]);
 
   if (!img) return null;
 
@@ -428,6 +436,45 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
   const toothPct    = showTooth     ? toPct(img.tooth_bbox)         : null;
   const scaleBarPct = showScaleBar  ? toPct(img.scale_bar_bbox)     : null;
   const labelPct    = showLabel     ? toPct(img.museum_metadata?.label_bbox) : null;
+
+  // Pre-compute the dimension annotation positions for the tooth bbox.
+  const toothDims = (() => {
+    if (!img.tooth_bbox || img.tooth_bbox.length < 4) return null;
+    const [x0, y0, x1, y1] = img.tooth_bbox;
+    return {
+      xCenterPct: ((x0 + x1) / 2 / w) * 100,
+      yCenterPct: ((y0 + y1) / 2 / h) * 100,
+      leftPct:    (x0 / w) * 100,
+      topPct:     (y0 / h) * 100,
+    };
+  })();
+
+  // Pre-compute tick-line geometries (only when ticks are on and we have
+  // both the bbox and the tick positions).
+  const tickLines = (() => {
+    if (!showTicks) return [];
+    const ticks = img.scale_bar_ticks;
+    if (!ticks || !ticks.positions || !img.scale_bar_bbox) return [];
+    const [bx0, by0, bx1, by1] = img.scale_bar_bbox;
+    return ticks.positions.map((pos, i) => {
+      if (ticks.long_axis === 'x') {
+        return {
+          key: i,
+          horizontal: false,
+          left: (pos / w) * 100 + '%',
+          top:  (by0 / h) * 100 + '%',
+          height: ((by1 - by0) / h) * 100 + '%',
+        };
+      }
+      return {
+        key: i,
+        horizontal: true,
+        top:  (pos / h) * 100 + '%',
+        left: (bx0 / w) * 100 + '%',
+        width: ((bx1 - bx0) / w) * 100 + '%',
+      };
+    });
+  })();
 
   const speciesMismatch = img.museum_species
     && img.label_name
@@ -484,6 +531,7 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                       <OverlayToggle on={showTooth}    setOn={setShowTooth}    color="green"  label="Tooth"      disabled={!img.tooth_bbox} />
                       <OverlayToggle on={showScaleBar} setOn={setShowScaleBar} color="amber"  label="Scale bar"  disabled={!img.scale_bar_bbox} />
                       <OverlayToggle on={showLabel}    setOn={setShowLabel}    color="sky"    label="Label"      disabled={!img.museum_metadata?.label_bbox} />
+                      <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!img.scale_bar_ticks?.positions?.length} />
                     </div>
 
                     {/* Image canvas */}
@@ -495,19 +543,73 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                           alt={img.file_name || ''}
                           className="absolute inset-0 w-full h-full object-contain"
                         />
-                        {toothPct && (
-                          <div className="absolute ring-4 ring-green-500/80 rounded-sm pointer-events-none" style={toothPct} title="Tooth blob">
-                            <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">tooth</span>
-                          </div>
-                        )}
+                        {/* Scale bar - render first so tick lines and others draw on top */}
                         {scaleBarPct && (
                           <div className="absolute ring-4 ring-amber-500/80 rounded-sm pointer-events-none" style={scaleBarPct} title="Scale bar">
                             <span className="absolute -top-5 left-0 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">scale bar</span>
                           </div>
                         )}
+                        {/* Detected tick lines inside the scale bar */}
+                        {tickLines.map((t) => (
+                          <div
+                            key={`tick-${t.key}`}
+                            className="absolute bg-red-500/95 shadow-[0_0_4px_rgba(239,68,68,0.6)] pointer-events-none"
+                            style={
+                              t.horizontal
+                                ? { left: t.left, top: t.top, width: t.width, height: '2px' }
+                                : { left: t.left, top: t.top, width: '2px', height: t.height }
+                            }
+                          />
+                        ))}
+                        {/* Catalog label */}
                         {labelPct && (
                           <div className="absolute ring-4 ring-sky-500/80 rounded-sm pointer-events-none" style={labelPct} title="Catalog label">
                             <span className="absolute -top-5 left-0 rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">label</span>
+                          </div>
+                        )}
+                        {/* Tooth - last so it can intercept hover events for the fill effect */}
+                        {toothPct && (
+                          <div
+                            className={`absolute rounded-sm cursor-help transition-colors duration-150 ${
+                              hoverTooth
+                                ? 'bg-green-500/35 ring-4 ring-green-500'
+                                : 'ring-4 ring-green-500/80'
+                            }`}
+                            style={toothPct}
+                            onMouseEnter={() => setHoverTooth(true)}
+                            onMouseLeave={() => setHoverTooth(false)}
+                            title={img.tooth_area_mm2 != null ? `Tooth area: ${img.tooth_area_mm2.toFixed(1)} mm²` : 'Tooth blob'}
+                          >
+                            <span className="absolute -top-5 left-0 rounded bg-green-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">tooth</span>
+                            {/* Area badge centered inside on hover */}
+                            {hoverTooth && img.tooth_area_mm2 != null && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="rounded-md bg-white/95 px-3 py-1.5 text-sm font-bold text-green-900 ring-2 ring-green-600 shadow-lg">
+                                  {img.tooth_area_mm2.toFixed(1)} mm²
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Floating dimension labels around the tooth bbox */}
+                        {toothPct && toothDims && img.tooth_major_axis_mm != null && (
+                          <div
+                            className="absolute pointer-events-none"
+                            style={{ left: `${toothDims.leftPct}%`, top: `${toothDims.yCenterPct}%`, transform: 'translate(-110%, -50%)' }}
+                          >
+                            <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                              L: {img.tooth_major_axis_mm.toFixed(1)} mm
+                            </span>
+                          </div>
+                        )}
+                        {toothPct && toothDims && img.tooth_minor_axis_mm != null && (
+                          <div
+                            className="absolute pointer-events-none"
+                            style={{ left: `${toothDims.xCenterPct}%`, top: `${toothDims.topPct}%`, transform: 'translate(-50%, -130%)' }}
+                          >
+                            <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                              W: {img.tooth_minor_axis_mm.toFixed(1)} mm
+                            </span>
                           </div>
                         )}
                       </div>
