@@ -851,6 +851,24 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
+                        {(activeImage.tooth_width_mm != null
+                          || activeImage.tooth_height_mm != null
+                          || activeImage.tooth_area_mm2 != null) && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Tooth Dimensions</dt>
+                            <dd className="text-gray-900 text-xs space-y-0.5">
+                              {activeImage.tooth_width_mm != null && (
+                                <div><span className="text-gray-500">Width:</span>  <span className="font-medium">{activeImage.tooth_width_mm.toFixed(1)} mm</span></div>
+                              )}
+                              {activeImage.tooth_height_mm != null && (
+                                <div><span className="text-gray-500">Height:</span> <span className="font-medium">{activeImage.tooth_height_mm.toFixed(1)} mm</span></div>
+                              )}
+                              {activeImage.tooth_area_mm2 != null && (
+                                <div><span className="text-gray-500">Area:</span>   <span className="font-medium">{activeImage.tooth_area_mm2.toFixed(1)} mm&sup2;</span></div>
+                              )}
+                            </dd>
+                          </div>
+                        )}
                         {(activeImage.museum_specimen_id
                           || activeImage.museum_species
                           || activeImage.museum_completeness_category

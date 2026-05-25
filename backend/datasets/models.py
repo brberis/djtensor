@@ -91,6 +91,8 @@ class Image(models.Model):
     scale_bar_source = models.CharField(max_length=20, null=True, blank=True)
     scale_bar_bbox = models.JSONField(null=True, blank=True)
     tooth_area_mm2 = models.FloatField(null=True, blank=True)
+    tooth_width_mm = models.FloatField(null=True, blank=True)
+    tooth_height_mm = models.FloatField(null=True, blank=True)
     completeness_mm2 = models.FloatField(null=True, blank=True)
 
     # Phase 2: museum metadata parsed from FLMNH catalog labels via OCR.

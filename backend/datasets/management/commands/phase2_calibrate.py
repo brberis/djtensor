@@ -304,11 +304,19 @@ def _write_to_image_row(image_id: int, result: ScaleBarResult, tooth_area_mm2: O
     img.scale_bar_source = 'heuristic_whitelist'
     img.scale_bar_bbox = list(result.bar_bbox) if result.bar_bbox else None
     img.tooth_area_mm2 = tooth_area_mm2
+
+    # Per-axis dimensions from the tooth bbox.
+    tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+    if tooth is not None and result.mm_per_pixel is not None:
+        tx0, ty0, tx1, ty1 = tooth.bbox
+        img.tooth_width_mm = (tx1 - tx0 + 1) * result.mm_per_pixel
+        img.tooth_height_mm = (ty1 - ty0 + 1) * result.mm_per_pixel
+
     # completeness_mm2 is left alone; it is computed at the dataset level
     # against the species reference, not per-image.
 
     img.save(update_fields=[
         'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source',
-        'scale_bar_bbox', 'tooth_area_mm2',
+        'scale_bar_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
     ])
     out.write(f'  WRITE: persisted to Image id={image_id}')
