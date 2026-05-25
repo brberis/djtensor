@@ -111,8 +111,61 @@ class Image(models.Model):
     museum_metadata = models.JSONField(null=True, blank=True)
     ocr_label_text = models.TextField(null=True, blank=True)
 
+    # Phase 2: curation review status. Drives the review queue UI and the
+    # eventual curated-snapshot inclusion. Default 'unreviewed' means the
+    # image is fresh / not yet triaged by a researcher.
+    REVIEW_STATUS_CHOICES = [
+        ('unreviewed', 'Unreviewed'),
+        ('reviewed', 'Reviewed'),
+        ('excluded', 'Excluded from curated set'),
+    ]
+    review_status = models.CharField(
+        max_length=16,
+        choices=REVIEW_STATUS_CHOICES,
+        default='unreviewed',
+        db_index=True,
+    )
+    review_notes = models.TextField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        'auth.User',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_images',
+    )
+
     def __str__(self):
         return self.image.url
+
+
+class ImageReviewEvent(models.Model):
+    """
+    Audit log row for every review-status change on an Image. Lets the team
+    answer 'who decided this' / 'why is this excluded' / 'when did the OCR
+    species replace the folder label' even months later.
+    """
+    image = models.ForeignKey(
+        Image,
+        related_name='review_events',
+        on_delete=models.CASCADE,
+    )
+    user = models.ForeignKey(
+        'auth.User',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+    )
+    action = models.CharField(max_length=32)
+    previous_status = models.CharField(max_length=16, null=True, blank=True)
+    new_status = models.CharField(max_length=16, null=True, blank=True)
+    notes = models.TextField(null=True, blank=True)
+    metadata = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'{self.image_id} {self.action} {self.created_at:%Y-%m-%d %H:%M}'
 
 
 class SpeciesReferenceArea(models.Model):

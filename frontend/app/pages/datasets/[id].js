@@ -136,6 +136,7 @@ export default function DatasetDetail() {
   const [showRunOcrConfirm, setShowRunOcrConfirm] = useState(false);
   const [showEmitModeAConfirm, setShowEmitModeAConfirm] = useState(false);
   const [actionStatus, setActionStatus] = useState(null);
+  const [reviewSummary, setReviewSummary] = useState(null);
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -209,13 +210,15 @@ export default function DatasetDetail() {
 
     setIsLoading(true);
     try {
-      const [datasetData, labelsData] = await Promise.all([
+      const [datasetData, labelsData, reviewData] = await Promise.all([
         fetch(`/api/datasets/dataset/${id}`).then((res) => res.json()),
         fetch(`/api/datasets/label/?datasets__id=${id}`).then((res) => res.json()),
+        fetch(`/api/datasets/dataset/${id}/review-queue`).then((res) => res.ok ? res.json() : null).catch(() => null),
       ]);
 
       setDataset(datasetData);
       setLabels(labelsData);
+      if (reviewData) setReviewSummary(reviewData);
 
       const initialPages = {};
       const initialHasMore = {};
@@ -903,6 +906,19 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
+                        {canSeeSyntheticTools && (
+                          <ReviewStatusBlock
+                            image={activeImage}
+                            onChanged={async (updated) => {
+                              setActiveImage(prev => ({ ...prev, ...updated }));
+                              // refetch the dataset-level review summary so the menu badge updates
+                              try {
+                                const r = await fetch(`/api/datasets/dataset/${id}/review-queue`);
+                                if (r.ok) setReviewSummary(await r.json());
+                              } catch {}
+                            }}
+                          />
+                        )}
                         {activeImage.target_completeness != null && (
                           <div>
                             <dt className="font-medium text-gray-500">Target Completeness</dt>
@@ -1078,6 +1094,20 @@ export default function DatasetDetail() {
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         Run FLMNH Label OCR
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          router.push(`/datasets/${id}/review`);
+                        }}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
+                      >
+                        <span>Review Queue</span>
+                        {reviewSummary && reviewSummary.total_flagged > 0 && (
+                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                            {reviewSummary.total_flagged} flagged
+                          </span>
+                        )}
                       </button>
                     </>
                   )}
@@ -1965,5 +1995,66 @@ export default function DatasetDetail() {
         </Dialog>
       </Transition.Root>
     </Layout>
+  );
+}
+
+function ReviewStatusBlock({ image, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const status = image.review_status || 'unreviewed';
+  const reviewedAt = image.reviewed_at ? new Date(image.reviewed_at).toLocaleString() : null;
+  const chipClasses = {
+    unreviewed: 'bg-gray-100 text-gray-700 ring-gray-200',
+    reviewed:   'bg-green-50 text-green-800 ring-green-200',
+    excluded:   'bg-red-50 text-red-800 ring-red-200',
+  }[status] || 'bg-gray-100 text-gray-700 ring-gray-200';
+
+  const apply = async (action) => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/datasets/image/${image.id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        if (onChanged) onChanged(updated);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <dt className="font-medium text-gray-500">Review Status</dt>
+      <dd className="text-gray-900 text-xs space-y-1.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset capitalize ${chipClasses}`}>
+            {status}
+          </span>
+          {reviewedAt && (
+            <span className="text-gray-400">last touched {reviewedAt}</span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {status !== 'reviewed' && (
+            <button type="button" disabled={busy} onClick={() => apply('mark_reviewed')} className="rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+              Mark Reviewed
+            </button>
+          )}
+          {status !== 'excluded' && (
+            <button type="button" disabled={busy} onClick={() => apply('mark_excluded')} className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50">
+              Exclude
+            </button>
+          )}
+          {status !== 'unreviewed' && (
+            <button type="button" disabled={busy} onClick={() => apply('mark_unreviewed')} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50">
+              Reset to Unreviewed
+            </button>
+          )}
+        </div>
+      </dd>
+    </div>
   );
 }

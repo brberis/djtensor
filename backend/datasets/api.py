@@ -177,6 +177,67 @@ class DatasetViewSet(viewsets.ModelViewSet):
         )
         return Response({'status': 'queued', 'dataset': dataset.name, 'metric': 'mm2'}, status=status.HTTP_202_ACCEPTED)
 
+    @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-queue')
+    def review_queue(self, request, pk=None):
+        """Return images flagged for human review, grouped by issue category."""
+        from .review import get_review_flags, REVIEW_FLAGS, REVIEW_FLAG_LABELS, REVIEW_FLAG_DESCRIPTIONS
+        from .serializers import ImageSerializer
+        dataset = self.get_object()
+        flags = get_review_flags(dataset.id)
+        categories = []
+        total = 0
+        for key in REVIEW_FLAGS:
+            imgs = flags.get(key, [])
+            total += len(imgs)
+            categories.append({
+                'key': key,
+                'label': REVIEW_FLAG_LABELS[key],
+                'description': REVIEW_FLAG_DESCRIPTIONS[key],
+                'count': len(imgs),
+                'items': ImageSerializer(imgs, many=True, context={'request': request}).data,
+            })
+        # Plus a summary of already-resolved counts so the queue can show progress.
+        from .models import Image
+        resolved_counts = {}
+        for status_key in ('unreviewed', 'reviewed', 'excluded'):
+            resolved_counts[status_key] = Image.objects.filter(dataset=dataset, review_status=status_key).count()
+        return Response({
+            'dataset_id': dataset.id,
+            'dataset_name': dataset.name,
+            'total_flagged': total,
+            'categories': categories,
+            'review_status_counts': resolved_counts,
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-bulk')
+    def review_bulk(self, request, pk=None):
+        """Apply a review action to many images in this dataset at once."""
+        from .review import apply_review_action
+        from .models import Image
+        dataset = self.get_object()
+        action_name = request.data.get('action')
+        image_ids = request.data.get('image_ids') or []
+        notes = request.data.get('notes') or None
+        if not action_name:
+            return Response({'error': 'action is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not image_ids:
+            return Response({'error': 'image_ids is required and must not be empty'}, status=status.HTTP_400_BAD_REQUEST)
+        images = Image.objects.filter(dataset=dataset, id__in=image_ids).select_related('label')
+        succeeded = 0
+        failed = []
+        for img in images:
+            ok, err = apply_review_action(img, action_name, user=request.user, notes=notes)
+            if ok:
+                succeeded += 1
+            else:
+                failed.append({'image_id': img.id, 'error': err})
+        return Response({
+            'status': 'ok',
+            'succeeded': succeeded,
+            'failed': failed,
+            'requested_count': len(image_ids),
+        })
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='extract-museum-metadata')
     def extract_museum_metadata(self, request, pk=None):
         """Run the FLMNH catalog-label OCR pass on every image in this dataset."""
@@ -388,6 +449,41 @@ class ImageViewSet(viewsets.ModelViewSet):
         if image.dataset and dataset_is_locked(image.dataset):
             return Response({'error': dataset_lock_reason(image.dataset)}, status=status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='review')
+    def review(self, request, pk=None):
+        """Apply a single-image review action and audit-log it."""
+        from .review import apply_review_action
+        image = self.get_object()
+        action_name = request.data.get('action')
+        notes = request.data.get('notes') or None
+        if not action_name:
+            return Response({'error': 'action is required'}, status=status.HTTP_400_BAD_REQUEST)
+        ok, err = apply_review_action(image, action_name, user=request.user, notes=notes)
+        if not ok:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        # Return the freshly-saved row so the UI can update in place.
+        return Response(ImageSerializer(image, context={'request': request}).data)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-history')
+    def review_history(self, request, pk=None):
+        """Return the audit log for one image."""
+        from .models import ImageReviewEvent
+        image = self.get_object()
+        events = ImageReviewEvent.objects.filter(image=image).select_related('user').order_by('-created_at')
+        out = []
+        for ev in events:
+            out.append({
+                'id': ev.id,
+                'action': ev.action,
+                'previous_status': ev.previous_status,
+                'new_status': ev.new_status,
+                'notes': ev.notes,
+                'metadata': ev.metadata,
+                'created_at': ev.created_at.isoformat(),
+                'user': ev.user.username if ev.user else None,
+            })
+        return Response({'image_id': image.id, 'events': out})
 
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled])
     def augmentation_preview(self, request, pk=None):
