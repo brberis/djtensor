@@ -667,8 +667,8 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                                 of the canvas, so the loupe stays inside the visible area. */}
                             {hoverTooth && cursorPct && containerSize && (() => {
                               const zoom = 3;
-                              const loupeSize = 320;
-                              const gap = 40;
+                              const loupeSize = 260;
+                              const gap = 64;
                               const half = loupeSize / 2;
                               const bgW = containerSize.width * zoom;
                               const bgH = containerSize.height * zoom;
