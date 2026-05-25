@@ -79,7 +79,7 @@ def detect_scale_bar(
     image_path: str,
     assumed_tick_spacing_mm: float = 10.0,
     min_blob_area_px: int = 5_000,
-    bar_fill_threshold: float = 0.85,
+    bar_fill_threshold: float = 0.78,
     bar_aspect_threshold: float = 3.0,
 ) -> ScaleBarResult:
     """
@@ -122,10 +122,29 @@ def detect_scale_bar(
         blobs=blobs,
     )
 
-    bar = _pick_best_bar(blobs)
+    # Among the candidate scale-bar blobs, pick the one that actually
+    # contains a detectable ruler pattern. The catalog label can also look
+    # like a high-fill rectangle in shape but has no banded ruler inside;
+    # this content-based discriminator separates them robustly.
+    gray = _open_grayscale_with_bg_white(img)
+    bar, ruler = _pick_bar_with_ruler(blobs, gray)
     if bar is None:
         result.notes.append('no blob classified as scale_bar')
         return result
+
+    # Re-tag blobs based on the actual winner so the API consumer sees the
+    # correct labels (the loser of bar candidacy, if a different blob, is
+    # most likely the catalog label).
+    for b in blobs:
+        if b is bar:
+            b.classification = 'scale_bar'
+        elif b.classification == 'scale_bar':
+            b.classification = 'label'
+
+    # The largest remaining 'unknown' (not bar, not label) is the tooth.
+    tooth_candidates = [b for b in blobs if b.classification == 'unknown']
+    if tooth_candidates:
+        tooth_candidates[0].classification = 'tooth'
 
     result.bar_bbox = bar.bbox
     x0, y0, x1, y1 = bar.bbox
@@ -133,11 +152,6 @@ def detect_scale_bar(
     bar_h = y1 - y0 + 1
     result.bar_long_axis = 'x' if bar_w >= bar_h else 'y'
     result.bar_bbox_length_px = max(bar_w, bar_h)
-
-    # Locate the printed ruler region inside the bar bbox by looking for a
-    # long run of regularly-spaced light/dark transitions.
-    gray = _open_grayscale_with_bg_white(img)
-    ruler = _locate_ruler_by_ticks(gray, bar.bbox, result.bar_long_axis)
     if ruler is None:
         result.notes.append('ruler region not detected inside bar bbox')
         result.confidence = 0.2
@@ -204,9 +218,30 @@ def _foreground_mask(img: Image.Image, alpha_threshold: int = 16, dark_bg_thresh
 # Blob detection and classification
 # ---------------------------------------------------------------------------
 
-def _label_and_describe_blobs(mask: np.ndarray, min_area_px: int) -> List[BlobInfo]:
-    """Connected-component labelling plus per-blob descriptors."""
-    labeled, n = ndimage.label(mask)
+def _label_and_describe_blobs(
+    mask: np.ndarray,
+    min_area_px: int,
+    opening_iterations: int = 3,
+) -> List[BlobInfo]:
+    """
+    Connected-component labelling plus per-blob descriptors.
+
+    Applies a morphological opening before labelling so blobs joined by only
+    a few pixels (e.g. a scale-bar card sitting against a catalog label in
+    a RAW photograph) are split into separate components. The opening uses
+    `opening_iterations` of erosion + the same number of dilation; thin
+    connections up to roughly `2 * opening_iterations` pixels wide are
+    broken. Solid blobs (e.g. the tooth body) are unaffected.
+    """
+    cleaned = mask
+    if opening_iterations > 0:
+        opened = ndimage.binary_opening(mask, iterations=opening_iterations)
+        # Sanity guard: if opening removed essentially everything, fall back
+        # to the unprocessed mask (avoids killing fragile thin blobs).
+        if opened.sum() >= 0.5 * mask.sum():
+            cleaned = opened
+
+    labeled, n = ndimage.label(cleaned)
     if n == 0:
         return []
 
@@ -260,16 +295,55 @@ def _classify_blobs(blobs: List[BlobInfo], fill_threshold: float, aspect_thresho
 
 
 def _pick_best_bar(blobs: List[BlobInfo]) -> Optional[BlobInfo]:
-    """Pick the highest-confidence scale-bar blob if multiple are tagged."""
+    """Geometric-only fallback: pick the highest-confidence scale-bar blob
+    when content-based discrimination (ruler detection) cannot decide."""
     bars = [b for b in blobs if b.classification == 'scale_bar']
     if not bars:
         return None
-    # Prefer the strip-like one over the rectangle-like one if both exist;
-    # the strip is unambiguously a ruler. Tie-break on area.
     def score(b: BlobInfo) -> tuple:
         return (b.aspect_ratio, b.fill_ratio, b.area_px)
     bars.sort(key=score, reverse=True)
     return bars[0]
+
+
+def _pick_bar_with_ruler(blobs: List[BlobInfo], gray: np.ndarray):
+    """
+    Pick the bar blob by INTERIOR CONTENT. Among candidate scale-bar blobs,
+    run the ruler-tick detector on each and pick the one with the most
+    uniformly-spaced ticks. The catalog label can also look like a
+    high-fill rectangle but has no banded ruler inside, so this signal
+    distinguishes the two reliably.
+
+    Returns a tuple `(bar, ruler)` where `bar` is the picked BlobInfo and
+    `ruler` is the corresponding _RulerHit (or None when no candidate had a
+    ruler; in that case `bar` is the geometric fallback pick).
+    """
+    candidates = [b for b in blobs if b.classification == 'scale_bar']
+    if not candidates:
+        return None, None
+
+    scored = []
+    for c in candidates:
+        x0, y0, x1, y1 = c.bbox
+        long_axis = 'x' if (x1 - x0) >= (y1 - y0) else 'y'
+        try:
+            hit = _locate_ruler_by_ticks(gray, c.bbox, long_axis)
+        except Exception:
+            hit = None
+        scored.append((c, hit))
+
+    with_ruler = [(c, h) for c, h in scored if h is not None]
+    if with_ruler:
+        # Prefer the candidate with the most ticks; ties broken by spacing
+        # uniformity, then by area.
+        with_ruler.sort(
+            key=lambda x: (len(x[1].tick_positions), x[1].spacing_uniformity, x[0].area_px),
+            reverse=True,
+        )
+        return with_ruler[0]
+
+    # No candidate had a detectable ruler; fall back to the geometric pick.
+    return _pick_best_bar(blobs), None
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +376,8 @@ def _locate_ruler_by_ticks(
     gray: np.ndarray,
     bar_bbox: Tuple[int, int, int, int],
     long_axis: str,
-    strip_positions: Tuple[float, ...] = (0.10, 0.25, 0.40, 0.50, 0.60, 0.75, 0.90),
-    strip_frac: float = 0.18,
+    strip_positions: Tuple[float, ...] = (0.05, 0.10, 0.15, 0.20, 0.25, 0.40, 0.50, 0.60, 0.75, 0.90),
+    strip_fracs: Tuple[float, ...] = (0.18, 0.08),
     min_run_ticks: int = 4,
     spacing_tolerance: float = 0.35,
     smoothing: int = 7,
@@ -338,73 +412,74 @@ def _locate_ruler_by_ticks(
         short_axis_len = w
         coord_offset = y0
 
-    strip_thickness = max(8, int(short_axis_len * strip_frac))
     best_hit: Optional[_RulerHit] = None
 
-    for frac in strip_positions:
-        centre = int(round(short_axis_len * frac))
-        lo = max(0, centre - strip_thickness // 2)
-        hi = min(short_axis_len, lo + strip_thickness)
-        lo = max(0, hi - strip_thickness)
-        if hi - lo < 8:
-            continue
+    for current_strip_frac in strip_fracs:
+        strip_thickness = max(8, int(short_axis_len * current_strip_frac))
+        for frac in strip_positions:
+            centre = int(round(short_axis_len * frac))
+            lo = max(0, centre - strip_thickness // 2)
+            hi = min(short_axis_len, lo + strip_thickness)
+            lo = max(0, hi - strip_thickness)
+            if hi - lo < 8:
+                continue
 
-        if long_axis == 'x':
-            strip = crop[lo:hi, :]
-            profile = strip.mean(axis=0)
-        else:
-            strip = crop[:, lo:hi]
-            profile = strip.mean(axis=1)
+            if long_axis == 'x':
+                strip = crop[lo:hi, :]
+                profile = strip.mean(axis=0)
+            else:
+                strip = crop[:, lo:hi]
+                profile = strip.mean(axis=1)
 
-        if profile.size < 32:
-            continue
+            if profile.size < 32:
+                continue
 
-        if smoothing > 1:
-            kernel = np.ones(smoothing, dtype=np.float32) / float(smoothing)
-            profile = np.convolve(profile, kernel, mode='same')
+            if smoothing > 1:
+                kernel = np.ones(smoothing, dtype=np.float32) / float(smoothing)
+                profile = np.convolve(profile, kernel, mode='same')
 
-        pmin, pmax = float(profile.min()), float(profile.max())
-        if (pmax - pmin) < 30.0:
-            continue
-        midpoint = pmin + (pmax - pmin) * 0.5
-        binary = (profile < midpoint).astype(np.int8)
+            pmin, pmax = float(profile.min()), float(profile.max())
+            if (pmax - pmin) < 30.0:
+                continue
+            midpoint = pmin + (pmax - pmin) * 0.5
+            binary = (profile < midpoint).astype(np.int8)
 
-        transitions = np.where(np.diff(binary) != 0)[0]
-        if transitions.size < min_run_ticks - 1:
-            continue
-        transitions = transitions.astype(int)
+            transitions = np.where(np.diff(binary) != 0)[0]
+            if transitions.size < min_run_ticks - 1:
+                continue
+            transitions = transitions.astype(int)
 
-        spacings = np.diff(transitions)
-        if spacings.size < min_run_ticks - 2:
-            continue
+            spacings = np.diff(transitions)
+            if spacings.size < min_run_ticks - 2:
+                continue
 
-        run = _longest_uniform_run(spacings, spacing_tolerance)
-        if run is None:
-            continue
-        rs, re = run
-        if (re - rs + 1) < (min_run_ticks - 1):
-            continue
+            run = _longest_uniform_run(spacings, spacing_tolerance)
+            if run is None:
+                continue
+            rs, re = run
+            if (re - rs + 1) < (min_run_ticks - 1):
+                continue
 
-        tick_idx = transitions[rs: re + 2]
-        run_spacings = np.diff(tick_idx)
-        if run_spacings.size == 0:
-            continue
-        median_sp = float(np.median(run_spacings))
-        if median_sp < float(min_spacing_px):
-            # Likely texture or small text, not printed ruler ticks.
-            continue
+            tick_idx = transitions[rs: re + 2]
+            run_spacings = np.diff(tick_idx)
+            if run_spacings.size == 0:
+                continue
+            median_sp = float(np.median(run_spacings))
+            if median_sp < float(min_spacing_px):
+                # Likely texture or small text, not printed ruler ticks.
+                continue
 
-        uniformity = float(1.0 - min(1.0, run_spacings.std() / max(1.0, median_sp)))
-        tick_positions_img = [int(t) + coord_offset for t in tick_idx.tolist()]
-        hit = _RulerHit(
-            start=tick_positions_img[0],
-            end=tick_positions_img[-1],
-            tick_positions=tick_positions_img,
-            median_spacing_px=median_sp,
-            spacing_uniformity=uniformity,
-        )
-        if best_hit is None or _hit_score(hit) > _hit_score(best_hit):
-            best_hit = hit
+            uniformity = float(1.0 - min(1.0, run_spacings.std() / max(1.0, median_sp)))
+            tick_positions_img = [int(t) + coord_offset for t in tick_idx.tolist()]
+            hit = _RulerHit(
+                start=tick_positions_img[0],
+                end=tick_positions_img[-1],
+                tick_positions=tick_positions_img,
+                median_spacing_px=median_sp,
+                spacing_uniformity=uniformity,
+            )
+            if best_hit is None or _hit_score(hit) > _hit_score(best_hit):
+                best_hit = hit
 
     return best_hit
 

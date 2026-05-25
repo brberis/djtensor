@@ -282,10 +282,16 @@ def extract_museum_metadata_for_dataset(dataset_id):
             # Inform the label detector about the bar + tooth bboxes so it
             # doesn't try to OCR those.
             excluded = []
+            fallback = []
             try:
                 sb = detect_scale_bar(img.image.path)
                 if sb.bar_bbox:
                     excluded.append(sb.bar_bbox)
+                    # The bar bbox is also the fallback OCR target: if the
+                    # label and bar are touching/overlapping and there is no
+                    # separately-detectable label blob, the catalog text is
+                    # inside the bar bbox.
+                    fallback.append(sb.bar_bbox)
                 tooth = next((b for b in sb.blobs if b.classification == 'tooth'), None)
                 if tooth is not None:
                     excluded.append(tooth.bbox)
@@ -294,7 +300,11 @@ def extract_museum_metadata_for_dataset(dataset_id):
                 # label detector on its own.
                 pass
 
-            meta = extract_specimen_metadata(img.image.path, excluded_bboxes=excluded)
+            meta = extract_specimen_metadata(
+                img.image.path,
+                excluded_bboxes=excluded,
+                fallback_bboxes=fallback,
+            )
         except Exception as e:
             logger.warning("extract_museum_metadata: image %s raised %s", img.id, e)
             errors += 1

@@ -71,6 +71,7 @@ def extract_specimen_metadata(
     min_blob_area_px: int = 50_000,
     rect_fill_threshold: float = 0.85,
     aspect_max: float = 4.0,
+    fallback_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
 ) -> SpecimenMetadata:
     """
     Run the full OCR pipeline on a RAW photograph.
@@ -80,11 +81,19 @@ def extract_specimen_metadata(
     can be used to skip already-identified blobs such as the tooth and the
     scale-bar card so they aren't mis-classified as the label.
 
+    `fallback_bboxes` (typically the scale-bar bbox supplied by the caller)
+    is used as a last resort when no separate label blob is detected. This
+    handles the touching/overlapping case where the catalog label and the
+    scale-bar card share a connected foreground component: we OCR the bar
+    region directly, and if the resulting text parses into recognisable
+    catalog fields we treat the bar bbox as the label bbox.
+
     Returns a SpecimenMetadata with as many fields populated as the OCR text
     allowed. Always returns a result, even on partial failure; check
     `result.notes` for what went wrong.
     """
     excluded_bboxes = list(excluded_bboxes or [])
+    fallback_bboxes = list(fallback_bboxes or [])
     img = Image.open(image_path)
 
     if known_label_bbox is not None:
@@ -98,8 +107,27 @@ def extract_specimen_metadata(
             aspect_max=aspect_max,
         )
 
+    notes_extra: List[str] = []
+    if label_bbox is None and fallback_bboxes:
+        # Touching-blob fallback: try OCRing each fallback bbox and accept
+        # the first one whose parsed output looks like a real catalog
+        # label. This rescues RAW images where the bar and label are
+        # co-mingled in a single connected component.
+        for candidate in fallback_bboxes:
+            text = extract_label_text(img, candidate)
+            if not text or not text.strip():
+                continue
+            parsed = parse_specimen_metadata(text)
+            if _looks_like_catalog_label(parsed):
+                parsed.label_bbox = candidate
+                parsed.raw_text = text
+                parsed.notes.append('detected via fallback (touching bar+label)')
+                parsed.confidence = _confidence(parsed)
+                return parsed
+        notes_extra.append('fallback bboxes had no catalog-shaped text')
+
     if label_bbox is None:
-        return SpecimenMetadata(notes=['no label blob detected'])
+        return SpecimenMetadata(notes=['no label blob detected'] + notes_extra)
 
     text = extract_label_text(img, label_bbox)
     if not text or not text.strip():
@@ -121,6 +149,7 @@ def detect_specimen_label(
     min_blob_area_px: int = 50_000,
     rect_fill_threshold: float = 0.85,
     aspect_max: float = 4.0,
+    opening_iterations: int = 3,
 ) -> Optional[Tuple[int, int, int, int]]:
     """
     Find the catalog-label rectangle in a RAW image.
@@ -131,6 +160,11 @@ def detect_specimen_label(
     When `excluded_bboxes` is supplied, blobs overlapping any of those are
     skipped, which makes this stable when the tooth and scale-bar bboxes are
     already known from scale_calibration.
+
+    A morphological opening (`opening_iterations` erosions then a dilation)
+    is applied before connected-component labelling so blobs joined by a
+    few thin pixels (e.g. the scale-bar card touching the catalog label in
+    a RAW photograph) are split into separate components.
     """
     excluded_bboxes = list(excluded_bboxes or [])
     gray = np.array(img.convert('L'))
@@ -147,6 +181,11 @@ def detect_specimen_label(
         mask = gray > 32
     else:
         mask = gray < 224
+
+    if opening_iterations > 0:
+        opened = ndimage.binary_opening(mask, iterations=opening_iterations)
+        if opened.sum() >= 0.5 * mask.sum():
+            mask = opened
 
     labeled, n = ndimage.label(mask)
     if n == 0:
@@ -370,6 +409,22 @@ def _guess_species(text: str) -> Optional[str]:
         if species.lower() in lowered:
             return species
     return None
+
+
+def _looks_like_catalog_label(parsed: SpecimenMetadata) -> bool:
+    """A parsed result is considered a real catalog label if at least two
+    catalog-specific fields are populated. Specimen id, species, locality,
+    formation, age, and date are all FLMNH-catalog-specific patterns that
+    won't appear together in arbitrary scale-bar text."""
+    populated = sum(1 for f in (
+        parsed.museum_specimen_id,
+        parsed.species,
+        parsed.locality,
+        parsed.formation,
+        parsed.age,
+        parsed.date,
+    ) if f)
+    return populated >= 2
 
 
 def _confidence(meta: SpecimenMetadata) -> float:
