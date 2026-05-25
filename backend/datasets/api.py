@@ -182,6 +182,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
         """Return images flagged for human review, grouped by issue category."""
         from .review import get_review_flags, REVIEW_FLAGS, REVIEW_FLAG_LABELS, REVIEW_FLAG_DESCRIPTIONS
         from .serializers import ImageSerializer
+        from .models import Image
         dataset = self.get_object()
         flags = get_review_flags(dataset.id)
         categories = []
@@ -197,16 +198,33 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 'items': ImageSerializer(imgs, many=True, context={'request': request}).data,
             })
         # Plus a summary of already-resolved counts so the queue can show progress.
-        from .models import Image
         resolved_counts = {}
         for status_key in ('unreviewed', 'reviewed', 'excluded'):
             resolved_counts[status_key] = Image.objects.filter(dataset=dataset, review_status=status_key).count()
+
+        # Pipeline progress stats - powers the guided pipeline card on the
+        # dataset detail page. Counts how many images have hit each step.
+        total_images = Image.objects.filter(dataset=dataset).count()
+        derived = Dataset.objects.filter(source_dataset=dataset).order_by('-id')
+        pipeline_stats = {
+            'total_images': total_images,
+            'with_ocr': Image.objects.filter(dataset=dataset, museum_specimen_id__isnull=False).count(),
+            'with_calibration': Image.objects.filter(dataset=dataset, mm_per_pixel__isnull=False).count(),
+            'with_completeness': Image.objects.filter(dataset=dataset, completeness_mm2__isnull=False).count(),
+            'derived_datasets_count': derived.count(),
+            'derived_datasets': [
+                {'id': d.id, 'name': d.name, 'transformation_type': d.transformation_type}
+                for d in derived[:10]
+            ],
+        }
+
         return Response({
             'dataset_id': dataset.id,
             'dataset_name': dataset.name,
             'total_flagged': total,
             'categories': categories,
             'review_status_counts': resolved_counts,
+            'pipeline_stats': pipeline_stats,
         })
 
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-bulk')

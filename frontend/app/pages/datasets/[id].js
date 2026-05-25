@@ -1243,7 +1243,9 @@ export default function DatasetDetail() {
         <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
           <div>
             <dt className="text-sm font-medium text-gray-500">Resolution</dt>
-            <dd className="mt-1 text-sm text-gray-900">{dataset.resolution}px</dd>
+            <dd className="mt-1 text-sm text-gray-900">
+              {dataset.resolution === 'original' ? 'Original (no resize)' : `${dataset.resolution}px`}
+            </dd>
           </div>
           <div>
             <dt className="text-sm font-medium text-gray-500">Type</dt>
@@ -1256,7 +1258,29 @@ export default function DatasetDetail() {
         </dl>
       </div>
 
-
+      {dataset?.resolution === 'original' && reviewSummary && (
+        <PipelinePanel
+          dataset={dataset}
+          stats={reviewSummary.pipeline_stats}
+          reviewCounts={reviewSummary.review_status_counts}
+          flaggedCount={reviewSummary.total_flagged}
+          onRunOcr={() => setShowRunOcrConfirm(true)}
+          onComputeMm2={() => {
+            if (allDatasets.length === 0) {
+              fetch('/api/datasets/dataset/')
+                .then(r => r.json())
+                .then(data => setAllDatasets(Array.isArray(data) ? data : data.results || []))
+                .catch(console.error);
+            }
+            setReferenceDatasetId('');
+            setCompletenessMetric('mm2');
+            setShowCompletenessDialog(true);
+          }}
+          onOpenReview={() => router.push(`/datasets/${id}/review`)}
+          onEmitModeA={() => setShowEmitModeAConfirm(true)}
+          onEmitModeB={() => { setEmitModeBPxPerMm(6.0); setShowEmitModeBDialog(true); }}
+        />
+      )}
 
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
         <div className="sm:flex sm:items-end sm:justify-between gap-3">
@@ -1996,6 +2020,149 @@ export default function DatasetDetail() {
       </Transition.Root>
     </Layout>
   );
+}
+
+function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, onRunOcr, onComputeMm2, onOpenReview, onEmitModeA, onEmitModeB }) {
+  const total = stats?.total_images ?? 0;
+  const ocr = stats?.with_ocr ?? 0;
+  const cal = stats?.with_calibration ?? 0;
+  const reviewedCount = reviewCounts?.reviewed ?? 0;
+  const excludedCount = reviewCounts?.excluded ?? 0;
+  const unreviewedCount = reviewCounts?.unreviewed ?? 0;
+  const derivedCount = stats?.derived_datasets_count ?? 0;
+
+  // Each step's status: 'done' | 'partial' | 'attention' | 'todo'
+  const stepUpload = total > 0 ? 'done' : 'todo';
+
+  // OCR is optional on MASKED images, so partial is OK and considered done
+  // once at least one image was processed AND there are no unresolved flags
+  // specifically about OCR. For the panel, treat "no OCR at all" as todo.
+  const stepOcr = total === 0 ? 'todo'
+    : ocr === 0 ? 'todo'
+    : ocr < total ? 'partial'
+    : 'done';
+
+  const stepCal = total === 0 ? 'todo'
+    : cal === 0 ? 'todo'
+    : cal < total ? 'partial'
+    : 'done';
+
+  const stepReview = total === 0 ? 'todo'
+    : (flaggedCount > 0 || unreviewedCount > 0) ? 'attention'
+    : 'done';
+
+  const stepEmit = derivedCount > 0 ? 'done' : 'todo';
+
+  // First non-done step drives the "Next" CTA.
+  const order = [
+    { key: 'upload',  status: stepUpload  },
+    { key: 'ocr',     status: stepOcr     },
+    { key: 'cal',     status: stepCal     },
+    { key: 'review',  status: stepReview  },
+    { key: 'emit',    status: stepEmit    },
+  ];
+  const nextStep = order.find((s) => s.status !== 'done')?.key;
+
+  const stepDot = (status) => {
+    if (status === 'done')      return 'bg-green-500';
+    if (status === 'attention') return 'bg-amber-500';
+    if (status === 'partial')   return 'bg-blue-500';
+    return 'bg-gray-300';
+  };
+  const stepIcon = (status) => {
+    if (status === 'done')      return '✓';
+    if (status === 'attention') return '!';
+    if (status === 'partial')   return '◐';
+    return '○';
+  };
+
+  return (
+    <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Phase 2 Pipeline</h2>
+          <p className="text-xs text-gray-500">Source-resolution dataset. Each step prepares this set for the next.</p>
+        </div>
+        {derivedCount > 0 && (
+          <span className="text-xs text-gray-500">
+            {derivedCount} derived dataset{derivedCount !== 1 ? 's' : ''} produced
+          </span>
+        )}
+      </div>
+
+      {/* Step row */}
+      <div className="flex items-center justify-between gap-2 mb-4 overflow-x-auto pb-2">
+        <Step icon={stepIcon(stepUpload)} dot={stepDot(stepUpload)} label="Upload"     value={`${total} image${total !== 1 ? 's' : ''}`} active={nextStep === 'upload'} />
+        <StepLine />
+        <Step icon={stepIcon(stepOcr)}    dot={stepDot(stepOcr)}    label="OCR"        value={`${ocr}/${total}`} active={nextStep === 'ocr'} />
+        <StepLine />
+        <Step icon={stepIcon(stepCal)}    dot={stepDot(stepCal)}    label="Calibrate"  value={`${cal}/${total}`} active={nextStep === 'cal'} />
+        <StepLine />
+        <Step icon={stepIcon(stepReview)} dot={stepDot(stepReview)} label="Review"     value={`${reviewedCount} ✓ / ${unreviewedCount} pending / ${excludedCount} ✕`} active={nextStep === 'review'} />
+        <StepLine />
+        <Step icon={stepIcon(stepEmit)}   dot={stepDot(stepEmit)}   label="Emit"       value={derivedCount > 0 ? `${derivedCount} derived` : 'not yet'} active={nextStep === 'emit'} />
+      </div>
+
+      {/* Next-action CTA */}
+      <div className="rounded-md bg-gray-50 ring-1 ring-gray-200 px-4 py-3 flex flex-wrap items-center gap-3">
+        {nextStep === 'upload' && (
+          <span className="text-sm text-gray-700">Upload images via <strong>Actions → Bulk Upload Images</strong> to begin.</span>
+        )}
+        {nextStep === 'ocr' && (
+          <>
+            <span className="text-sm text-gray-700">Next: <strong>Run FLMNH Label OCR</strong> to extract museum metadata.</span>
+            <button onClick={onRunOcr} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">Run OCR</button>
+          </>
+        )}
+        {nextStep === 'cal' && (
+          <>
+            <span className="text-sm text-gray-700">Next: <strong>Compute Completeness (mm²)</strong> to calibrate the dataset.</span>
+            <button onClick={onComputeMm2} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">Compute mm²</button>
+          </>
+        )}
+        {nextStep === 'review' && (
+          <>
+            <span className="text-sm text-gray-700">
+              Next: <strong>Review images</strong>.
+              {flaggedCount > 0 && <> {flaggedCount} flagged for human attention.</>}
+              {unreviewedCount > 0 && <> {unreviewedCount} unreviewed total.</>}
+            </span>
+            <button onClick={onOpenReview} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
+              Open Review Queue {flaggedCount > 0 && `(${flaggedCount} flagged)`}
+            </button>
+          </>
+        )}
+        {nextStep === 'emit' && (
+          <>
+            <span className="text-sm text-gray-700">Next: <strong>Emit PROCESSED datasets</strong> for model training.</span>
+            <div className="ml-auto flex gap-2">
+              <button onClick={onEmitModeA} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">Emit Mode A</button>
+              <button onClick={onEmitModeB} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Emit Mode B</button>
+            </div>
+          </>
+        )}
+        {!nextStep && (
+          <span className="text-sm text-green-800 font-medium">✓ Pipeline complete. {derivedCount} derived dataset{derivedCount !== 1 ? 's' : ''} ready for training.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Step({ icon, dot, label, value, active }) {
+  return (
+    <div className={`flex flex-col items-center gap-1 min-w-[120px] ${active ? '' : 'opacity-80'}`}>
+      <div className={`h-7 w-7 rounded-full ${dot} text-white text-sm font-bold flex items-center justify-center shadow ${active ? 'ring-4 ring-blue-200' : ''}`}>
+        {icon}
+      </div>
+      <div className={`text-xs font-semibold text-gray-900 ${active ? '' : ''}`}>{label}</div>
+      <div className="text-[11px] text-gray-500 text-center whitespace-nowrap">{value}</div>
+    </div>
+  );
+}
+
+function StepLine() {
+  return <div className="flex-1 h-px bg-gray-200 min-w-[12px]" />;
 }
 
 function ReviewStatusBlock({ image, onChanged }) {
