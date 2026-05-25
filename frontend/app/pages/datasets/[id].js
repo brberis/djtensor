@@ -2220,21 +2220,15 @@ function ReviewStatusBlock({ image, onChanged }) {
           )}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {status !== 'reviewed' && (
-            <button type="button" disabled={busy} onClick={() => apply('mark_reviewed')} className="rounded-md bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
-              Mark Reviewed
-            </button>
-          )}
-          {status !== 'excluded' && (
-            <button type="button" disabled={busy} onClick={() => apply('mark_excluded')} className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-500 disabled:opacity-50">
-              Exclude
-            </button>
-          )}
-          {status !== 'unreviewed' && (
-            <button type="button" disabled={busy} onClick={() => apply('mark_unreviewed')} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:opacity-50">
-              Reset to Unreviewed
-            </button>
-          )}
+          <button type="button" disabled={busy} onClick={() => apply('mark_reviewed')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ${status === 'reviewed' ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-100' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+            {status === 'reviewed' ? 'Re-review' : 'Mark Reviewed'}
+          </button>
+          <button type="button" disabled={busy} onClick={() => apply('mark_unreviewed')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ring-1 ring-inset ${status === 'unreviewed' ? 'bg-gray-50 text-gray-500 ring-gray-200 hover:bg-gray-100' : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50'}`}>
+            Mark Unreviewed
+          </button>
+          <button type="button" disabled={busy} onClick={() => apply('mark_excluded')} className={`rounded-md px-2 py-1 text-[11px] font-semibold disabled:opacity-50 ${status === 'excluded' ? 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 hover:bg-red-100' : 'bg-red-600 text-white hover:bg-red-500'}`}>
+            Exclude
+          </button>
         </div>
       </dd>
     </div>

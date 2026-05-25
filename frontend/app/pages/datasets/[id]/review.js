@@ -339,7 +339,7 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
               Inspect…
             </ActionButton>
             <ActionButton onClick={() => onAction(img.id, 'mark_reviewed', 'Marked reviewed')} disabled={acting} tone="primary">
-              Mark Reviewed
+              {img.review_status === 'reviewed' ? 'Re-review' : 'Mark Reviewed'}
             </ActionButton>
             {img.museum_species && img.museum_species.toLowerCase() !== (img.label_name || '').toLowerCase() && (
               <ActionButton onClick={() => onAction(img.id, 'trust_ocr', `Trusted OCR (${img.museum_species})`)} disabled={acting} tone="primary">
@@ -351,6 +351,9 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
                 Trust Folder
               </ActionButton>
             )}
+            <ActionButton onClick={() => onAction(img.id, 'mark_unreviewed', 'Reset to unreviewed')} disabled={acting} tone="neutral">
+              Mark Unreviewed
+            </ActionButton>
             <ActionButton onClick={() => onAction(img.id, 'mark_excluded', 'Excluded')} disabled={acting} tone="danger">
               Exclude
             </ActionButton>
@@ -787,7 +790,7 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                     onClick={() => onAction(img.id, 'mark_reviewed', 'Marked reviewed')}
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
                   >
-                    Mark Reviewed
+                    {img.review_status === 'reviewed' ? 'Re-review' : 'Mark Reviewed'}
                   </button>
                   {speciesMismatch && (
                     <>
@@ -801,6 +804,12 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                       </button>
                     </>
                   )}
+                  <button
+                    onClick={() => onAction(img.id, 'mark_unreviewed', 'Reset to unreviewed')}
+                    className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                  >
+                    Mark Unreviewed
+                  </button>
                   <button
                     onClick={() => onAction(img.id, 'mark_excluded', 'Excluded')}
                     className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500"
