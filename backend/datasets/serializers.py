@@ -66,6 +66,7 @@ class ImageSerializer(serializers.ModelSerializer):
     image_height = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     source_image_data = serializers.SerializerMethodField()
+    label_name = serializers.CharField(source='label.name', read_only=True, default=None)
 
     class Meta:
         model = Image

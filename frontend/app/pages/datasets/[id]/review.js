@@ -39,7 +39,7 @@ function describeReviewAction(action) {
     case 'mark_excluded':
       return 'Exclude this image from the dataset. It will not be used downstream until you re-include it.';
     case 'trust_ocr':
-      return 'Re-label the image with the species OCR parsed from the catalog label and mark it as reviewed.';
+      return 'Re-label this image with the species OCR parsed from the catalog card and mark it as reviewed. The previous folder label is recorded in the audit log.';
     case 'trust_folder':
       return 'Keep the existing folder label (ignore the OCR species) and mark this image as reviewed.';
     default:
@@ -415,34 +415,50 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
           {img.scale_bar_detected === false && (
             <span className="mt-1 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">scale bar not detected</span>
           )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <ActionButton onClick={onInspect} tone="neutral">
-              Inspect…
-            </ActionButton>
-            <ActionButton onClick={() => onAction(img.id, 'mark_reviewed', 'Marked reviewed')} disabled={acting} tone="primary">
-              Mark Reviewed
-            </ActionButton>
-            {img.museum_species && img.museum_species.toLowerCase() !== (img.label_name || '').toLowerCase() && (
-              <ActionButton onClick={() => onAction(img.id, 'trust_ocr', `Trusted OCR (${img.museum_species})`)} disabled={acting} tone="primary">
-                Trust OCR ({img.museum_species})
-              </ActionButton>
-            )}
-            {img.museum_species && img.museum_species.toLowerCase() !== (img.label_name || '').toLowerCase() && (
-              <ActionButton onClick={() => onAction(img.id, 'trust_folder', `Kept folder label`)} disabled={acting} tone="neutral">
-                Trust Folder
-              </ActionButton>
-            )}
-            <ActionButton onClick={() => onAction(img.id, 'mark_excluded', 'Excluded')} disabled={acting} tone="danger">
-              Exclude
-            </ActionButton>
-            <button
-              type="button"
-              onClick={onToggleHistory}
-              className="text-xs text-gray-500 hover:underline ml-auto"
-            >
-              {expanded ? 'Hide history' : 'View history'}
-            </button>
-          </div>
+          {(() => {
+            const folder = (img.label_name || '').trim();
+            const ocr    = (img.museum_species || '').trim();
+            const mismatch = !!folder && !!ocr && folder.toLowerCase() !== ocr.toLowerCase();
+            return (
+              <>
+                {mismatch && (
+                  <div className="mt-2 rounded-md bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[11px] text-amber-900">
+                    <strong>Species mismatch.</strong> Folder says <em>{folder}</em>, OCR says <em>{ocr}</em>.
+                    Choose which one is correct: keep the folder label or relabel this image with the OCR species.
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <ActionButton onClick={onInspect} tone="neutral">
+                    Inspect…
+                  </ActionButton>
+                  {mismatch ? (
+                    <>
+                      <ActionButton onClick={() => onAction(img.id, 'trust_folder', `Kept folder label (${folder})`)} disabled={acting} tone="primary">
+                        Keep folder ({folder})
+                      </ActionButton>
+                      <ActionButton onClick={() => onAction(img.id, 'trust_ocr', `Relabeled to OCR (${ocr})`)} disabled={acting} tone="primary">
+                        Relabel to OCR ({ocr})
+                      </ActionButton>
+                    </>
+                  ) : (
+                    <ActionButton onClick={() => onAction(img.id, 'mark_reviewed', 'Marked reviewed')} disabled={acting} tone="primary">
+                      Mark Reviewed
+                    </ActionButton>
+                  )}
+                  <ActionButton onClick={() => onAction(img.id, 'mark_excluded', 'Excluded')} disabled={acting} tone="danger">
+                    Exclude
+                  </ActionButton>
+                  <button
+                    type="button"
+                    onClick={onToggleHistory}
+                    className="text-xs text-gray-500 hover:underline ml-auto"
+                  >
+                    {expanded ? 'Hide history' : 'View history'}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
           {expanded && (
             <div className="mt-2 rounded-md bg-gray-50 ring-1 ring-gray-200 px-3 py-2 text-xs space-y-1">
               {!history && <span className="text-gray-500">Loading…</span>}

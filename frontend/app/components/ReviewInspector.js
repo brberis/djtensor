@@ -389,7 +389,7 @@ export default function ReviewInspector({
                 {/* Footer: actions */}
                 {onAction && (
                   <div className="border-t border-gray-200 bg-gray-50 px-5 py-3 flex flex-wrap items-center gap-2">
-                    {!isReviewed && (
+                    {!isReviewed && !speciesMismatch && (
                       <button
                         onClick={() => onAction(img.id, 'mark_reviewed', 'Marked reviewed')}
                         className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500"
@@ -397,15 +397,15 @@ export default function ReviewInspector({
                         Mark Reviewed
                       </button>
                     )}
-                    {speciesMismatch && (
+                    {!isReviewed && speciesMismatch && (
                       <>
-                        <button onClick={() => onAction(img.id, 'trust_ocr', `Trusted OCR (${img.museum_species})`)}
+                        <button onClick={() => onAction(img.id, 'trust_folder', `Kept folder label (${img.label_name})`)}
                           className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
-                          Trust OCR ({img.museum_species})
+                          Keep folder ({img.label_name})
                         </button>
-                        <button onClick={() => onAction(img.id, 'trust_folder', 'Kept folder label')}
-                          className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
-                          Trust Folder
+                        <button onClick={() => onAction(img.id, 'trust_ocr', `Relabeled to OCR (${img.museum_species})`)}
+                          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
+                          Relabel to OCR ({img.museum_species})
                         </button>
                       </>
                     )}
