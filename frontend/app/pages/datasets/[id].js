@@ -1108,7 +1108,7 @@ export default function DatasetDetail() {
                         <span>Review Queue</span>
                         {reviewSummary && reviewSummary.total_flagged > 0 && (
                           <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                            {reviewSummary.total_flagged} flagged
+                            {reviewSummary.total_flagged} to review
                           </span>
                         )}
                       </button>
@@ -1267,6 +1267,8 @@ export default function DatasetDetail() {
           stats={reviewSummary.pipeline_stats}
           reviewCounts={reviewSummary.review_status_counts}
           flaggedCount={reviewSummary.total_flagged}
+          problemCount={reviewSummary.total_problems ?? 0}
+          pendingReviewCount={reviewSummary.total_pending_review ?? 0}
           onRunOcr={() => setShowRunOcrConfirm(true)}
           onComputeMm2={() => {
             if (allDatasets.length === 0) {
@@ -2051,7 +2053,7 @@ export default function DatasetDetail() {
   );
 }
 
-function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, onRunOcr, onComputeMm2, onOpenReview, onEmitModeA, onEmitModeB }) {
+function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCount = 0, pendingReviewCount = 0, onRunOcr, onComputeMm2, onOpenReview, onEmitModeA, onEmitModeB }) {
   const total = stats?.total_images ?? 0;
   const ocrEligible   = stats?.ocr_eligible_count   ?? total;
   const calibEligible = stats?.calib_eligible_count ?? total;
@@ -2168,11 +2170,11 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, onRunOcr, o
           <>
             <span className="text-sm text-gray-700">
               Next: <strong>Review images</strong>.
-              {flaggedCount > 0 && <> {flaggedCount} flagged for human attention.</>}
-              {unreviewedCount > 0 && <> {unreviewedCount} unreviewed total.</>}
+              {problemCount > 0 && <> {problemCount} flagged for human attention.</>}
+              {pendingReviewCount > 0 && <> {pendingReviewCount} pending review.</>}
             </span>
             <button onClick={onOpenReview} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
-              Open Review Queue {flaggedCount > 0 && `(${flaggedCount} flagged)`}
+              Open Review Queue ({flaggedCount} to review)
             </button>
           </>
         )}

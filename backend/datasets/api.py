@@ -187,9 +187,12 @@ class DatasetViewSet(viewsets.ModelViewSet):
         flags = get_review_flags(dataset.id)
         categories = []
         total = 0
+        total_problems = 0
         for key in REVIEW_FLAGS:
             imgs = flags.get(key, [])
             total += len(imgs)
+            if key != 'pending_review':
+                total_problems += len(imgs)
             categories.append({
                 'key': key,
                 'label': REVIEW_FLAG_LABELS[key],
@@ -241,7 +244,13 @@ class DatasetViewSet(viewsets.ModelViewSet):
         return Response({
             'dataset_id': dataset.id,
             'dataset_name': dataset.name,
+            # Backwards-compatible: total_flagged counts ALL queue items
+            # (problems + pending review). total_problems counts only the
+            # auto-detected issue categories so the panel can distinguish
+            # "needs decision" from "broken".
             'total_flagged': total,
+            'total_problems': total_problems,
+            'total_pending_review': total - total_problems,
             'categories': categories,
             'review_status_counts': resolved_counts,
             'pipeline_stats': pipeline_stats,

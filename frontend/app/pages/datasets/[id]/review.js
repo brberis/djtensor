@@ -234,8 +234,8 @@ export default function ReviewQueue() {
             <h1 className="text-2xl font-bold text-gray-900">Review Queue</h1>
             {data && (
               <p className="mt-1 text-sm text-gray-500">
-                <span className="font-medium text-amber-700">{data.total_flagged}</span> flagged ·
-                {' '}{data.review_status_counts?.unreviewed || 0} unreviewed ·
+                <span className="font-medium text-amber-700">{data.total_problems ?? 0}</span> flagged ·
+                {' '}<span className="font-medium text-gray-700">{data.total_pending_review ?? 0}</span> pending review ·
                 {' '}<span className="text-green-700">{data.review_status_counts?.reviewed || 0} reviewed</span> ·
                 {' '}<span className="text-red-700">{data.review_status_counts?.excluded || 0} excluded</span>
               </p>
@@ -260,13 +260,13 @@ export default function ReviewQueue() {
         </div>
       )}
 
-      {loading && <p className="text-sm text-gray-500">Loading flagged images…</p>}
+      {loading && <p className="text-sm text-gray-500">Loading review queue…</p>}
 
       {!loading && data && data.total_flagged === 0 && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-10 text-center">
           <CheckIcon className="mx-auto h-10 w-10 text-green-500" />
           <h3 className="mt-3 text-lg font-semibold text-green-900">All clear</h3>
-          <p className="mt-1 text-sm text-green-800">No images in this dataset are currently flagged for review.</p>
+          <p className="mt-1 text-sm text-green-800">Every image in this dataset has been reviewed or excluded.</p>
         </div>
       )}
 

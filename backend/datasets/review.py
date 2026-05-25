@@ -30,12 +30,16 @@ logger = logging.getLogger(__name__)
 
 
 # Priority order: each image hits the first category it qualifies for.
+# 'pending_review' is the catch-all that holds every unreviewed image that
+# did not trigger any specific problem flag, so the queue stays usable as a
+# manual approval list even when nothing is broken.
 REVIEW_FLAGS = (
     'species_mismatch',
     'no_scale_bar',
     'out_of_range_completeness',
     'low_ocr_confidence',
     'no_museum_label',
+    'pending_review',
 )
 
 REVIEW_FLAG_LABELS = {
@@ -44,6 +48,7 @@ REVIEW_FLAG_LABELS = {
     'out_of_range_completeness': 'Completeness out of range',
     'low_ocr_confidence': 'Low OCR confidence',
     'no_museum_label': 'No museum label found on a source image',
+    'pending_review': 'Pending review',
 }
 
 REVIEW_FLAG_DESCRIPTIONS = {
@@ -71,6 +76,10 @@ REVIEW_FLAG_DESCRIPTIONS = {
         'calibration but no museum specimen id extracted. The catalog '
         'label was either clipped, unreadable, or merged with another '
         'feature.'
+    ),
+    'pending_review': (
+        'Unreviewed images with no automatic issues. Inspect each one '
+        'and mark it reviewed (or excluded) to move it out of the queue.'
     ),
 }
 
@@ -137,6 +146,10 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
         ):
             flags['no_museum_label'].append(img)
             continue
+
+        # 6. Catch-all: every other unreviewed image goes here so the queue
+        # stays the single place a reviewer goes to approve work.
+        flags['pending_review'].append(img)
 
     return flags
 
