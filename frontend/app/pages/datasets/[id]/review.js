@@ -534,9 +534,11 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                       <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!img.scale_bar_ticks?.positions?.length} />
                     </div>
 
-                    {/* Image canvas */}
-                    <div className="relative flex-1 bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden flex items-center justify-center">
-                      <div className="relative" style={{ aspectRatio: `${w} / ${h}`, width: '100%', maxHeight: '70vh' }}>
+                    {/* Image canvas — generous padding so badges that extend outside
+                        the photo (tooth chip, L/W dimension labels) remain visible
+                        instead of being clipped by the canvas border. */}
+                    <div className="relative flex-1 bg-white rounded-lg ring-1 ring-gray-200 flex items-center justify-center p-12">
+                      <div className="relative" style={{ aspectRatio: `${w} / ${h}`, width: '100%', maxHeight: '64vh' }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={normalizeMediaUrl(img.image)}
@@ -604,21 +606,21 @@ function ReviewInspector({ img, position, total, onClose, onPrev, onNext, onActi
                               </div>
                             )}
 
-                            {/* Length label - inside the bbox at the left edge so it never clips
-                                off-screen and remains visible while hovering. */}
+                            {/* Length label - just OUTSIDE the bbox at the left edge,
+                                vertically centered. Parent canvas padding gives the badge
+                                room to extend past the image without clipping. */}
                             {toothDims && img.tooth_major_axis_mm != null && (
-                              <div className="absolute pointer-events-none" style={{ left: 6, top: '50%', transform: 'translateY(-50%)' }}>
-                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700/95 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                              <div className="absolute pointer-events-none" style={{ right: '100%', top: '50%', transform: 'translate(-8px, -50%)' }}>
+                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
                                   L: {img.tooth_major_axis_mm.toFixed(1)} mm
                                 </span>
                               </div>
                             )}
 
-                            {/* Width label - at the BOTTOM of the bbox (user request) and
-                                centered horizontally. Inside so it never goes off-canvas. */}
+                            {/* Width label - just OUTSIDE the bbox below, centered. */}
                             {toothDims && img.tooth_minor_axis_mm != null && (
-                              <div className="absolute pointer-events-none" style={{ left: '50%', bottom: 4, transform: 'translateX(-50%)' }}>
-                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700/95 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
+                              <div className="absolute pointer-events-none" style={{ left: '50%', top: '100%', transform: 'translate(-50%, 8px)' }}>
+                                <span className="inline-block whitespace-nowrap rounded-md bg-green-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow ring-1 ring-green-900/40">
                                   W: {img.tooth_minor_axis_mm.toFixed(1)} mm
                                 </span>
                               </div>
