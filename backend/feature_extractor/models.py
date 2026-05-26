@@ -157,6 +157,12 @@ class StudyMembership(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.study.name} ({self.role})"
     
+INPUT_MODES = [
+    ('image_only',      'Image only (image-only single-input model)'),
+    ('image_plus_size', 'Image + size scalars (multi-input: pixels + length/width/area/completeness in mm)'),
+]
+
+
 class TrainingSession(models.Model):
     study = models.ForeignKey(Study, related_name='training_sessions', blank=True, null=True, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
@@ -169,6 +175,13 @@ class TrainingSession(models.Model):
     batch_size = models.IntegerField(null=True, blank=True)
     num_epochs = models.IntegerField(null=True, blank=True)
     learning_rate = models.FloatField(null=True, blank=True)
+    # 'image_only' reproduces the Phase I single-input pipeline.
+    # 'image_plus_size' adds a 4-dim scalar branch [length_mm, width_mm,
+    # area_mm2, completeness_mm2] alongside the image so the model can learn
+    # from physical-size features that are otherwise lost by Mode A's
+    # uniform-canvas rescale. Defaults to image_only so old training launches
+    # behave exactly as before.
+    input_mode = models.CharField(max_length=32, choices=INPUT_MODES, default='image_only')
     created_by = models.ForeignKey(User, related_name='training_sessions', null=True, blank=True, on_delete=models.SET_NULL)
     archived_at = models.DateTimeField(null=True, blank=True)
     archived_by = models.ForeignKey(User, related_name='archived_training_sessions', null=True, blank=True, on_delete=models.SET_NULL)

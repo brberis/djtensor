@@ -371,6 +371,14 @@ export default function Training() {
                     onClick={() => handleSessionClick(session)}
                   >
                     {session.model.name}
+                    {session.input_mode === 'image_plus_size' && (
+                      <span
+                        className="ml-2 inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200"
+                        title="Multi-input: image + size scalars"
+                      >
+                        + size
+                      </span>
+                    )}
                   </td>
                   <td
                     className="whitespace-nowrap px-4 py-4 text-sm text-gray-500"

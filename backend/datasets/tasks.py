@@ -543,10 +543,19 @@ def emit_processed_dataset(
         buffer.seek(0)
 
         filename = os.path.basename(src_img.image.name)
+        # Carry forward the physical-size measurements from the source image
+        # so the training pipeline can opt into multi-input training without
+        # having to re-derive these values from the cropped/resampled PNG.
+        # These fields are intrinsic to the tooth (computed in mm), so they
+        # remain valid across both Mode A (uniform canvas) and Mode B
+        # (scale-preserving) outputs.
         new_img = Image(
             dataset=derived,
             label=src_img.label,
             tooth_area_mm2=src_img.tooth_area_mm2,
+            tooth_major_axis_mm=src_img.tooth_major_axis_mm,
+            tooth_minor_axis_mm=src_img.tooth_minor_axis_mm,
+            completeness_mm2=src_img.completeness_mm2,
             source_kind='processed',
         )
         if mode == 'B':

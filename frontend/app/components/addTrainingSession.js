@@ -61,6 +61,7 @@ export default function AddSession({ isOpen, onClose }) {
       batch_size: parseInt(formData.get('batchSize'), 10),
       num_epochs: parseInt(formData.get('epochs'), 10),
       learning_rate: parseFloat(formData.get('learningRate')),
+      input_mode: formData.get('inputMode') || 'image_only',
     };
 
     setIsLoading(true);
@@ -181,6 +182,17 @@ export default function AddSession({ isOpen, onClose }) {
                           <label htmlFor="learningRate" className={theme.classes.label}>Learning Rate</label>
                           <input id="learningRate" name="learningRate" type="text" required defaultValue="0.005" className={`mt-1.5 ${theme.classes.input}`} />
                         </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="inputMode" className={theme.classes.label}>Input mode</label>
+                        <select id="inputMode" name="inputMode" required defaultValue="image_only" className={`mt-1.5 ${theme.classes.select}`}>
+                          <option value="image_only">Image only — Phase I baseline (pixels only)</option>
+                          <option value="image_plus_size">Image + size scalars — multi-input (pixels + length, width, area, completeness in mm)</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Image + size requires the dataset to have mm measurements populated (run Calibrate first on the source dataset before emitting PROCESSED). Mode A + image+size lets the model learn from physical size while keeping image detail. For paper comparisons, train one run per input mode against the same dataset.
+                        </p>
                       </div>
 
                       <div>

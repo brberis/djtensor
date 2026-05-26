@@ -68,7 +68,7 @@ class TrainingSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainingSession
-        fields = ['id', 'study', 'study_id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'batch_size', 'num_epochs', 'learning_rate', 'created_at', 'updated_at', 'epochs']
+        fields = ['id', 'study', 'study_id', 'name', 'notes', 'status', 'model', 'model_id', 'dataset', 'dataset_id', 'model_path', 'batch_size', 'num_epochs', 'learning_rate', 'input_mode', 'created_at', 'updated_at', 'epochs']
 
     def to_internal_value(self, data):
         # Only apply default model logic on create, not on partial update (PATCH)
@@ -122,7 +122,7 @@ class TrainingSessionListSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrainingSession
         fields = ['id', 'study', 'name', 'notes', 'status', 'model',
-                  'dataset', 'model_path', 'created_at', 'updated_at',
+                  'dataset', 'model_path', 'input_mode', 'created_at', 'updated_at',
                   'created_by_name', 'archived_at']
 
 class TestSerializer(serializers.ModelSerializer):
