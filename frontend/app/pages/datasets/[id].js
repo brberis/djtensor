@@ -30,6 +30,7 @@ import {
   XMarkIcon,
   ArrowLeftIcon,
   ChevronDownIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 
@@ -2054,6 +2055,11 @@ export default function DatasetDetail() {
 }
 
 function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCount = 0, pendingReviewCount = 0, onRunOcr, onComputeMm2, onOpenReview, onEmitModeA, onEmitModeB }) {
+  // Modes-help dialog: explains the A / A+ / B comparison researchers
+  // run side-by-side for the paper. Opens on the (i) icon next to the
+  // Emit buttons so the explanation appears right when the user is about
+  // to click.
+  const [showModesHelp, setShowModesHelp] = useState(false);
   const total = stats?.total_images ?? 0;
   const ocrEligible   = stats?.ocr_eligible_count   ?? total;
   const calibEligible = stats?.calib_eligible_count ?? total;
@@ -2180,7 +2186,17 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
         )}
         {nextStep === 'emit' && (
           <>
-            <span className="text-sm text-gray-700">Next: <strong>Emit Processed datasets</strong> for model training.</span>
+            <span className="text-sm text-gray-700">
+              Next: <strong>Emit Processed datasets</strong> for model training.
+              <button
+                type="button"
+                onClick={() => setShowModesHelp(true)}
+                className="ml-1 inline-flex items-center align-middle text-blue-600 hover:text-blue-700"
+                title="What's the difference between Mode A, A+ and B?"
+              >
+                <InformationCircleIcon className="h-4 w-4" />
+              </button>
+            </span>
             <div className="ml-auto flex gap-2">
               <button onClick={onEmitModeA} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">Emit Mode A</button>
               <button onClick={onEmitModeB} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Emit Mode B</button>
@@ -2188,10 +2204,162 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
           </>
         )}
         {!nextStep && (
-          <span className="text-sm text-green-800 font-medium">✓ Pipeline complete. {derivedCount} derived dataset{derivedCount !== 1 ? 's' : ''} ready for training.</span>
+          <span className="text-sm text-green-800 font-medium">
+            ✓ Pipeline complete. {derivedCount} derived dataset{derivedCount !== 1 ? 's' : ''} ready for training.
+            <button
+              type="button"
+              onClick={() => setShowModesHelp(true)}
+              className="ml-1 inline-flex items-center align-middle text-blue-600 hover:text-blue-700"
+              title="What's the difference between Mode A, A+ and B?"
+            >
+              <InformationCircleIcon className="h-4 w-4" />
+            </button>
+          </span>
         )}
       </div>
+      <ModesHelpDialog open={showModesHelp} onClose={() => setShowModesHelp(false)} />
     </div>
+  );
+}
+
+function ModesHelpDialog({ open, onClose }) {
+  // Single source of truth for the A / A+ / B explanation, shown on the
+  // Emit step's info icon. Mode A and Mode B are distinct emit choices
+  // (they produce different Processed datasets). A+ is NOT a separate
+  // emit choice: it reuses the Mode A dataset and flips the training
+  // launch dialog's "Input mode" to "image + size scalars". The dialog
+  // makes that explicit so a researcher does not look for a missing
+  // 'Emit Mode A+' button.
+  const modes = [
+    {
+      key: 'A',
+      title: 'Mode A',
+      subtitle: 'Uniform canvas, image-only training',
+      emit: 'Emit Mode A',
+      training: 'Input mode: image_only',
+      pixels: 'Each tooth is rescaled to fill the 384×384 canvas. Scale bar is cropped out.',
+      detail: 'Detail preserved on every tooth, big or small.',
+      size: 'Absolute physical size is LOST. The model cannot tell a small Galeocerdo from a megalodon by size.',
+      use: 'Reproduces the Phase I baseline. Use as the head-to-head reference.',
+      tone: 'border-blue-200 bg-blue-50',
+      chip: 'bg-blue-600 text-white',
+    },
+    {
+      key: 'A+',
+      title: 'Mode A+',
+      subtitle: 'Uniform canvas, image + size scalars at training',
+      emit: 'Emit Mode A (same dataset)',
+      training: 'Input mode: image_plus_size',
+      pixels: 'Same Mode A images. The model also receives a 4-dim scalar vector [length, width, area, completeness] in mm per image.',
+      detail: 'Detail preserved (Mode A image).',
+      size: 'Restored as a separate input head — the model sees absolute size without sacrificing pixel detail.',
+      use: 'The intended Phase 2 setup. Requires the source dataset to be calibrated before emitting.',
+      tone: 'border-violet-200 bg-violet-50',
+      chip: 'bg-violet-600 text-white',
+    },
+    {
+      key: 'B',
+      title: 'Mode B',
+      subtitle: 'Scale-preserving canvas, image-only training',
+      emit: 'Emit Mode B',
+      training: 'Input mode: image_only',
+      pixels: '1 mm in the output equals a fixed number of pixels (default 6 px/mm). A small tooth fills a small region of the canvas.',
+      detail: 'Detail is downsampled for small teeth (a close-up of a 15 mm tooth gets shrunk to fit the fixed mm/px ratio).',
+      size: 'Encoded in canvas occupancy. The model can infer size by how much of the frame the tooth covers.',
+      use: 'Alternative way to expose size. Worth keeping in the paper as a comparison; reviewers will ask.',
+      tone: 'border-amber-200 bg-amber-50',
+      chip: 'bg-amber-600 text-white',
+    },
+  ];
+  return (
+    <Transition.Root show={open} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
+        <Transition.Child as={Fragment}
+          enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
+          leave="ease-in duration-150"   leaveFrom="opacity-100" leaveTo="opacity-0">
+          <div className="fixed inset-0 bg-gray-900/60" />
+        </Transition.Child>
+        <div className="fixed inset-0 z-10 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <Transition.Child as={Fragment}
+              enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"   leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Dialog.Panel className="relative w-full max-w-5xl rounded-xl bg-white shadow-2xl overflow-hidden">
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+                  <Dialog.Title className="text-base font-semibold text-gray-900">
+                    Processed Modes: A, A+ and B
+                  </Dialog.Title>
+                  <button onClick={onClose} className="rounded-md p-1 text-gray-500 hover:bg-gray-100">
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-sm text-gray-600 mb-4">
+                    Each Processed dataset is 384×384 PNGs ready for the
+                    classifier. The three configurations below differ in how
+                    physical size is exposed to the model. <strong>Mode A+ is
+                    not a separate Emit button</strong> — it reuses the Mode
+                    A dataset and flips the <em>Input mode</em> on the
+                    training launch dialog to <em>image + size scalars</em>.
+                    Plan to run one training session per mode against the
+                    same dataset for the paper&apos;s head-to-head comparison.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {modes.map(m => (
+                      <div key={m.key} className={`rounded-lg border ${m.tone} px-4 py-3`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`inline-flex items-center justify-center rounded-md px-2 py-0.5 text-xs font-bold ${m.chip}`}>{m.key}</span>
+                          <h3 className="text-sm font-semibold text-gray-900">{m.title}</h3>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">{m.subtitle}</p>
+                        <dl className="space-y-2 text-xs">
+                          <div>
+                            <dt className="font-semibold text-gray-700">Emit step</dt>
+                            <dd className="text-gray-600">{m.emit}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-gray-700">Training step</dt>
+                            <dd className="text-gray-600">{m.training}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-gray-700">Pixels</dt>
+                            <dd className="text-gray-600">{m.pixels}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-gray-700">Detail</dt>
+                            <dd className="text-gray-600">{m.detail}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-gray-700">Size info</dt>
+                            <dd className="text-gray-600">{m.size}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-semibold text-gray-700">When to use</dt>
+                            <dd className="text-gray-600">{m.use}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 rounded-md bg-gray-50 ring-1 ring-gray-200 px-3 py-2 text-xs text-gray-600">
+                    <strong>Tip.</strong> For the paper, emit both Mode A and
+                    Mode B once. Then launch three training sessions on the
+                    same backbone / seed / epochs: Mode A image_only, Mode A
+                    image_plus_size (= Mode A+), and Mode B image_only. The
+                    confusion matrices for those three runs are the figure.
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-5 py-3 flex justify-end border-t border-gray-200">
+                  <button onClick={onClose} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
+                    Got it
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </div>
+      </Dialog>
+    </Transition.Root>
   );
 }
 
