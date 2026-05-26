@@ -191,7 +191,7 @@ export default function AddSession({ isOpen, onClose }) {
                           <option value="image_plus_size">Image + size scalars — multi-input (pixels + length, width, area, completeness in mm)</option>
                         </select>
                         <p className="mt-1 text-xs text-gray-500">
-                          Image + size requires the dataset to have mm measurements populated (run Calibrate first on the source dataset before emitting PROCESSED). Mode A + image+size lets the model learn from physical size while keeping image detail. For paper comparisons, train one run per input mode against the same dataset.
+                          Image + size requires the dataset to have mm measurements populated (run Calibrate first on the source dataset before emitting a Processed derivative). Mode A + image+size lets the model learn from physical size while keeping image detail. For paper comparisons, train one run per input mode against the same dataset.
                         </p>
                       </div>
 

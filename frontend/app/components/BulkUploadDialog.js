@@ -233,7 +233,7 @@ export default function BulkUploadDialog({ isOpen, onClose, datasetId }) {
                 <div className="px-6 py-5">
                   {preserveOriginal && (
                     <div className="mb-4 rounded-md bg-blue-50 p-3 text-sm text-blue-800">
-                      <strong>Original resolution dataset.</strong> Images will be saved at full resolution (no resize, no crop). Per-file limit: {maxFileSizeMb} MB. This is the right mode for Phase 2 source uploads (RAW or MASKED photos with a scale bar visible).
+                      <strong>Original resolution dataset.</strong> Images will be saved at full resolution (no resize, no crop). Per-file limit: {maxFileSizeMb} MB. This is the right mode for Phase 2 source uploads (Raw or Masked photos with a scale bar visible).
                     </div>
                   )}
                   {/* Alert */}

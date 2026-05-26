@@ -357,10 +357,10 @@ export default function DatasetDetail() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        showStatus('success', `Queued PROCESSED Mode ${mode}. A new derived dataset will appear in the Datasets list when the task finishes.`);
+        showStatus('success', `Queued Processed Mode ${mode}. A new derived dataset will appear in the Datasets list when the task finishes.`);
       } else {
         const data = await res.json().catch(() => ({}));
-        showStatus('error', data.message || data.error || `Failed to queue PROCESSED Mode ${mode}`);
+        showStatus('error', data.message || data.error || `Failed to queue Processed Mode ${mode}`);
       }
     } catch (e) {
       console.error('Failed to queue emit_processed:', e);
@@ -1117,7 +1117,7 @@ export default function DatasetDetail() {
                   {canSeeSyntheticTools && !dataset?.synthetic && (
                     <>
                       <div className="border-t border-gray-100 my-1" />
-                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Emit PROCESSED</p>
+                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Emit Processed</p>
                       <button
                         onClick={() => {
                           setShowActionsMenu(false);
@@ -1126,7 +1126,7 @@ export default function DatasetDetail() {
                         disabled={emittingProcessed}
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
-                        Emit PROCESSED Mode A (uniform)
+                        Emit Processed Mode A (uniform)
                       </button>
                       <button
                         onClick={() => {
@@ -1137,7 +1137,7 @@ export default function DatasetDetail() {
                         disabled={emittingProcessed}
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
-                        Emit PROCESSED Mode B (scale-preserving)
+                        Emit Processed Mode B (scale-preserving)
                       </button>
                     </>
                   )}
@@ -1591,23 +1591,23 @@ export default function DatasetDetail() {
         onClose={() => setShowRunOcrConfirm(false)}
         onConfirm={() => handleRunOcr()}
         title="Run FLMNH Label OCR?"
-        description={`This runs Tesseract OCR on every image in "${dataset?.name}" and parses the printed catalog label into museum_specimen_id, species, completeness category, locality, formation, age, collector, and date. Best on RAW images that still show the label. MASKED images and images without a label blob are skipped quietly.`}
+        description={`This runs Tesseract OCR on every image in "${dataset?.name}" and parses the printed catalog label into museum_specimen_id, species, completeness category, locality, formation, age, collector, and date. Best on Raw images that still show the label. Masked images and images without a label blob are skipped quietly.`}
         confirmLabel={runningOcr ? 'Queueing...' : 'Run OCR'}
         confirmTone="primary"
       />
 
-      {/* Emit PROCESSED Mode A confirmation */}
+      {/* Emit Processed Mode A confirmation */}
       <ConfirmDialog
         isOpen={showEmitModeAConfirm}
         onClose={() => setShowEmitModeAConfirm(false)}
         onConfirm={() => handleEmitProcessed('A')}
-        title="Emit PROCESSED Mode A?"
+        title="Emit Processed Mode A?"
         description={`Produces a new derived dataset of 384x384 PNGs from "${dataset?.name}". Mode A is the Phase I uniform-pixel-density layout: each tooth is rescaled to fill the canvas, the scale bar is cropped out. Absolute physical size is NOT preserved in the output.`}
         confirmLabel={emittingProcessed ? 'Queueing...' : 'Emit Mode A'}
         confirmTone="primary"
       />
 
-      {/* Emit PROCESSED Mode B dialog */}
+      {/* Emit Processed Mode B dialog */}
       <Transition.Root show={showEmitModeBDialog} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setShowEmitModeBDialog(false)}>
           <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-200" leaveFrom="opacity-100" leaveTo="opacity-0">
@@ -1617,7 +1617,7 @@ export default function DatasetDetail() {
             <div className="flex min-h-full items-center justify-center p-4">
               <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl p-6">
                 <Dialog.Title className="text-lg font-semibold text-gray-900">
-                  Emit PROCESSED Mode B (scale-preserving)
+                  Emit Processed Mode B (scale-preserving)
                 </Dialog.Title>
                 <p className="mt-1 text-sm text-gray-500">
                   Mode B keeps 1 mm equal to the same number of output pixels in every image, regardless of the source photo&apos;s zoom level. Small teeth occupy a proportionally smaller fraction of the canvas. The source dataset must already be calibrated (mm/px populated on every image).
@@ -2128,7 +2128,7 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
       <div className="flex items-center justify-between gap-2 mb-4 overflow-x-auto pb-2">
         <Step icon={stepIcon(stepUpload)} dot={stepDot(stepUpload)} label="Upload"     value={`${total} image${total !== 1 ? 's' : ''}`} active={nextStep === 'upload'} />
         <StepLine />
-        <Step icon={stepIcon(stepOcr)}    dot={stepDot(stepOcr)}    label="OCR"        value={ocrEligible === 0 ? 'n/a' : `${ocr}/${ocrEligible} RAW`} active={nextStep === 'ocr'} />
+        <Step icon={stepIcon(stepOcr)}    dot={stepDot(stepOcr)}    label="OCR"        value={ocrEligible === 0 ? 'n/a' : `${ocr}/${ocrEligible} Raw`} active={nextStep === 'ocr'} />
         <StepLine />
         <Step icon={stepIcon(stepCal)}    dot={stepDot(stepCal)}    label="Calibrate"  value={calibEligible === 0 ? 'n/a' : `${cal}/${calibEligible}`} active={nextStep === 'cal'} />
         <StepLine />
@@ -2141,11 +2141,11 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
       {(sourceKinds.raw > 0 || sourceKinds.masked > 0 || sourceKinds.unknown > 0) && (
         <div className="mb-3 text-[11px] text-gray-500">
           Image kinds:
-          {sourceKinds.raw > 0    && <> <span className="font-medium text-gray-700">{sourceKinds.raw} RAW</span></>}
-          {sourceKinds.masked > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.masked} MASKED</span></>}
-          {sourceKinds.processed > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.processed} PROCESSED</span></>}
+          {sourceKinds.raw > 0    && <> <span className="font-medium text-gray-700">{sourceKinds.raw} Raw</span></>}
+          {sourceKinds.masked > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.masked} Masked</span></>}
+          {sourceKinds.processed > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.processed} Processed</span></>}
           {sourceKinds.unknown > 0 && <> · <span className="font-medium text-gray-700">{sourceKinds.unknown} unknown</span></>}
-          <span className="text-gray-400"> · OCR applies to RAW only · Calibration applies to RAW + MASKED</span>
+          <span className="text-gray-400"> · OCR applies to Raw only · Calibration applies to Raw + Masked</span>
         </div>
       )}
 
@@ -2180,7 +2180,7 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
         )}
         {nextStep === 'emit' && (
           <>
-            <span className="text-sm text-gray-700">Next: <strong>Emit PROCESSED datasets</strong> for model training.</span>
+            <span className="text-sm text-gray-700">Next: <strong>Emit Processed datasets</strong> for model training.</span>
             <div className="ml-auto flex gap-2">
               <button onClick={onEmitModeA} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">Emit Mode A</button>
               <button onClick={onEmitModeB} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Emit Mode B</button>
