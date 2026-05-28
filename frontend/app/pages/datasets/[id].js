@@ -133,6 +133,8 @@ export default function DatasetDetail() {
   const [showParamHelp, setShowParamHelp] = useState(false);
   const [completenessMetric, setCompletenessMetric] = useState('px');
   const [emittingProcessed, setEmittingProcessed] = useState(false);
+  const [buildingBrokennessRef, setBuildingBrokennessRef] = useState(false);
+  const [computingBrokenness, setComputingBrokenness] = useState(false);
   const [showEmitModeBDialog, setShowEmitModeBDialog] = useState(false);
   const [emitModeBPxPerMm, setEmitModeBPxPerMm] = useState(6.0);
   const [runningOcr, setRunningOcr] = useState(false);
@@ -370,6 +372,54 @@ export default function DatasetDetail() {
       setEmittingProcessed(false);
       setShowEmitModeBDialog(false);
       setShowEmitModeAConfirm(false);
+    }
+  };
+
+  const handleBuildBrokennessReference = async () => {
+    setBuildingBrokennessRef(true);
+    try {
+      const res = await fetch(`/api/datasets/dataset/${id}/build-brokenness-reference`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        showStatus('success', "Queued Kathie's mean-mask reference build. Per-species artifacts will land under mediafiles/brokenness_reference/ when done.");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showStatus('error', data.message || data.error || 'Failed to queue brokenness reference build');
+      }
+    } catch (e) {
+      console.error('Failed to queue brokenness reference build:', e);
+      showStatus('error', 'Failed to queue brokenness reference build');
+    } finally {
+      setBuildingBrokennessRef(false);
+    }
+  };
+
+  const handleComputeBrokenness = async () => {
+    setComputingBrokenness(true);
+    try {
+      const body = {};
+      if (referenceDatasetId) {
+        body.reference_dataset_id = parseInt(referenceDatasetId);
+      }
+      const res = await fetch(`/api/datasets/dataset/${id}/compute-brokenness`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        showStatus('success', "Queued Kathie's brokenness pass. percent_broken and the overlay will populate on each image as the task progresses.");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showStatus('error', data.message || data.error || 'Failed to queue brokenness pass');
+      }
+    } catch (e) {
+      console.error('Failed to queue brokenness pass:', e);
+      showStatus('error', 'Failed to queue brokenness pass');
+    } finally {
+      setComputingBrokenness(false);
     }
   };
 
@@ -843,6 +893,66 @@ export default function DatasetDetail() {
                             </dd>
                           </div>
                         )}
+                        {activeImage.percent_broken != null && (
+                          <div>
+                            <dt className="font-medium text-gray-500">Brokenness (Kathie&apos;s method, chained)</dt>
+                            <dd className="text-gray-900">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                                activeImage.percent_broken < 20 ? 'bg-green-50 text-green-800 ring-green-300' :
+                                activeImage.percent_broken < 50 ? 'bg-amber-50 text-amber-800 ring-amber-300' :
+                                'bg-red-50 text-red-800 ring-red-300'
+                              }`}>
+                                {activeImage.percent_broken.toFixed(1)}% broken
+                              </span>
+                              <span className="ml-2 text-xs text-gray-400">combined</span>
+                              {activeImage.brokenness_meta && (
+                                <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-gray-600">
+                                  {activeImage.brokenness_meta.shape_pct_broken != null && (
+                                    <>
+                                      <span className="text-gray-400">shape (alignment):</span>
+                                      <span className="font-medium">{activeImage.brokenness_meta.shape_pct_broken.toFixed(1)}%</span>
+                                    </>
+                                  )}
+                                  {activeImage.brokenness_meta.size_pct_broken != null && (
+                                    <>
+                                      <span className="text-gray-400">size (mm&sup2; ratio):</span>
+                                      <span className="font-medium">{activeImage.brokenness_meta.size_pct_broken.toFixed(1)}%</span>
+                                    </>
+                                  )}
+                                  {activeImage.brokenness_meta.quantile != null && (
+                                    <>
+                                      <span className="text-gray-400">aspect quantile:</span>
+                                      <span className="font-medium">Q{activeImage.brokenness_meta.quantile}</span>
+                                    </>
+                                  )}
+                                  {activeImage.brokenness_meta.iou_score != null && (
+                                    <>
+                                      <span className="text-gray-400">alignment IoU:</span>
+                                      <span className="font-medium">{activeImage.brokenness_meta.iou_score.toFixed(2)}</span>
+                                    </>
+                                  )}
+                                  {activeImage.brokenness_meta.applied_canonical_rotation_deg != null && (
+                                    <>
+                                      <span className="text-gray-400">pre-rotation:</span>
+                                      <span className="font-medium">{activeImage.brokenness_meta.applied_canonical_rotation_deg.toFixed(1)}&deg;</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {activeImage.brokenness_overlay_url && (
+                                <div className="mt-1.5">
+                                  <img
+                                    src={activeImage.brokenness_overlay_url}
+                                    alt="mean-shape brokenness overlay"
+                                    className="rounded ring-1 ring-gray-200"
+                                    style={{ width: 128, height: 128 }}
+                                  />
+                                  <div className="text-[10px] text-gray-400 mt-0.5">gray = mean shape &middot; green = tooth present</div>
+                                </div>
+                              )}
+                            </dd>
+                          </div>
+                        )}
                         {activeImage.mm_per_pixel != null && (
                           <div>
                             <dt className="font-medium text-gray-500">Scale Calibration</dt>
@@ -1139,6 +1249,34 @@ export default function DatasetDetail() {
                         className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         Emit Processed Mode B (scale-preserving)
+                      </button>
+                    </>
+                  )}
+                  {canSeeSyntheticTools && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        Brokenness (Kathie&apos;s method)
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          handleBuildBrokennessReference();
+                        }}
+                        disabled={buildingBrokennessRef}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Build mean-mask reference
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowActionsMenu(false);
+                          handleComputeBrokenness();
+                        }}
+                        disabled={computingBrokenness}
+                        className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Compute percent broken
                       </button>
                     </>
                   )}
@@ -2239,8 +2377,7 @@ function ModesHelpDialog({ open, onClose }) {
       training: 'Input mode: image_only',
       pixels: 'Each tooth is rescaled to fill the 384×384 canvas. Scale bar is cropped out.',
       detail: 'Detail preserved on every tooth, big or small.',
-      size: 'Absolute physical size is LOST. The model cannot tell a small Galeocerdo from a megalodon by size.',
-      use: 'Reproduces the Phase I baseline. Use as the head-to-head reference.',
+      size: 'Absolute physical size is lost. The model cannot tell a small Galeocerdo from a Megalodon by size.',
       tone: 'border-blue-200 bg-blue-50',
       chip: 'bg-blue-600 text-white',
     },
@@ -2252,8 +2389,7 @@ function ModesHelpDialog({ open, onClose }) {
       training: 'Input mode: image_plus_size',
       pixels: 'Same Mode A images. The model also receives a 4-dim scalar vector [length, width, area, completeness] in mm per image.',
       detail: 'Detail preserved (Mode A image).',
-      size: 'Restored as a separate input head — the model sees absolute size without sacrificing pixel detail.',
-      use: 'The intended Phase 2 setup. Requires the source dataset to be calibrated before emitting.',
+      size: 'Restored as a separate input head, the model sees absolute size without sacrificing pixel detail.',
       tone: 'border-violet-200 bg-violet-50',
       chip: 'bg-violet-600 text-white',
     },
@@ -2266,7 +2402,6 @@ function ModesHelpDialog({ open, onClose }) {
       pixels: '1 mm in the output equals a fixed number of pixels (default 6 px/mm). A small tooth fills a small region of the canvas.',
       detail: 'Detail is downsampled for small teeth (a close-up of a 15 mm tooth gets shrunk to fit the fixed mm/px ratio).',
       size: 'Encoded in canvas occupancy. The model can infer size by how much of the frame the tooth covers.',
-      use: 'Alternative way to expose size. Worth keeping in the paper as a comparison; reviewers will ask.',
       tone: 'border-amber-200 bg-amber-50',
       chip: 'bg-amber-600 text-white',
     },
@@ -2297,12 +2432,7 @@ function ModesHelpDialog({ open, onClose }) {
                   <p className="text-sm text-gray-600 mb-4">
                     Each Processed dataset is 384×384 PNGs ready for the
                     classifier. The three configurations below differ in how
-                    physical size is exposed to the model. <strong>Mode A+ is
-                    not a separate Emit button</strong> — it reuses the Mode
-                    A dataset and flips the <em>Input mode</em> on the
-                    training launch dialog to <em>image + size scalars</em>.
-                    Plan to run one training session per mode against the
-                    same dataset for the paper&apos;s head-to-head comparison.
+                    physical size is exposed to the model.
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {modes.map(m => (
@@ -2333,20 +2463,9 @@ function ModesHelpDialog({ open, onClose }) {
                             <dt className="font-semibold text-gray-700">Size info</dt>
                             <dd className="text-gray-600">{m.size}</dd>
                           </div>
-                          <div>
-                            <dt className="font-semibold text-gray-700">When to use</dt>
-                            <dd className="text-gray-600">{m.use}</dd>
-                          </div>
                         </dl>
                       </div>
                     ))}
-                  </div>
-                  <div className="mt-4 rounded-md bg-gray-50 ring-1 ring-gray-200 px-3 py-2 text-xs text-gray-600">
-                    <strong>Tip.</strong> For the paper, emit both Mode A and
-                    Mode B once. Then launch three training sessions on the
-                    same backbone / seed / epochs: Mode A image_only, Mode A
-                    image_plus_size (= Mode A+), and Mode B image_only. The
-                    confusion matrices for those three runs are the figure.
                   </div>
                 </div>
                 <div className="bg-gray-50 px-5 py-3 flex justify-end border-t border-gray-200">

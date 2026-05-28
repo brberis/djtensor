@@ -29,6 +29,8 @@ from .tasks import (
     generate_synthetic_dataset,
     emit_processed_dataset,
     extract_museum_metadata_for_dataset,
+    build_brokenness_reference_for_dataset,
+    compute_brokenness_for_dataset,
 )
 from .synthetic_fracture import load_fracture_profiles
 from .image_resize import resize_to_dataset, get_target_resolution
@@ -176,6 +178,43 @@ class DatasetViewSet(viewsets.ModelViewSet):
             dataset.id, reference_dataset_id, assumed_tick_spacing_mm=assumed_tick_mm,
         )
         return Response({'status': 'queued', 'dataset': dataset.name, 'metric': 'mm2'}, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='build-brokenness-reference')
+    def build_brokenness_reference(self, request, pk=None):
+        """Build Katie's per-species mean-mask reference assets for this dataset.
+
+        Optional body params:
+          n_quantiles: int, default 4
+          threshold:   float, default 0.2
+        """
+        dataset = self.get_object()
+        try:
+            n_quantiles = int(request.data.get('n_quantiles', 4))
+            threshold = float(request.data.get('threshold', 0.2))
+        except (TypeError, ValueError):
+            return Response({'error': 'invalid numeric parameter'}, status=status.HTTP_400_BAD_REQUEST)
+        build_brokenness_reference_for_dataset.delay(dataset.id, n_quantiles=n_quantiles, threshold=threshold)
+        return Response(
+            {'status': 'queued', 'dataset': dataset.name, 'task': 'build_brokenness_reference',
+             'n_quantiles': n_quantiles, 'threshold': threshold},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='compute-brokenness')
+    def compute_brokenness(self, request, pk=None):
+        """Run Katie's mean-shape brokenness pass on every image in this dataset.
+
+        Optional body params:
+          reference_dataset_id: int (defaults to this dataset)
+        """
+        dataset = self.get_object()
+        ref_id = request.data.get('reference_dataset_id')
+        compute_brokenness_for_dataset.delay(dataset.id, ref_id)
+        return Response(
+            {'status': 'queued', 'dataset': dataset.name, 'task': 'compute_brokenness',
+             'reference_dataset_id': ref_id or dataset.id},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-queue')
     def review_queue(self, request, pk=None):

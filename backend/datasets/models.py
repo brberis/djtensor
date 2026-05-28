@@ -116,6 +116,16 @@ class Image(models.Model):
     tooth_minor_axis_mm = models.FloatField(null=True, blank=True)
     completeness_mm2 = models.FloatField(null=True, blank=True)
 
+    # Phase 2: mean-shape brokenness metric (Katie's method, see
+    # datasets/brokenness/). Parallel to completeness_mm2 -- both stored
+    # so the paper can compare them. percent_broken is a 0..100 float:
+    # fraction of the per-species mean-mask footprint that's missing
+    # from the aligned query tooth. brokenness_meta carries the
+    # alignment info (best angle/shift/flipped/IoU + chosen quantile).
+    percent_broken = models.FloatField(null=True, blank=True)
+    brokenness_overlay_url = models.CharField(max_length=255, null=True, blank=True)
+    brokenness_meta = models.JSONField(null=True, blank=True)
+
     # Phase 2: provenance kind. Distinguishes images straight from Alexa's
     # camera (carry catalog label + scale bar + background) from her
     # pre-processed versions (background removed, catalog label dropped)

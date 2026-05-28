@@ -67,6 +67,7 @@ class ImageSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     source_image_data = serializers.SerializerMethodField()
     label_name = serializers.CharField(source='label.name', read_only=True, default=None)
+    brokenness_overlay_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Image
@@ -126,6 +127,27 @@ class ImageSerializer(serializers.ModelSerializer):
         try:
             mtime = int(os.path.getmtime(obj.image.path))
             url += "?v=" + str(mtime)
+        except Exception:
+            pass
+        return url
+
+    def get_brokenness_overlay_url(self, obj):
+        """Append the file mtime as a cache-busting query string so that
+        regenerated overlays are picked up immediately by browsers AND
+        Cloudflare edge cache (which otherwise holds the previous PNG
+        for up to 4 hours under our current cache-control header).
+        """
+        if not obj.brokenness_overlay_url:
+            return None
+        from django.conf import settings
+        import os
+        url = obj.brokenness_overlay_url
+        rel = url.replace(settings.MEDIA_URL.rstrip('/') + '/', '', 1)
+        fs_path = os.path.join(settings.MEDIA_ROOT, rel)
+        try:
+            mtime = int(os.path.getmtime(fs_path))
+            sep = '&' if '?' in url else '?'
+            url = f"{url}{sep}v={mtime}"
         except Exception:
             pass
         return url

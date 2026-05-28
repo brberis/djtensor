@@ -334,6 +334,272 @@ def compute_completeness_mm2_for_dataset(
 
 
 @shared_task
+def build_brokenness_reference_for_dataset(reference_dataset_id, n_quantiles=4, threshold=0.2):
+    """
+    Build per-species, per-aspect-quantile mean-mask artifacts for a
+    reference dataset using Katie's algorithm (datasets/brokenness/).
+
+    Artifacts go to
+        MEDIA_ROOT/brokenness_reference/<reference_dataset_id>/
+    as <species>_mean_mask_q{1..n}.png + outlines + quantile_edges.json.
+    These are the inputs the per-image compute_brokenness pass reads.
+
+    The reference dataset should be a PROCESSED (background-transparent
+    384x384) dataset: the algorithm reads each image's alpha channel as
+    the tooth mask.
+    """
+    from .models import Dataset, Image
+    from .brokenness import build_species_mean_masks
+
+    dataset = Dataset.objects.get(pk=reference_dataset_id)
+    images = Image.objects.filter(dataset=dataset).select_related('label')
+
+    species_to_paths = {}
+    for img in images:
+        if img.label is None or not img.image:
+            continue
+        # Skip synthetic derivatives so the reference reflects natural tooth shapes.
+        if img.source_image_id is not None:
+            continue
+        species_to_paths.setdefault(img.label.name, []).append(img.image.path)
+
+    out_dir = os.path.join(settings.MEDIA_ROOT, 'brokenness_reference', str(reference_dataset_id))
+    edges = build_species_mean_masks(
+        species_to_paths,
+        outdir=out_dir,
+        n_quantiles=n_quantiles,
+        threshold=threshold,
+    )
+    logger.info(
+        "Brokenness reference built for dataset %s: %d species, %d images, written to %s",
+        dataset.name, len(edges), sum(len(v) for v in species_to_paths.values()), out_dir,
+    )
+    return {'reference_dataset_id': reference_dataset_id, 'species_count': len(edges), 'outdir': out_dir}
+
+
+@shared_task
+def compute_brokenness_for_dataset(dataset_id, reference_dataset_id=None):
+    """
+    Per-image mean-shape brokenness pass. Runs Katie's algorithm
+    (datasets/brokenness/) to get a shape-based score, then alongside it
+    computes a size-based score from our scale-bar calibration's mm² area
+    vs the species mean in mm². The two are combined as max(shape, size)
+    and stored on Image.percent_broken. Both component scores plus the
+    alignment metadata land in Image.brokenness_meta so the paper can
+    analyze them separately.
+
+    Pipeline:
+      1. For each image, read the binary tooth mask (alpha for MASKED
+         inputs, our segment_tooth fallback for RGB-only Mode A inputs).
+      2. Look up the species mean-mask for the right aspect quantile.
+      3. Call brokenness.estimate_brokenness_from_arrays() -- Katie's
+         pure notebook algorithm. Returns shape % broken + overlay.
+      4. Look up species mean tooth area in mm² (preferring
+         SpeciesReferenceArea, falling back to any dataset's
+         tooth_area_mm² average if needed) and compute size % broken.
+      5. Combined = max(shape, size).
+      6. Draw the mean-shape contour line on top of Katie's overlay so
+         the team can see the archetype boundary even when the fragment
+         covers it. Visualization-only -- doesn't affect any metric.
+
+    If reference_dataset_id is None, defaults to the target dataset.
+    """
+    import json as _json
+    import numpy as _np
+    from PIL import Image as PILImage
+    from .models import Dataset, Image, SpeciesReferenceArea
+    from .brokenness import (
+        load_mask, get_aspect_ratio, get_quantile_index,
+        estimate_brokenness_from_arrays,
+        normalize,
+    )
+    import cv2 as _cv2
+
+    dataset = Dataset.objects.get(pk=dataset_id)
+    ref_id = reference_dataset_id or dataset_id
+    ref_dir = os.path.join(settings.MEDIA_ROOT, 'brokenness_reference', str(ref_id))
+    edges_path = os.path.join(ref_dir, 'quantile_edges.json')
+
+    if not os.path.exists(edges_path):
+        logger.info(
+            "Brokenness reference missing for dataset %s; building it now.", ref_id,
+        )
+        build_brokenness_reference_for_dataset(ref_id)
+
+    with open(edges_path) as f:
+        all_quantile_edges = _json.load(f)
+
+    overlays_dir = os.path.join(settings.MEDIA_ROOT, 'brokenness_overlays', str(dataset_id))
+    os.makedirs(overlays_dir, exist_ok=True)
+
+    # Build a species_mean_mm2 lookup keyed by label NAME so it crosses
+    # datasets (each dataset has its own Label rows, but mm² is mm² —
+    # an honest species-average in mm² from any dataset is usable here).
+    #
+    # Precedence:
+    #   1. SpeciesReferenceArea.avg_area_mm2 for the shape-reference dataset.
+    #   2. SpeciesReferenceArea.avg_area_mm2 for ANY other dataset (most-recent wins).
+    #   3. On-the-fly Avg(Image.tooth_area_mm2) over the shape-reference dataset.
+    #   4. On-the-fly Avg(Image.tooth_area_mm2) over the WHOLE Image table,
+    #      grouped by species name.
+    #
+    # This decouples the size-reference question from the shape-reference
+    # question: the size component lights up the moment any dataset
+    # anywhere has mm² populated for a given species. Once Dataset 72 gets
+    # mm² calibration (plan §8 item 8), it takes over via step 1.
+    from django.db.models import Avg as _Avg
+    species_mean_mm2_by_name = {}
+    sra_filters = [
+        ('shape_ref_dataset', SpeciesReferenceArea.objects.filter(dataset_id=ref_id)),
+        ('any_dataset', SpeciesReferenceArea.objects.all()),
+    ]
+    for _label, qs in sra_filters:
+        for sra in qs.select_related('label'):
+            if sra.avg_area_mm2 and sra.label.name not in species_mean_mm2_by_name:
+                species_mean_mm2_by_name[sra.label.name] = float(sra.avg_area_mm2)
+    img_filters = [
+        ('shape_ref_dataset', Image.objects.filter(dataset_id=ref_id, tooth_area_mm2__isnull=False)),
+        ('any_dataset', Image.objects.filter(tooth_area_mm2__isnull=False)),
+    ]
+    for _label, qs in img_filters:
+        for row in qs.values('label__name').annotate(avg=_Avg('tooth_area_mm2')):
+            name = row['label__name']
+            if name and name not in species_mean_mm2_by_name:
+                species_mean_mm2_by_name[name] = float(row['avg'])
+
+    target_images = Image.objects.filter(dataset=dataset).select_related('label')
+    written = 0
+    skipped = 0
+    for img in target_images:
+        if img.label is None or not img.image:
+            skipped += 1
+            continue
+        species_name = img.label.name
+        if species_name not in all_quantile_edges:
+            skipped += 1
+            continue
+
+        try:
+            # Pick the right file to feed into Kathie's algorithm.
+            #
+            # For RAW images, segment_tooth on the full frame returns a
+            # huge mask (tooth + scale bar + label merged into one
+            # foreground blob). We have a tight tooth-only mask saved
+            # during the mm² calibration pass at Image.tooth_mask_url --
+            # use that for RAW inputs.
+            #
+            # For PROCESSED Mode A images, the file is RGB-only (no
+            # alpha), so load_mask falls back to segment_tooth on the
+            # PROCESSED PNG. That works OK for Mode A outputs derived
+            # from MASKED sources (clean tooth-vs-black boundary), but
+            # produces an over-segmented mask on Mode A outputs derived
+            # from RAW sources (tooth edges blend into surrounding
+            # context). If the file is RAW_<x>.png, look for the
+            # sibling MASKED_<x>.png in the same dataset and use that
+            # one instead -- same physical tooth, cleaner boundary.
+            #
+            # For MASKED source images, the source PNG itself is
+            # correct (alpha is meaningful).
+            input_path = img.image.path
+            if img.source_kind == 'raw' and img.tooth_mask_url:
+                rel = img.tooth_mask_url.replace(settings.MEDIA_URL.rstrip('/') + '/', '', 1)
+                candidate = os.path.join(settings.MEDIA_ROOT, rel)
+                if os.path.exists(candidate):
+                    input_path = candidate
+            elif img.source_kind == 'processed':
+                fname = os.path.basename(img.image.name)
+                if fname.startswith('RAW_'):
+                    sibling_name = 'MASKED_' + fname[len('RAW_'):]
+                    sibling = Image.objects.filter(
+                        dataset_id=img.dataset_id,
+                        image__endswith='/' + sibling_name,
+                    ).first()
+                    if sibling and os.path.exists(sibling.image.path):
+                        input_path = sibling.image.path
+            tooth_mask = load_mask(input_path)
+            tooth_rgba = _np.array(PILImage.open(input_path).convert('RGBA'))
+            # Force the RGBA alpha to match the segmented mask. Source PNGs
+            # from Mode A emit are RGB-only -> PIL synthesises a fully
+            # opaque alpha, which would make the overlay blend the texture
+            # across the entire canvas. Keeping mask and alpha in lock-step
+            # also removes the interpolation halo around the tooth edge.
+            tooth_rgba[:, :, 3] = (tooth_mask > 0).astype('uint8') * 255
+            aspect = get_aspect_ratio(tooth_mask)
+            quantile_edges = _np.array(all_quantile_edges[species_name])
+            q_idx = get_quantile_index(aspect, quantile_edges)
+            mean_mask_path = os.path.join(ref_dir, f'{species_name}_mean_mask_q{q_idx}.png')
+            mean_raw = _cv2.imread(mean_mask_path, _cv2.IMREAD_GRAYSCALE)
+            if mean_raw is None:
+                skipped += 1
+                continue
+            mean_binary = (mean_raw > 127).astype('uint8')
+
+            # Step 3: Katie's pure algorithm computes the shape score.
+            shape_pct, overlay_rgb, info = estimate_brokenness_from_arrays(
+                tooth_mask, tooth_rgba, mean_binary,
+            )
+
+            # Step 4: size score from mm² calibration (our chained sidecar).
+            # Independent of Katie's algorithm; lives only in this task layer.
+            species_mean_mm2 = species_mean_mm2_by_name.get(species_name)
+            size_pct = None
+            area_ratio = None
+            if img.tooth_area_mm2 is not None and species_mean_mm2 and species_mean_mm2 > 0:
+                area_ratio = float(img.tooth_area_mm2) / float(species_mean_mm2)
+                size_pct = max(0.0, min(100.0, (1.0 - area_ratio) * 100.0))
+
+            # Step 5: combined = worse of the two (broken if either signal says so).
+            combined_pct = shape_pct if size_pct is None else max(shape_pct, size_pct)
+
+            # Step 6: viz-only -- draw the mean-shape contour on top of Katie's
+            # overlay + tighten the green edge by 1 px so the linear-interp
+            # halo from warpAffine doesn't bleed into the visualization. Both
+            # are visualization-only; the math above is untouched.
+            mean_256 = normalize(mean_binary.astype('uint8'), target_size=256, interpolation=_cv2.INTER_NEAREST)
+            mean_contours, _ = _cv2.findContours(mean_256, _cv2.RETR_EXTERNAL, _cv2.CHAIN_APPROX_NONE)
+            _cv2.drawContours(overlay_rgb, mean_contours, -1, (180, 30, 30), thickness=1)
+        except Exception as exc:
+            logger.warning(f"brokenness failed for image {img.id}: {exc}")
+            skipped += 1
+            continue
+
+        overlay_filename = f'{img.id}_brokenness.png'
+        overlay_path = os.path.join(overlays_dir, overlay_filename)
+        try:
+            PILImage.fromarray(overlay_rgb, 'RGB').save(overlay_path, 'PNG', optimize=True)
+            rel = os.path.relpath(overlay_path, settings.MEDIA_ROOT)
+            overlay_url = settings.MEDIA_URL.rstrip('/') + '/' + rel.replace(os.sep, '/')
+        except Exception as exc:
+            logger.warning(f"failed to save brokenness overlay for image {img.id}: {exc}")
+            overlay_url = None
+
+        img.percent_broken = float(combined_pct)
+        img.brokenness_overlay_url = overlay_url
+        img.brokenness_meta = {
+            'species': species_name,
+            'quantile': int(q_idx),
+            'aspect_ratio': round(float(aspect), 4),
+            'reference_dataset_id': int(ref_id),
+            'shape_pct_broken': float(shape_pct),
+            'size_pct_broken': float(size_pct) if size_pct is not None else None,
+            'combined_pct_broken': float(combined_pct),
+            'area_ratio': float(area_ratio) if area_ratio is not None else None,
+            'tooth_area_mm2': float(img.tooth_area_mm2) if img.tooth_area_mm2 is not None else None,
+            'species_mean_mm2': float(species_mean_mm2) if species_mean_mm2 else None,
+            **info,
+        }
+        img.save(update_fields=['percent_broken', 'brokenness_overlay_url', 'brokenness_meta'])
+        written += 1
+
+    logger.info(
+        "Brokenness computed for %d images (skipped %d) in dataset %s "
+        "(reference dataset %s)",
+        written, skipped, dataset.name, ref_id,
+    )
+    return {'written': written, 'skipped': skipped, 'reference_dataset_id': ref_id}
+
+
+@shared_task
 def extract_museum_metadata_for_dataset(dataset_id):
     """
     Phase 2 OCR pass.
