@@ -1,0 +1,144 @@
+# Shark AI — GB10 (arm64 / NVIDIA GB10 Grace-Blackwell) deployment.
+# Derived from docker-compose.prod.yml with three classes of change for GB10:
+#   1. backend + celery_worker build the arm64/NGC image (Dockerfile.prod.arm64)
+#   2. GPU access uses the nvidia-container-toolkit device-request path
+#      (deploy.resources...devices) — the legacy `runtime: nvidia` is NOT
+#      registered on GB10 (its Docker uses runc + the toolkit, like the vLLM stack)
+#   3. host-port conflicts removed: redis no longer publishes 6379 (GB10 already
+#      runs one), and nginx listens on 127.0.0.1:8330 for the Cloudflare tunnel
+#      instead of binding 80/443 (the tunnel terminates TLS).
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod.arm64
+    command: /bin/sh -c "sleep 5 &&
+                    python manage.py makemigrations --noinput &&
+                    python manage.py migrate --noinput &&
+                    python manage.py shell -c \"from django.contrib.auth.models import User; User.objects.filter(username='testuser').exists() or User.objects.create_superuser('testuser', 'testuser@example.com', 'testpassword')\" &&
+                    python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles
+      - ./backend/:/usr/src/app/
+      # Read-only overlay of the host's newer CUDA 13 ptxas over the NGC image's
+      # CUDA 12.8 ptxas (which is "too old" for the GB10's sm_121 / Blackwell).
+      # Host file is untouched; the NVIDIA driver is NOT modified; nothing else
+      # on GB10 (vLLM, Rocky, etc.) is affected — this mount is container-scoped.
+      - /usr/local/cuda/bin/ptxas:/usr/local/cuda/bin/ptxas:ro
+    expose:
+      - 8000
+    env_file:
+      - ./.env.prod
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - backend
+
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=backend
+      - POSTGRES_PASSWORD=backend
+      - POSTGRES_DB=backend_prod
+    restart: unless-stopped
+    networks:
+      - backend
+
+  redis:
+    image: redis
+    # NOTE: no host port published — GB10 already runs a redis on 6379.
+    # The stack reaches this one internally as redis:6379 on the compose network.
+    restart: unless-stopped
+    networks:
+      - backend
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod.arm64
+    command: celery -A celery_app worker --loglevel=info --max-tasks-per-child=1
+    env_file:
+      - ./.env.prod
+    depends_on:
+      - db
+      - redis
+    environment:
+      - CELERYD_MAX_TASKS_PER_CHILD=1
+      - CELERYD_TASK_TIME_LIMIT=3600
+      - CELERYD_TASK_SOFT_TIME_LIMIT=3500
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      # CUDA/cuDNN paths are set by the NGC base image — do NOT override them here.
+    volumes:
+      - ./backend/:/usr/src/app/
+      - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles
+      # CUDA 13 ptxas overlay for the GB10 sm_121 GPU (read-only host file; driver
+      # untouched; container-scoped — see backend service note). Required for the
+      # training path (fused optimizer kernels) to compile on Blackwell.
+      - /usr/local/cuda/bin/ptxas:/usr/local/cuda/bin/ptxas:ro
+    deploy:
+      resources:
+        limits:
+          memory: 14g
+        reservations:
+          memory: 4g
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack:
+        soft: 67108864
+        hard: 67108864
+    networks:
+      - backend
+    restart: always
+
+  frontend:
+    build: ./frontend
+    command: npm run start
+    volumes:
+      - static_volume:/usr/src/app/.next/static
+    expose:
+      - 3000
+    env_file:
+      - ./.env.prod
+    restart: unless-stopped
+    networks:
+      - backend
+
+  nginx:
+    build: ./nginx
+    volumes:
+      - static_volume:/usr/src/app/staticfiles
+      - ./backend/mediafiles:/usr/src/app/mediafiles
+    ports:
+      # Cloudflare tunnel (cloudflared on GB10) points at this; TLS terminates
+      # at Cloudflare, so we bind loopback only and do not expose 443.
+      - "127.0.0.1:8330:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+  static_volume:
+
+networks:
+  backend:
+    driver: bridge

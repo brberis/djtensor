@@ -29,7 +29,10 @@ from PIL import Image as PILImage, ImageFile
 # pixel data is essentially complete. Without this flag, a single bad file
 # in remove_alpha() aborts the whole training run.
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-import tensorflow_addons as tfa
+try:
+    import tensorflow_addons as tfa
+except ImportError:
+    from feature_extractor.tfa_compat import tfa_compat as tfa
 import tensorflow.keras.backend as K
 import gc
 import shutil

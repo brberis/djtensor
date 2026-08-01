@@ -1,0 +1,33 @@
+# Shark AI — GB10 (arm64 / NVIDIA GB10 Grace-Blackwell) requirements.
+# TensorFlow + numpy + scipy are provided by the NGC base image
+# (nvcr.io/nvidia/tensorflow:*-tf2-py3) and MUST NOT be reinstalled/pinned here,
+# or we clobber the Blackwell-optimized CUDA build.
+#
+# Dropped vs requirements.txt:
+#   tensorflow==2.15.0        -> provided by NGC base (newer, Blackwell-capable)
+#   tensorflow-addons         -> EOL, no arm64 build; replaced by feature_extractor/tfa_compat.py
+#   numpy==1.23.5             -> provided by NGC (too old for the bundled TF anyway)
+#   scipy==1.13.1 / matplotlib pins kept loose so pip keeps NGC-compatible versions
+#
+# tf_keras is intentionally UNPINNED here; it is installed and pinned to the
+# bundled TF minor at build time (see Dockerfile.prod.arm64) so Keras-2 legacy
+# mode (TF_USE_LEGACY_KERAS=1) matches the TF that ships in the image.
+
+Django==4.2.3
+gunicorn==21.2.0
+# bumped from 2.9.6: that predates cp312 wheels, so pip fell back to an sdist that
+# fails egg_info on the NGC base's Python 3.12. 2.9.10 ships py3.12/aarch64 wheels.
+psycopg2-binary==2.9.10
+django-filter<25
+djangorestframework
+celery
+redis
+matplotlib==3.9.0
+pandas==2.2.2
+Pillow
+scikit-image==0.23.2
+opencv-python-headless==4.10.0.84
+async_timeout
+pytesseract==0.3.13
+tensorflow-hub==0.16.1
+tf-keras-vis

@@ -5,6 +5,16 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
+        hostname: "shark-ai.barberis.com",
+        pathname: "/media/**",
+      },
+      {
+        protocol: "http",
+        hostname: "shark-ai.barberis.com",
+        pathname: "/media/**",
+      },
+      {
+        protocol: "https",
         hostname: "shark-ai.adaptivecomputing.ai",
         pathname: "/media/**",
       },

@@ -1,0 +1,44 @@
+# Shark AI — backend + celery image for GB10 (arm64 / NVIDIA GB10 Grace-Blackwell).
+#
+# Re-based from `tensorflow/tensorflow:latest-gpu` — which is amd64-only, ships
+# TF 2.15 (pre-Blackwell), and cannot build or run on GB10 (aarch64) — onto
+# NVIDIA's NGC TensorFlow container, which publishes an arm64 image with a
+# Blackwell-capable CUDA/cuDNN/TF build.
+ARG NGC_TF=nvcr.io/nvidia/tensorflow:25.02-tf2-py3
+FROM ${NGC_TF}
+
+WORKDIR /usr/src/app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    TF_USE_LEGACY_KERAS=1
+
+RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
+
+# System deps carried over from the original Dockerfile.prod (NGC base is Ubuntu).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      postgresql-client \
+      netcat-openbsd \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
+# tensorflow-hub + tf-keras-vis and the existing SavedModels all require the
+# Keras-2 path (TF_USE_LEGACY_KERAS=1). Pin tf_keras to the TF minor that ships
+# in the base image so legacy Keras lines up with the bundled TensorFlow.
+RUN TF_VER="$(python -c 'import tensorflow as tf; print(tf.__version__)')" \
+    && echo "Base image TensorFlow: ${TF_VER}" \
+    && pip install --no-cache-dir "tf_keras==${TF_VER%.*}.*" \
+       || pip install --no-cache-dir tf_keras
+
+# Non-TF Python deps (TF/numpy/scipy come from the NGC base — see requirements.arm64.txt).
+COPY requirements.arm64.txt .
+RUN pip install --no-cache-dir -r requirements.arm64.txt
+
+COPY entrypoint.prod.sh .
+RUN sed -i 's/\r$//g' /usr/src/app/entrypoint.prod.sh \
+    && chmod +x /usr/src/app/entrypoint.prod.sh
+
+COPY . /usr/src/app
+
+ENTRYPOINT ["/usr/src/app/entrypoint.prod.sh"]

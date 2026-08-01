@@ -159,6 +159,7 @@ BASE_URL = os.getenv('DJANGO_BASE_URL', 'http://backend:8000/')
 
 
 CSRF_TRUSTED_ORIGINS = [os.environ.get("ORIGIN")]
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field

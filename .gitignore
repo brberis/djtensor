@@ -193,3 +193,7 @@ temp/
 *.bak
 *.bak.*
 backend/saliency_map_*.png
+
+# Local database dumps taken during the GB10 migration.
+backend_prod.sql.gz
+*.sql.gz
