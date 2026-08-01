@@ -210,13 +210,58 @@ def detect_scale_bar(
         bar_fill_threshold, bar_aspect_threshold, allow_unverified_ticks,
         tick_floor=_HISTORIC_TICK_FLOOR_PX)
     if strict.mm_per_pixel is not None:
-        return strict
+        return _gate_colour_calibration(strict)
 
     relaxed = _detect_scale_bar_with_floor(
         image_path, assumed_tick_spacing_mm, min_blob_area_px,
         bar_fill_threshold, bar_aspect_threshold, allow_unverified_ticks,
         tick_floor=None)
-    return relaxed if relaxed.mm_per_pixel is not None else strict
+    return _gate_colour_calibration(
+        relaxed if relaxed.mm_per_pixel is not None else strict)
+
+
+# A colour-mask calibration has to clear both of these to be believed.
+# Sized so the two known false-positive families cannot pass: the synthetic
+# training crops are 384x384, and the UI screenshots scored 0.38 to 0.58.
+_COLOUR_MIN_LONG_EDGE_PX = 1200
+_COLOUR_MIN_CONFIDENCE = 0.70
+
+
+def _gate_colour_calibration(result: 'ScaleBarResult') -> 'ScaleBarResult':
+    """Let a light-background frame calibrate only when the evidence is strong.
+
+    The colour-distance mask was originally forbidden from calibrating at all,
+    because letting it try produced 91 mm/px values that had never existed: 3
+    UI screenshots and 88 synthetic 384x384 training crops, where banding in
+    the mask merely resembled a ruler. Mode A+ feeds size in as a training
+    input, so a fabricated mm/px there is poison rather than noise.
+
+    A blanket ban was too coarse. The OMEG-KEMA specimens are photographed on
+    a light backdrop WITH a ruler in frame, and all 18 calibrate to within
+    0.8% of each other at confidence 0.94 or better - a fixed rig, measured
+    correctly, refused on a technicality.
+
+    The two false-positive families separate cleanly from real specimens on
+    size and confidence, so gate on those instead of on the mask source.
+    Anything that fails keeps its segmentation, so the reviewer still gets a
+    tooth outline to scale by hand.
+    """
+    if result.foreground_source != 'colour' or result.mm_per_pixel is None:
+        return result
+
+    long_edge = max(result.image_size) if result.image_size else 0
+    if long_edge >= _COLOUR_MIN_LONG_EDGE_PX and result.confidence >= _COLOUR_MIN_CONFIDENCE:
+        return result
+
+    result.mm_per_pixel = None
+    result.confidence = 0.0
+    result.calibration_method = 'none'
+    result.notes.append(
+        'light background: %s, so no automatic scale. Segmented for review; '
+        'set the scale manually.'
+        % ('image too small to trust' if long_edge < _COLOUR_MIN_LONG_EDGE_PX
+           else 'ruler evidence too weak'))
+    return result
 
 
 def _detect_scale_bar_with_floor(
@@ -270,24 +315,6 @@ def _detect_scale_bar_with_floor(
         foreground_source=foreground_source,
         blobs=blobs,
     )
-
-    # The colour-distance mask segments a subject from its backdrop; it does
-    # NOT license reading a ruler off that subject. Allowing it to produced 91
-    # calibrations that had never existed - 3 UI screenshots and 88 synthetic
-    # 384x384 training crops - where banding in the mask merely resembled a
-    # ruler. Those numbers are especially costly because Mode A+ feeds size in
-    # as a training input, so a fabricated mm/px is poison rather than noise.
-    #
-    # These frames never calibrated automatically before (they returned no
-    # mask at all), so declining here preserves the previous behaviour exactly
-    # while still handing the reviewer a tooth outline to scale by hand.
-    if foreground_source == 'colour':
-        tooth_candidates = [b for b in blobs if b.classification != 'scale_bar']
-        if tooth_candidates:
-            max(tooth_candidates, key=lambda b: b.area_px).classification = 'tooth'
-        result.notes.append(
-            'light background: segmented for review only, set the scale manually')
-        return result
 
     # Among the candidate scale-bar blobs, pick the one that actually
     # contains a detectable ruler pattern. The catalog label can also look
