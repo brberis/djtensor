@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # manual approval list even when nothing is broken.
 REVIEW_FLAGS = (
     'species_mismatch',
+    'low_resolution',
     'no_scale_bar',
     'out_of_range_completeness',
     'low_ocr_confidence',
@@ -44,6 +45,7 @@ REVIEW_FLAGS = (
 
 REVIEW_FLAG_LABELS = {
     'species_mismatch': 'OCR / folder species mismatch',
+    'low_resolution': 'Too low resolution to measure',
     'no_scale_bar': 'No scale bar detected',
     'out_of_range_completeness': 'Completeness out of range',
     'low_ocr_confidence': 'Low OCR confidence',
@@ -51,16 +53,41 @@ REVIEW_FLAG_LABELS = {
     'pending_review': 'Pending review',
 }
 
+# Long edge below which an image is treated as unmeasurable in principle.
+#
+# This is deliberately NOT the 2500 px ingest spec. That number describes how
+# much resolution a *wide* frame needs for its card to survive downscaling; it
+# says nothing about a tight crop, where the card can be large in the frame at
+# a much smaller pixel count. Using 2500 here mislabelled 65 UF studio crops
+# (median 1703 px) as "too low resolution" when their cards are perfectly
+# legible: UF233474 is 1500 px and calibrates to 22.0 mm on a card whose bands
+# are ~49 px wide, eight times the detector's minimum.
+#
+# 1200 px is where the evidence actually sits: across the full 2,638-image
+# census not one image below it calibrated, while the 1200-2500 px band did.
+# Anything above this that fails is a detector miss and belongs in the
+# no-scale-bar queue where someone will look at it.
+LOW_RESOLUTION_PX = 1200
+
 REVIEW_FLAG_DESCRIPTIONS = {
     'species_mismatch': (
         'The species parsed from the catalog label disagrees with the '
         'label assigned to the image. Decide which one is correct.'
     ),
+    'low_resolution': (
+        'The photograph is too small (under %d px on its long edge) for the '
+        'scale card to be resolved. These are almost always images sourced '
+        'from the web rather than shot in the studio, so no re-processing '
+        'will recover a physical measurement. They remain usable for '
+        'classification, where only the tooth image matters.' % LOW_RESOLUTION_PX
+    ),
     'no_scale_bar': (
         'The image is in an "original"-resolution dataset where a scale '
         'bar is expected, but the detector did not find one. mm-anchored '
         'metrics cannot be computed for this image until the scale bar '
-        'is identified.'
+        'is identified. Unlike the low-resolution bucket, these are full '
+        'resolution photographs that should have worked, so they are worth '
+        'inspecting.'
     ),
     'out_of_range_completeness': (
         'mm-anchored completeness landed outside the plausible 0% - 105% '
@@ -84,6 +111,46 @@ REVIEW_FLAG_DESCRIPTIONS = {
 }
 
 
+def _long_edge_px(img: Image) -> int:
+    """Long edge of the stored file, or 0 when it cannot be read.
+
+    PIL only parses the header for .size, so this is cheap. Returning 0 on
+    failure deliberately routes unreadable files into the low-resolution
+    bucket rather than the detector-miss bucket, since a file we cannot open
+    is not something a reviewer can fix by looking at the scale bar.
+    """
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(img.image.path) as im:
+            return max(im.size)
+    except Exception:
+        return 0
+
+
+# A dataset is treated as label-bearing when at least this share of its images
+# yielded catalog text. Well below what a genuinely labelled set produces, and
+# well above the incidental hits (stray marks, a handful of odd frames) seen on
+# a set that carries no labels.
+LABEL_BEARING_MIN_SHARE = 0.25
+
+
+def _dataset_carries_labels(ds: Dataset) -> bool:
+    """True when this dataset's photographs generally include a catalog label.
+
+    Judged from OCR output rather than assumed, so it stays correct as new
+    batches arrive. Returns False before OCR has run, which errs toward a quiet
+    queue instead of thousands of unactionable flags.
+    """
+    total = Image.objects.filter(dataset=ds).exclude(
+        source_kind__in=('masked', 'processed')).count()
+    if not total:
+        return False
+    with_text = Image.objects.filter(dataset=ds).exclude(
+        source_kind__in=('masked', 'processed')).filter(
+        ocr_label_text__isnull=False).count()
+    return (with_text / total) >= LABEL_BEARING_MIN_SHARE
+
+
 def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
     """
     Walk every image in the dataset and bin into flag categories.
@@ -96,6 +163,18 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
     ds = Dataset.objects.get(pk=dataset_id)
     resolution = str(ds.resolution).lower()
     is_source_dataset = (resolution == 'original')
+
+    # Does this dataset's photography include catalog labels at all?
+    #
+    # Alexa's Phase 2 shots frame the tooth, the scale card AND the catalog
+    # label. The historical baseline shots frame only the tooth and the scale
+    # card. Flagging "no museum label" per image on a set that never had
+    # labels buries the real problems: on the baseline it fired on all 1,977
+    # calibrated images, which is not a queue anyone can work through. So the
+    # flag is suppressed for datasets whose photography plainly does not carry
+    # labels, and kept for datasets where labels are the norm and a specific
+    # image is missing one.
+    label_bearing = is_source_dataset and _dataset_carries_labels(ds)
 
     flags: Dict[str, List[Image]] = {key: [] for key in REVIEW_FLAGS}
 
@@ -115,9 +194,18 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
                 flags['species_mismatch'].append(img)
                 continue
 
-        # 2. No scale bar (only meaningful on source datasets).
+        # 2. No scale bar (only meaningful on source datasets). Split by
+        # resolution: a 600 px web-sourced image can never be measured, while
+        # a full-resolution studio photograph that failed is a detector miss
+        # worth a human look. Mixing them makes the queue unactionable.
+        # Resolution is read lazily and only for images that already lack a
+        # scale bar, so this costs a header read on a minority of the dataset
+        # rather than on every image.
         if is_source_dataset and not img.scale_bar_detected:
-            flags['no_scale_bar'].append(img)
+            if _long_edge_px(img) < LOW_RESOLUTION_PX:
+                flags['low_resolution'].append(img)
+            else:
+                flags['no_scale_bar'].append(img)
             continue
 
         # 3. Out of range completeness.
@@ -139,7 +227,7 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
         # background that held it was removed), and PROCESSED images have
         # the label cropped out, so neither should flag here.
         if (
-            is_source_dataset
+            label_bearing
             and img.mm_per_pixel
             and not img.museum_specimen_id
             and img.source_kind not in ('masked', 'processed')
