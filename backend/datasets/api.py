@@ -216,6 +216,89 @@ class DatasetViewSet(viewsets.ModelViewSet):
             status=status.HTTP_202_ACCEPTED,
         )
 
+    @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='scale-summary')
+    def scale_summary(self, request, pk=None):
+        """Coverage summary for the Summary tab: how much of this dataset can
+        actually be measured in millimetres, and where the losses are.
+
+        Every bucket carries the filter that produced it, so the UI can link
+        each number straight into a filtered image list. A number the team
+        cannot drill into is a number they cannot act on.
+        """
+        from django.db.models import Avg, Count, Max, Min, Q
+        from .review import get_review_flags, LOW_RESOLUTION_PX, REVIEW_FLAGS, REVIEW_FLAG_LABELS
+
+        dataset = self.get_object()
+        images = Image.objects.filter(dataset=dataset)
+        total = images.count()
+
+        calibrated = Q(mm_per_pixel__isnull=False)
+        with_ocr = Q(museum_specimen_id__isnull=False)
+        with_completeness = Q(completeness_mm2__isnull=False)
+
+        # Per species. Median is not portable across DB backends, so report
+        # the mean plus the range, which is enough to spot a species whose
+        # calibration has gone wrong.
+        by_species = []
+        rows = (
+            images.values('label_id', 'label__name')
+            .annotate(
+                total=Count('id'),
+                calibrated=Count('id', filter=calibrated),
+                ocr=Count('id', filter=with_ocr),
+                completeness=Count('id', filter=with_completeness),
+                mean_len=Avg('tooth_major_axis_mm'),
+                min_len=Min('tooth_major_axis_mm'),
+                max_len=Max('tooth_major_axis_mm'),
+            )
+            .order_by('label__name')
+        )
+        for r in rows:
+            by_species.append({
+                'label_id': r['label_id'],
+                'label': r['label__name'],
+                'total': r['total'],
+                'calibrated': r['calibrated'],
+                'uncalibrated': r['total'] - r['calibrated'],
+                'calibrated_pct': round(r['calibrated'] / r['total'] * 100, 1) if r['total'] else 0,
+                'with_ocr': r['ocr'],
+                'with_completeness': r['completeness'],
+                'mean_tooth_mm': round(r['mean_len'], 1) if r['mean_len'] else None,
+                'min_tooth_mm': round(r['min_len'], 1) if r['min_len'] else None,
+                'max_tooth_mm': round(r['max_len'], 1) if r['max_len'] else None,
+                'filter': {'label': r['label_id']},
+            })
+
+        # Review flags double as the "why did it fail" breakdown.
+        flags = get_review_flags(dataset.id)
+        flag_rows = [{
+            'key': key,
+            'label': REVIEW_FLAG_LABELS[key],
+            'count': len(flags.get(key, [])),
+            'image_ids': [i.id for i in flags.get(key, [])][:500],
+        } for key in REVIEW_FLAGS]
+
+        calibrated_count = images.filter(calibrated).count()
+        return Response({
+            'dataset_id': dataset.id,
+            'dataset_name': dataset.name,
+            'resolution': dataset.resolution,
+            'low_resolution_threshold_px': LOW_RESOLUTION_PX,
+            'totals': {
+                'images': total,
+                'calibrated': calibrated_count,
+                'uncalibrated': total - calibrated_count,
+                'calibrated_pct': round(calibrated_count / total * 100, 1) if total else 0,
+                'with_ocr': images.filter(with_ocr).count(),
+                'with_completeness': images.filter(with_completeness).count(),
+                'reviewed': images.filter(review_status='reviewed').count(),
+                'excluded': images.filter(review_status='excluded').count(),
+                'unreviewed': images.filter(review_status='unreviewed').count(),
+            },
+            'by_species': by_species,
+            'by_flag': flag_rows,
+        })
+
     @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-queue')
     def review_queue(self, request, pk=None):
         """Return images flagged for human review, grouped by issue category."""
@@ -550,6 +633,187 @@ class ImageViewSet(viewsets.ModelViewSet):
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
         # Return the freshly-saved row so the UI can update in place.
         return Response(ImageSerializer(image, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='manual-scale')
+    def manual_scale(self, request, pk=None):
+        """Set mm/px from two points a reviewer clicked on a known reference.
+
+        Automatic detection cannot read every frame: a coin instead of a card,
+        a card occluded by its label, a scale design nobody has seen. Rather
+        than push the detector into guessing on those, a person marks the two
+        ends of something whose real size is known and says what it is.
+
+        Body:
+          x1, y1, x2, y2   point coordinates in ORIGINAL image pixels
+          reference_mm     real-world distance between them
+          reference_label  what was measured, e.g. "US nickel", stored for audit
+
+        Returns the updated image plus the resulting tooth size, so the caller
+        can show the reviewer what their measurement implies before they move
+        on. A calibration that produces an absurd tooth is far easier to catch
+        by looking at the millimetres than at mm/px.
+        """
+        import math
+        from .models import ImageReviewEvent
+        from .scale_calibration import detect_scale_bar
+
+        image = self.get_object()
+        if image.dataset and dataset_is_locked(image.dataset):
+            return Response({'error': dataset_lock_reason(image.dataset)},
+                            status=status.HTTP_409_CONFLICT)
+        try:
+            x1 = float(request.data['x1']); y1 = float(request.data['y1'])
+            x2 = float(request.data['x2']); y2 = float(request.data['y2'])
+            reference_mm = float(request.data['reference_mm'])
+        except (KeyError, TypeError, ValueError):
+            return Response({'error': 'x1, y1, x2, y2 and reference_mm are required numbers'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if reference_mm <= 0:
+            return Response({'error': 'reference_mm must be positive'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        distance_px = math.hypot(x2 - x1, y2 - y1)
+        if distance_px < 5:
+            return Response({'error': 'the two points are too close together to measure'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        mm_per_pixel = reference_mm / distance_px
+        reference_label = (request.data.get('reference_label') or 'manual measurement')[:120]
+
+        # Reuse the existing segmentation to convert the new scale into the
+        # tooth measurements, so a manual calibration produces exactly the same
+        # fields as an automatic one and nothing downstream needs to special
+        # case it.
+        tooth = None
+        try:
+            result = detect_scale_bar(image.image.path)
+            tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+        except Exception:
+            pass
+
+        image.mm_per_pixel = mm_per_pixel
+        image.scale_bar_detected = True
+        image.scale_bar_source = 'manual'
+        if tooth is not None:
+            tx0, ty0, tx1, ty1 = tooth.bbox
+            image.tooth_bbox = list(tooth.bbox)
+            image.tooth_area_mm2 = float(tooth.area_px) * mm_per_pixel ** 2
+            image.tooth_width_mm = (tx1 - tx0 + 1) * mm_per_pixel
+            image.tooth_height_mm = (ty1 - ty0 + 1) * mm_per_pixel
+            major = float(tooth.major_axis_px or 0.0) * mm_per_pixel
+            minor = float(tooth.minor_axis_px or 0.0) * mm_per_pixel
+            image.tooth_major_axis_mm = major if major > 0 else None
+            image.tooth_minor_axis_mm = minor if minor > 0 else None
+        # Completeness is relative to a species reference and is now stale.
+        image.completeness_mm2 = None
+        image.save(update_fields=[
+            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'tooth_bbox',
+            'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+        ])
+
+        ImageReviewEvent.objects.create(
+            image=image,
+            user=request.user if request.user.is_authenticated else None,
+            action='manual_scale',
+            previous_status=image.review_status,
+            new_status=image.review_status,
+            notes='Scale set by hand from %s' % reference_label,
+            metadata={
+                'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
+                'distance_px': round(distance_px, 2),
+                'reference_mm': reference_mm,
+                'reference_label': reference_label,
+                'mm_per_pixel': mm_per_pixel,
+            },
+        )
+
+        tooth_length_mm = None
+        if tooth is not None:
+            tx0, ty0, tx1, ty1 = tooth.bbox
+            tooth_length_mm = round(max(tx1 - tx0 + 1, ty1 - ty0 + 1) * mm_per_pixel, 1)
+
+        return Response({
+            'image': ImageSerializer(image, context={'request': request}).data,
+            'mm_per_pixel': mm_per_pixel,
+            'distance_px': round(distance_px, 2),
+            'tooth_length_mm': tooth_length_mm,
+            'tooth_found': tooth is not None,
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='find-circle')
+    def find_circle(self, request, pk=None):
+        """Measure a round reference the reviewer pointed at, without naming it.
+
+        Clicking two edges of a coin by hand is fiddly and the error lands
+        straight in mm/px. The machine can measure a circle far more precisely
+        than a person can click one, so it does that part.
+
+        What it deliberately does NOT do is decide WHICH coin. Telling a nickel
+        from a quarter on a 600 px web photo runs at 14-20% error, and that
+        error multiplies into every downstream area. So this returns geometry
+        only; the reviewer supplies the identity and reads the resulting size
+        back before committing. Machine measures, human identifies.
+
+        Body: x, y in ORIGINAL image pixels, anywhere inside the coin.
+        Returns the diameter and the two endpoints to hand to manual-scale.
+        """
+        from .scale_calibration import detect_scale_bar
+
+        image = self.get_object()
+        try:
+            px = float(request.data['x'])
+            py = float(request.data['y'])
+        except (KeyError, TypeError, ValueError):
+            return Response({'error': 'x and y are required numbers'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            result = detect_scale_bar(image.image.path)
+        except Exception:
+            return Response({'error': 'could not read this image'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # The click only has to land inside the blob; the reviewer is pointing
+        # at a coin, not tracing it.
+        hit = None
+        for blob in result.blobs:
+            bx0, by0, bx1, by1 = blob.bbox
+            if bx0 <= px <= bx1 and by0 <= py <= by1:
+                if hit is None or blob.area_px < hit.area_px:
+                    hit = blob      # smallest containing blob: the coin, not the backdrop
+        if hit is None:
+            return Response({'error': 'nothing detected at that point - click on the coin itself, '
+                                      'or set the two points by hand'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        bx0, by0, bx1, by1 = hit.bbox
+        width = bx1 - bx0 + 1
+        height = by1 - by0 + 1
+        aspect = max(width, height) / float(max(1, min(width, height)))
+
+        # A disc inscribed in its bounding box fills pi/4 = 0.785 of it. Check
+        # the shape really is round before reporting a diameter, so a click on
+        # the tooth or the label cannot be mistaken for a reference.
+        if aspect > 1.25 or not (0.60 <= hit.fill_ratio <= 0.95):
+            return Response({
+                'error': 'that shape is not round enough to measure as a coin '
+                         '(%dx%d, %.0f%% filled) - set the two points by hand'
+                         % (width, height, hit.fill_ratio * 100),
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        diameter_px = (width + height) / 2.0
+        cx = (bx0 + bx1) / 2.0
+        cy = (by0 + by1) / 2.0
+        return Response({
+            'diameter_px': round(diameter_px, 1),
+            'centre': {'x': round(cx, 1), 'y': round(cy, 1)},
+            'x1': round(cx - diameter_px / 2.0, 1), 'y1': round(cy, 1),
+            'x2': round(cx + diameter_px / 2.0, 1), 'y2': round(cy, 1),
+            'bbox': [bx0, by0, bx1, by1],
+            'fill_ratio': round(hit.fill_ratio, 3),
+            'aspect_ratio': round(aspect, 3),
+        })
 
     @action(detail=True, methods=['get'], permission_classes=[IsSyntheticToolsEnabled], url_path='review-history')
     def review_history(self, request, pk=None):

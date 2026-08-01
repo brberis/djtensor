@@ -62,13 +62,58 @@ export default function ReviewQueue() {
   // Shape: { kind: 'single'|'bulk', imageId?, action, label }
   const [pendingAction, setPendingAction] = useState(null);
 
-  // A flat ordered list of all flagged image objects (across categories),
-  // so the inspector's Prev/Next can navigate them.
-  const flatImages = useMemo(() => {
+  // Filters arrive in the URL so the Summary tab can link straight to a
+  // subset: ?flag=no_scale_bar, ?label=3, ?state=uncalibrated. Reading them
+  // from the query rather than component state also makes any view shareable.
+  const { flag: flagFilter, label: labelFilter, state: stateFilter } = router.query;
+  const hasFilter = Boolean(flagFilter || labelFilter || stateFilter);
+
+  const matchesFilters = useCallback((img) => {
+    if (labelFilter && String(img.label) !== String(labelFilter)) return false;
+    if (stateFilter === 'uncalibrated' && img.mm_per_pixel != null) return false;
+    if (stateFilter === 'calibrated' && img.mm_per_pixel == null) return false;
+    return true;
+  }, [labelFilter, stateFilter]);
+
+  // Categories after filtering, used for both display and the counts.
+  const visibleCategories = useMemo(() => {
     if (!data) return [];
+    return (data.categories || [])
+      .filter((cat) => !flagFilter || cat.key === flagFilter)
+      .map((cat) => ({ ...cat, items: (cat.items || []).filter(matchesFilters) }))
+      .map((cat) => ({ ...cat, count: cat.items.length }));
+  }, [data, flagFilter, matchesFilters]);
+
+  const visibleTotal = useMemo(
+    () => visibleCategories.reduce((n, c) => n + c.count, 0),
+    [visibleCategories],
+  );
+
+  const clearFilters = () => router.push(`/datasets/${id}/review`);
+
+  const filterLabel = useMemo(() => {
+    const parts = [];
+    if (flagFilter) {
+      const cat = (data?.categories || []).find((c) => c.key === flagFilter);
+      parts.push(cat ? cat.label : flagFilter);
+    }
+    if (labelFilter) {
+      const first = (data?.categories || [])
+        .flatMap((c) => c.items || [])
+        .find((i) => String(i.label) === String(labelFilter));
+      parts.push(first?.label_name || `label ${labelFilter}`);
+    }
+    if (stateFilter === 'uncalibrated') parts.push('no calibration');
+    if (stateFilter === 'calibrated') parts.push('calibrated');
+    return parts.join(' · ');
+  }, [data, flagFilter, labelFilter, stateFilter]);
+
+  // A flat ordered list of the VISIBLE flagged images, so the inspector's
+  // Prev/Next walks the filtered set rather than the whole queue.
+  const flatImages = useMemo(() => {
     const seen = new Set();
     const out = [];
-    for (const cat of data.categories || []) {
+    for (const cat of visibleCategories) {
       for (const img of cat.items || []) {
         if (seen.has(img.id)) continue;
         seen.add(img.id);
@@ -76,7 +121,7 @@ export default function ReviewQueue() {
       }
     }
     return out;
-  }, [data]);
+  }, [visibleCategories]);
 
   const inspectorImage = useMemo(
     () => flatImages.find((x) => x.id === inspectorImageId) || null,
@@ -262,7 +307,30 @@ export default function ReviewQueue() {
 
       {loading && <p className="text-sm text-gray-500">Loading review queue…</p>}
 
-      {!loading && data && data.total_flagged === 0 && (
+      {!loading && data && hasFilter && (
+        <div className="mb-5 flex items-center gap-3 rounded-lg bg-blue-50 px-4 py-2.5 ring-1 ring-blue-200">
+          <span className="text-sm text-blue-900">
+            Showing <b>{visibleTotal}</b> {visibleTotal === 1 ? 'image' : 'images'} filtered by <b>{filterLabel}</b>
+          </span>
+          <button onClick={clearFilters} className="ml-auto text-sm font-medium text-blue-700 hover:underline">
+            Show everything
+          </button>
+        </div>
+      )}
+
+      {!loading && data && hasFilter && visibleTotal === 0 && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-10 text-center">
+          <h3 className="text-base font-semibold text-gray-900">Nothing matches this filter</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            These images may already have been reviewed or excluded.
+          </p>
+          <button onClick={clearFilters} className="mt-3 text-sm font-medium text-blue-700 hover:underline">
+            Show everything
+          </button>
+        </div>
+      )}
+
+      {!loading && data && !hasFilter && data.total_flagged === 0 && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-10 text-center">
           <CheckIcon className="mx-auto h-10 w-10 text-green-500" />
           <h3 className="mt-3 text-lg font-semibold text-green-900">All clear</h3>
@@ -270,7 +338,7 @@ export default function ReviewQueue() {
         </div>
       )}
 
-      {!loading && data && data.categories.map(cat => cat.count > 0 && (
+      {!loading && data && visibleCategories.map(cat => cat.count > 0 && (
         <section key={cat.key} className="mb-8 rounded-xl bg-white ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
           <header className="border-b border-gray-100 px-5 py-3 flex items-center gap-3">
             <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" />

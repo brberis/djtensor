@@ -26,6 +26,22 @@ function normalizeMediaUrl(url) {
   return '/' + url;
 }
 
+// Physical references a reviewer can measure against. Coin diameters are the
+// US Mint specifications. Card and ruler entries cover the cases where the
+// detector can see the scale but cannot read it.
+const SCALE_REFERENCES = [
+  { key: 'nickel', label: 'US nickel (diameter)', mm: 21.21 },
+  { key: 'quarter', label: 'US quarter (diameter)', mm: 24.26 },
+  { key: 'penny', label: 'US penny (diameter)', mm: 19.05 },
+  { key: 'dime', label: 'US dime (diameter)', mm: 17.91 },
+  { key: 'inch', label: 'Scale card, 1 inch band', mm: 25.4 },
+  { key: 'halfinch', label: 'Scale card, 0.5 inch row', mm: 12.7 },
+  { key: 'cm3', label: 'Scale card, 3 cm row', mm: 30 },
+  { key: 'cm1', label: 'Ruler, 1 cm', mm: 10 },
+  { key: 'cm5', label: 'Ruler, 5 cm', mm: 50 },
+  { key: 'custom', label: 'Custom distance…', mm: null },
+];
+
 export default function ReviewInspector({
   img,
   position,
@@ -47,10 +63,43 @@ export default function ReviewInspector({
   const [containerSize, setContainerSize] = useState(null);
   const imageContainerRef = useRef(null);
 
+  // Manual scale: the reviewer clicks the two ends of something whose real
+  // size is known, then says what it is. Points are held as fractions of the
+  // container so they survive resizing, and are converted to original image
+  // pixels only when sent.
+  const [measuring, setMeasuring] = useState(false);
+  const [points, setPoints] = useState([]);
+  const [referenceKey, setReferenceKey] = useState('nickel');
+  const [customMm, setCustomMm] = useState('');
+  const [savingScale, setSavingScale] = useState(false);
+  const [scaleError, setScaleError] = useState(null);
+  const [scaleResult, setScaleResult] = useState(null);
+
+  // Coin helper: one click inside a round reference and the system measures
+  // its diameter, which it does far more precisely than a hand can click two
+  // edges. It never guesses WHICH coin - that stays with the reviewer.
+  const [snapMode, setSnapMode] = useState(false);
+  const [snapping, setSnapping] = useState(false);
+  const [snapInfo, setSnapInfo] = useState(null);
+
+  // Cursor position while measuring, for the loupe. Picking the edge of a
+  // coin or a ruler mark is a sub-pixel job at fit-to-screen size, so the
+  // reviewer gets a magnified view of whatever is under the pointer.
+  const [measureCursor, setMeasureCursor] = useState(null);
+
   useEffect(() => {
     setHoverTooth(false);
     setShowOcrText(false);
     setCursorPct(null);
+    // Drop any half-finished measurement when moving to another image, so
+    // points from one photograph can never be applied to the next.
+    setMeasuring(false);
+    setPoints([]);
+    setScaleResult(null);
+    setScaleError(null);
+    setSnapMode(false);
+    setSnapInfo(null);
+    setMeasureCursor(null);
   }, [img?.id]);
 
   useEffect(() => {
@@ -183,15 +232,245 @@ export default function ReviewInspector({
                       <OverlayToggle on={showScaleBar} setOn={setShowScaleBar} color="amber"  label="Scale bar"  disabled={!img.scale_bar_bbox} />
                       <OverlayToggle on={showLabel}    setOn={setShowLabel}    color="sky"    label="Label"      disabled={!img.museum_metadata?.label_bbox} />
                       <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!img.scale_bar_ticks?.positions?.length} />
+                      <button
+                        onClick={() => {
+                          setMeasuring((on) => !on);
+                          setPoints([]); setScaleResult(null); setScaleError(null);
+                        }}
+                        className={`ml-auto rounded-full px-3 py-1 text-xs font-medium ring-1 ${
+                          measuring
+                            ? 'bg-fuchsia-600 text-white ring-fuchsia-600'
+                            : 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {measuring ? 'Cancel' : 'Set scale manually'}
+                      </button>
                     </div>
 
+                    {measuring && (
+                      <div className="mb-3 rounded-lg bg-fuchsia-50 px-4 py-3 ring-1 ring-fuchsia-200">
+                        <p className="text-sm text-fuchsia-900">
+                          {snapping && 'Measuring that circle…'}
+                          {!snapping && snapMode && 'Click once anywhere inside the coin.'}
+                          {!snapping && !snapMode && points.length === 0 && 'Click one end of something you know the size of: a coin, a scale bar, two ruler marks.'}
+                          {!snapping && !snapMode && points.length === 1 && 'Now click the other end.'}
+                          {!snapping && !snapMode && points.length === 2 && 'Say what you measured, then apply.'}
+                        </p>
+
+                        {/* Clicking two edges of a coin by hand is fiddly and
+                            the error goes straight into mm/px. Let the machine
+                            measure the circle; the reviewer still names it. */}
+                        {points.length < 2 && !snapping && (
+                          <button
+                            onClick={() => { setSnapMode((on) => !on); setScaleError(null); }}
+                            className={`mt-2 rounded-md px-2.5 py-1 text-xs font-medium ring-1 ${
+                              snapMode
+                                ? 'bg-fuchsia-600 text-white ring-fuchsia-600'
+                                : 'bg-white text-fuchsia-800 ring-fuchsia-300 hover:bg-fuchsia-50'
+                            }`}
+                          >
+                            {snapMode ? 'Cancel coin measuring' : 'Measure a coin for me'}
+                          </button>
+                        )}
+
+                        {snapInfo && (
+                          <p className="mt-2 text-xs text-fuchsia-800">
+                            Measured a circle <b>{snapInfo.diameter_px} px</b> across.
+                            Now say which coin it is — the size below will tell you if it is the right one.
+                          </p>
+                        )}
+
+                        {points.length === 2 && (
+                          <div className="mt-3 flex flex-wrap items-end gap-3">
+                            <label className="text-xs text-fuchsia-900">
+                              <span className="block mb-1 font-medium">What did you measure?</span>
+                              <select
+                                value={referenceKey}
+                                onChange={(e) => { setReferenceKey(e.target.value); setScaleResult(null); }}
+                                className="rounded-md border-gray-300 text-sm"
+                              >
+                                {SCALE_REFERENCES.map((r) => (
+                                  <option key={r.key} value={r.key}>
+                                    {r.label}{r.mm ? ` — ${r.mm} mm` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            {referenceKey === 'custom' && (
+                              <label className="text-xs text-fuchsia-900">
+                                <span className="block mb-1 font-medium">Distance in mm</span>
+                                <input
+                                  type="number" step="0.01" min="0"
+                                  value={customMm}
+                                  onChange={(e) => { setCustomMm(e.target.value); setScaleResult(null); }}
+                                  className="w-28 rounded-md border-gray-300 text-sm"
+                                  placeholder="e.g. 21.21"
+                                />
+                              </label>
+                            )}
+
+                            <button
+                              disabled={savingScale}
+                              onClick={async () => {
+                                const ref = SCALE_REFERENCES.find((r) => r.key === referenceKey);
+                                const mm = ref?.mm ?? parseFloat(customMm);
+                                if (!mm || mm <= 0) { setScaleError('Enter a positive distance in mm.'); return; }
+                                setSavingScale(true); setScaleError(null);
+                                try {
+                                  const [a, b] = points;
+                                  const res = await fetch(`/api/datasets/image/${img.id}/manual-scale`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      x1: a.px * w, y1: a.py * h,
+                                      x2: b.px * w, y2: b.py * h,
+                                      reference_mm: mm,
+                                      reference_label: ref?.label || 'custom distance',
+                                    }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data.message || 'Could not set the scale');
+                                  setScaleResult(data);
+                                } catch (err) {
+                                  setScaleError(err.message);
+                                } finally {
+                                  setSavingScale(false);
+                                }
+                              }}
+                              className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${
+                                savingScale ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'
+                              }`}
+                            >
+                              {savingScale ? 'Applying…' : 'Apply scale'}
+                            </button>
+
+                            <button
+                              onClick={() => { setPoints([]); setScaleResult(null); setScaleError(null); }}
+                              className="text-xs text-fuchsia-700 hover:underline"
+                            >
+                              Clear points
+                            </button>
+                          </div>
+                        )}
+
+                        {scaleError && <p className="mt-2 text-sm text-red-700">{scaleError}</p>}
+
+                        {/* Show what the measurement implies before the
+                            reviewer moves on. A wrong click is obvious in
+                            millimetres and invisible in mm/px. */}
+                        {scaleResult && (
+                          <div className="mt-3 rounded-md bg-white px-3 py-2 ring-1 ring-fuchsia-200">
+                            <p className="text-sm text-gray-900">
+                              Saved. This image is now <b>{scaleResult.mm_per_pixel?.toFixed(5)} mm per pixel</b>
+                              {scaleResult.tooth_length_mm != null && (
+                                <> and the tooth measures <b>{scaleResult.tooth_length_mm} mm</b></>
+                              )}.
+                            </p>
+                            {!scaleResult.tooth_found && (
+                              <p className="mt-1 text-xs text-amber-700">
+                                The scale was saved, but no tooth outline was found in this image, so no tooth size could be computed.
+                              </p>
+                            )}
+                            <p className="mt-1 text-xs text-gray-500">
+                              If that size looks wrong, click the two ends again and re-apply.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="relative flex-1 bg-white rounded-lg ring-1 ring-gray-200 flex items-center justify-center p-12">
-                      <div ref={imageContainerRef} className="relative" style={{ aspectRatio: `${w} / ${h}`, width: '100%', maxHeight: '64vh' }}>
+                      <div
+                        ref={imageContainerRef}
+                        // Shrink-wrap the photograph instead of imposing a
+                        // box on it. This element defines the coordinate
+                        // space for every overlay AND for manual-scale
+                        // clicks, so it has to be exactly the rendered image
+                        // and nothing more. It previously used width:100%
+                        // with an aspect-ratio plus maxHeight:64vh; whenever
+                        // the height clamp bit, the box stayed full width,
+                        // object-contain letterboxed the image inside it,
+                        // and every overlay drew wider than the photo. Worse,
+                        // click fractions were taken against this box and
+                        // then multiplied by the image width, so a correctly
+                        // clicked coin yielded too large a distance and a
+                        // wrong mm/px.
+                        className={`relative inline-block max-w-full ${measuring ? 'cursor-crosshair' : ''}`}
+                        onMouseMove={(e) => {
+                          if (!measuring) { if (measureCursor) setMeasureCursor(null); return; }
+                          const el = imageContainerRef.current;
+                          if (!el) return;
+                          const r = el.getBoundingClientRect();
+                          setMeasureCursor({
+                            px: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+                            py: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+                          });
+                        }}
+                        onMouseLeave={() => setMeasureCursor(null)}
+                        onClick={async (e) => {
+                          if (!measuring || snapping) return;
+                          const el = imageContainerRef.current;
+                          if (!el) return;
+                          const r = el.getBoundingClientRect();
+                          const px = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                          const py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+                          setScaleResult(null);
+                          setScaleError(null);
+
+                          // Coin mode: hand the point to the backend and let
+                          // it measure the circle, then drop the two ends in
+                          // as if they had been clicked by hand.
+                          if (snapMode) {
+                            setSnapping(true);
+                            try {
+                              const res = await fetch(`/api/datasets/image/${img.id}/find-circle`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ x: px * w, y: py * h }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.message || 'Could not measure a circle there');
+                              setPoints([
+                                { px: data.x1 / w, py: data.y1 / h },
+                                { px: data.x2 / w, py: data.y2 / h },
+                              ]);
+                              setSnapInfo(data);
+                              setSnapMode(false);
+                            } catch (err) {
+                              setScaleError(err.message);
+                            } finally {
+                              setSnapping(false);
+                            }
+                            return;
+                          }
+
+                          // A third click starts a fresh measurement rather
+                          // than silently ignoring it.
+                          setPoints((prev) => (prev.length >= 2 ? [{ px, py }] : [...prev, { px, py }]));
+                          setSnapInfo(null);
+                        }}
+                      >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {/* In normal flow, not absolute: the image sizes the
+                            wrapper, so overlay percentages and click
+                            fractions are both measured against the photo
+                            itself. No letterboxing can open up between
+                            them. */}
                         <img
                           src={normalizeMediaUrl(img.image)}
                           alt={img.file_name || ''}
-                          className="absolute inset-0 w-full h-full object-contain"
+                          className="block w-auto h-auto max-w-full"
+                          style={{ maxHeight: '64vh' }}
+                          // The wrapper now takes its size from this image,
+                          // so it has none until the image has loaded. The
+                          // loupe reads that size, so re-measure on load.
+                          onLoad={() => {
+                            const el = imageContainerRef.current;
+                            if (!el) return;
+                            const r = el.getBoundingClientRect();
+                            setContainerSize({ width: r.width, height: r.height });
+                          }}
                         />
                         {scaleBarPct && (
                           <div className="absolute ring-4 ring-amber-500/80 rounded-sm pointer-events-none" style={scaleBarPct} title="Scale bar">
@@ -209,6 +488,116 @@ export default function ReviewInspector({
                             }
                           />
                         ))}
+                        {/* Manual-scale markers: the two clicked ends and the
+                            line between them, so the reviewer sees exactly
+                            what distance they are about to declare. */}
+                        {points.length === 2 && (() => {
+                          const [a, b] = points;
+                          const dx = (b.px - a.px) * 100;
+                          const dy = (b.py - a.py) * 100;
+                          const len = Math.sqrt(dx * dx + dy * dy);
+                          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                          return (
+                            <div
+                              className="absolute bg-fuchsia-500 pointer-events-none"
+                              style={{
+                                left: `${a.px * 100}%`, top: `${a.py * 100}%`,
+                                width: `${len}%`, height: '2px',
+                                transform: `rotate(${angle}deg)`, transformOrigin: '0 50%',
+                              }}
+                            />
+                          );
+                        })()}
+                        {/* Crosshairs, not dots. A filled dot covers the very
+                            edge the reviewer is trying to mark, so it hides
+                            the thing being measured. Two thin arms leave the
+                            exact point visible at their intersection, and the
+                            gap in the middle keeps it uncovered entirely. */}
+                        {points.map((p, i) => (
+                          <div
+                            key={`pt-${i}`}
+                            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                            style={{ left: `${p.px * 100}%`, top: `${p.py * 100}%`, width: '28px', height: '28px' }}
+                          >
+                            {['top', 'bottom', 'left', 'right'].map((side) => {
+                              const vertical = side === 'top' || side === 'bottom';
+                              return (
+                                <div
+                                  key={side}
+                                  className="absolute bg-fuchsia-500"
+                                  style={{
+                                    // Arms stop short of the centre so the
+                                    // marked pixel itself is never painted.
+                                    ...(vertical
+                                      ? { left: '50%', width: '2px', height: '10px', marginLeft: '-1px',
+                                          [side]: 0 }
+                                      : { top: '50%', height: '2px', width: '10px', marginTop: '-1px',
+                                          [side]: 0 }),
+                                    boxShadow: '0 0 0 1px rgba(255,255,255,0.9)',
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                        {/* Measuring loupe, in the manner of a document
+                            scanner picking up a paper edge: the magnified
+                            view sits BESIDE the pointer, never under it, so
+                            the pixel being chosen is never hidden by the
+                            thing helping you choose it. It flips side and
+                            vertical offset near the edges of the frame so it
+                            always stays on the image. */}
+                        {measuring && measureCursor && containerSize && (() => {
+                          const zoom = 5;          // edges are a sub-pixel job
+                          const size = 180;
+                          const gap = 28;
+                          const half = size / 2;
+                          const cx = measureCursor.px * containerSize.width;
+                          const cy = measureCursor.py * containerSize.height;
+                          // Keep the loupe clear of the pointer and inside
+                          // the frame; flip rather than let it run off.
+                          const flipX = cx + gap + size > containerSize.width;
+                          const flipY = cy - gap - size < 0;
+                          const left = flipX ? cx - gap - size : cx + gap;
+                          const top = flipY ? cy + gap : cy - gap - size;
+                          const bgW = containerSize.width * zoom;
+                          const bgH = containerSize.height * zoom;
+                          return (
+                            <div
+                              className="absolute pointer-events-none"
+                              style={{ left: `${left}px`, top: `${top}px`, width: size, height: size, zIndex: 60 }}
+                            >
+                              <div
+                                className="relative w-full h-full overflow-hidden rounded-full bg-black ring-4 ring-white"
+                                style={{ boxShadow: '0 8px 28px rgba(0,0,0,0.45), 0 0 0 2px rgba(0,0,0,0.25)' }}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={normalizeMediaUrl(img.image)}
+                                  alt=""
+                                  style={{
+                                    position: 'absolute',
+                                    width: bgW + 'px', height: bgH + 'px',
+                                    left: (-(measureCursor.px * bgW - half)) + 'px',
+                                    top: (-(measureCursor.py * bgH - half)) + 'px',
+                                    maxWidth: 'none', maxHeight: 'none',
+                                    imageRendering: 'pixelated',
+                                  }}
+                                />
+                                {/* Same crosshair as the placed markers, so
+                                    what you line up is what gets recorded. */}
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="relative" style={{ width: 34, height: 34 }}>
+                                    <div className="absolute left-1/2 top-0 bg-fuchsia-500" style={{ width: 1.5, height: 12, marginLeft: -0.75 }} />
+                                    <div className="absolute left-1/2 bottom-0 bg-fuchsia-500" style={{ width: 1.5, height: 12, marginLeft: -0.75 }} />
+                                    <div className="absolute top-1/2 left-0 bg-fuchsia-500" style={{ height: 1.5, width: 12, marginTop: -0.75 }} />
+                                    <div className="absolute top-1/2 right-0 bg-fuchsia-500" style={{ height: 1.5, width: 12, marginTop: -0.75 }} />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {labelPct && (
                           <div className="absolute ring-4 ring-sky-500/80 rounded-sm pointer-events-none" style={labelPct} title="Catalog label">
                             <span className="absolute -top-5 left-0 rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">label</span>

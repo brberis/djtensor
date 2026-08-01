@@ -142,6 +142,10 @@ export default function DatasetDetail() {
   const [showEmitModeAConfirm, setShowEmitModeAConfirm] = useState(false);
   const [actionStatus, setActionStatus] = useState(null);
   const [reviewSummary, setReviewSummary] = useState(null);
+  const [scaleSummary, setScaleSummary] = useState(null);
+  // Tab lives in the URL so a teammate can be sent straight to the summary
+  // (…/datasets/168?tab=summary) instead of "open it and click the tab".
+  const [activeTab, setActiveTab] = useState('images');
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -152,6 +156,12 @@ export default function DatasetDetail() {
 
   const router = useRouter();
   const { id } = router.query;
+
+  // Adopt ?tab= on first load so a shared link opens on the right section.
+  useEffect(() => {
+    const t = router.query.tab;
+    if (t === 'summary' || t === 'images') setActiveTab(t);
+  }, [router.query.tab]);
   const { user } = useAuth();
 
   const datasetLocked = Boolean(dataset?.is_locked);
@@ -215,15 +225,17 @@ export default function DatasetDetail() {
 
     setIsLoading(true);
     try {
-      const [datasetData, labelsData, reviewData] = await Promise.all([
+      const [datasetData, labelsData, reviewData, scaleData] = await Promise.all([
         fetch(`/api/datasets/dataset/${id}`).then((res) => res.json()),
         fetch(`/api/datasets/label/?datasets__id=${id}`).then((res) => res.json()),
         fetch(`/api/datasets/dataset/${id}/review-queue`).then((res) => res.ok ? res.json() : null).catch(() => null),
+        fetch(`/api/datasets/dataset/${id}/scale-summary`).then((res) => res.ok ? res.json() : null).catch(() => null),
       ]);
 
       setDataset(datasetData);
       setLabels(labelsData);
       if (reviewData) setReviewSummary(reviewData);
+      if (scaleData) setScaleSummary(scaleData);
 
       const initialPages = {};
       const initialHasMore = {};
@@ -1426,6 +1438,50 @@ export default function DatasetDetail() {
         />
       )}
 
+      {scaleSummary && (
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="-mb-px flex gap-6" aria-label="Dataset sections">
+            {[
+              { key: 'images', label: 'Images' },
+              { key: 'summary', label: 'Summary', badge: scaleSummary.totals?.uncalibrated || 0 },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => {
+                  setActiveTab(t.key);
+                  router.replace(
+                    { pathname: router.pathname, query: { ...router.query, tab: t.key } },
+                    undefined,
+                    { shallow: true },
+                  );
+                }}
+                className={`whitespace-nowrap border-b-2 py-3 px-1 text-sm font-medium ${
+                  activeTab === t.key
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+                {t.badge > 0 && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+
+      {activeTab === 'summary' && scaleSummary && (
+        <ScaleSummaryPanel
+          summary={scaleSummary}
+          datasetId={id}
+          onOpenReview={() => router.push(`/datasets/${id}/review`)}
+        />
+      )}
+
+      <div className={activeTab === 'summary' ? 'hidden' : ''}>
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
         <div className="sm:flex sm:items-end sm:justify-between gap-3">
           <div className="sm:w-2/3">
@@ -1662,6 +1718,7 @@ export default function DatasetDetail() {
             </div>
           );
         })}
+      </div>
       </div>
 
       {/* Compute Completeness Dialog */}
@@ -2189,6 +2246,214 @@ export default function DatasetDetail() {
         }}
       />
     </Layout>
+  );
+}
+
+// Summary tab. Answers one question: how much of this dataset can actually be
+// measured in millimetres, and where are the losses. Every number is a button
+// so the team can go straight from "525 have no scale bar" to looking at them.
+function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
+  const router = useRouter();
+  const [openSpecies, setOpenSpecies] = useState(null);
+  const t = summary.totals || {};
+  const species = summary.by_species || [];
+  const flags = (summary.by_flag || []).filter((f) => f.count > 0);
+  const pct = (n, d) => (d ? Math.round((n / d) * 1000) / 10 : 0);
+
+  // Every count on this panel is a link into the review queue, filtered to
+  // exactly the images behind it. A number the team cannot open is a number
+  // they cannot act on.
+  const openQueue = (params) => {
+    const qs = new URLSearchParams(params).toString();
+    router.push(`/datasets/${datasetId}/review${qs ? `?${qs}` : ''}`);
+  };
+
+  // Renders a count as a button when it leads somewhere, plain text when the
+  // count is zero so there is nothing to open.
+  const Drill = ({ count, params, className = '', children }) => {
+    if (!count) return <span className={className}>{children ?? count}</span>;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); openQueue(params); }}
+        className={`${className} underline decoration-dotted underline-offset-4 hover:decoration-solid`}
+        title="Open these in the review queue"
+      >
+        {children ?? count}
+      </button>
+    );
+  };
+
+  const Bar = ({ value, total, tone = 'blue' }) => {
+    const tones = { blue: 'bg-blue-500', amber: 'bg-amber-500', gray: 'bg-gray-300' };
+    return (
+      <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full ${tones[tone]}`} style={{ width: `${pct(value, total)}%` }} />
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6 mb-6">
+      {/* Headline */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-900">Measurement coverage</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          How many photographs carry a readable scale bar, which is what makes a
+          physical (mm) measurement possible.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[
+            { label: 'Images', value: t.images, sub: null, params: null },
+            { label: 'Calibrated', value: t.calibrated, sub: `${t.calibrated_pct}% of dataset`,
+              tone: 'text-blue-700', params: { state: 'calibrated' } },
+            { label: 'No calibration', value: t.uncalibrated, sub: 'cannot be measured yet',
+              tone: 'text-amber-700', params: { state: 'uncalibrated' } },
+            { label: 'Museum label read', value: t.with_ocr, sub: 'specimen metadata via OCR', params: null },
+          ].map((c) => (
+            <div key={c.label}>
+              <div className={`text-2xl font-semibold ${c.tone || 'text-gray-900'}`}>
+                {c.params ? (
+                  <Drill count={c.value} params={c.params}>
+                    {(c.value ?? 0).toLocaleString()}
+                  </Drill>
+                ) : (c.value ?? 0).toLocaleString()}
+              </div>
+              <div className="text-sm font-medium text-gray-700">{c.label}</div>
+              {c.sub && <div className="text-xs text-gray-500">{c.sub}</div>}
+            </div>
+          ))}
+        </div>
+        <div className="mt-4">
+          <Bar value={t.calibrated || 0} total={t.images || 1} />
+        </div>
+      </div>
+
+      {/* Per species */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-900">By species</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Click a row to see its measurement range. A species whose tooth sizes
+          sit outside the biologically expected range is a calibration warning.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-gray-500">
+                <th className="py-2 pr-4 font-medium">Species</th>
+                <th className="py-2 pr-4 font-medium text-right">Images</th>
+                <th className="py-2 pr-4 font-medium text-right">Calibrated</th>
+                <th className="py-2 pr-4 font-medium w-40">Coverage</th>
+                <th className="py-2 pr-4 font-medium text-right">Mean tooth</th>
+                <th className="py-2 font-medium text-right">Missing</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {species.map((s) => {
+                const open = openSpecies === s.label_id;
+                return (
+                  <Fragment key={s.label_id}>
+                    <tr
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setOpenSpecies(open ? null : s.label_id)}
+                    >
+                      <td className="py-2.5 pr-4 font-medium text-gray-900">
+                        <span className="inline-block w-3 text-gray-400">{open ? '−' : '+'}</span> {s.label}
+                      </td>
+                      <td className="py-2.5 pr-4 text-right text-gray-700">{s.total}</td>
+                      <td className="py-2.5 pr-4 text-right text-gray-700">
+                        <Drill count={s.calibrated} params={{ label: s.label_id, state: 'calibrated' }}>
+                          {s.calibrated}
+                        </Drill>{' '}
+                        <span className="text-gray-400">({s.calibrated_pct}%)</span>
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <Bar value={s.calibrated} total={s.total} tone={s.calibrated_pct < 70 ? 'amber' : 'blue'} />
+                      </td>
+                      <td className="py-2.5 pr-4 text-right text-gray-700">
+                        {s.mean_tooth_mm != null ? `${s.mean_tooth_mm} mm` : '-'}
+                      </td>
+                      <td className="py-2.5 text-right text-amber-700">
+                        <Drill count={s.uncalibrated}
+                               params={{ label: s.label_id, state: 'uncalibrated' }}
+                               className="text-amber-700">
+                          {s.uncalibrated || ''}
+                        </Drill>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={6} className="px-4 py-3">
+                          <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-4 text-xs">
+                            <div>
+                              <dt className="text-gray-500">Tooth size range</dt>
+                              <dd className="text-gray-900">
+                                {s.min_tooth_mm != null ? `${s.min_tooth_mm} to ${s.max_tooth_mm} mm` : 'not measured'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Museum label read</dt>
+                              <dd className="text-gray-900">{s.with_ocr} of {s.total}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Completeness computed</dt>
+                              <dd className="text-gray-900">{s.with_completeness} of {s.total}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-gray-500">Not measurable</dt>
+                              <dd className="text-amber-700">{s.uncalibrated}</dd>
+                            </div>
+                          </dl>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Why images are not usable */}
+      <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">What needs attention</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Each bucket is a reason an image is not finished. Open the review
+              queue to inspect them one by one.
+            </p>
+          </div>
+          <button className={theme.classes.btnSecondary} onClick={onOpenReview}>
+            Open review queue
+          </button>
+        </div>
+        <ul className="mt-4 divide-y divide-gray-100">
+          {flags.length === 0 && (
+            <li className="py-3 text-sm text-gray-500">Nothing flagged. Every image is resolved.</li>
+          )}
+          {flags.map((f) => (
+            <li key={f.key}>
+              <button
+                onClick={() => openQueue({ flag: f.key })}
+                className="flex w-full items-center justify-between py-2.5 text-left hover:bg-gray-50"
+                title="Open these in the review queue"
+              >
+                <span className="text-sm text-gray-800">{f.label}</span>
+                <span className="text-sm font-semibold text-gray-900 underline decoration-dotted underline-offset-4">
+                  {f.count.toLocaleString()}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-xs text-gray-500">
+          Images under {summary.low_resolution_threshold_px} px on the long edge are counted
+          separately because no re-processing can recover a measurement from them. They stay
+          usable for classification.
+        </p>
+      </div>
+    </div>
   );
 }
 
