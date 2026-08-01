@@ -13,10 +13,13 @@ import { createApiClient } from '../../../../../utils/apiProxy';
 
 export default async function handler(req, res) {
   const api = createApiClient(req);
-  const { id } = req.query;
+  const { id, counts_only: countsOnly } = req.query;
   if (req.method === 'GET') {
     try {
-      const response = await api.get(`api/datasets/dataset/${id}/review-queue/`);
+      // Pass through counts_only so callers that need only the totals can
+      // skip serialising every flagged image.
+      const qs = countsOnly ? '?counts_only=1' : '';
+      const response = await api.get(`api/datasets/dataset/${id}/review-queue/${qs}`);
       res.status(200).json(response.data);
     } catch (error) {
       const status = error?.response?.status || 500;

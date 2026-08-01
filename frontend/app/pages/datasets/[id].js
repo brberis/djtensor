@@ -143,9 +143,13 @@ export default function DatasetDetail() {
   const [actionStatus, setActionStatus] = useState(null);
   const [reviewSummary, setReviewSummary] = useState(null);
   const [scaleSummary, setScaleSummary] = useState(null);
-  // Tab lives in the URL so a teammate can be sent straight to the summary
-  // (…/datasets/168?tab=summary) instead of "open it and click the tab".
-  const [activeTab, setActiveTab] = useState('images');
+  // Tab lives in the URL so a teammate can be sent straight to a section
+  // (…/datasets/168?tab=images) instead of "open it and click the tab".
+  //
+  // Summary opens first: the useful question on arriving at a dataset is what
+  // state it is in, not what the first thumbnail looks like. A ?tab= in the
+  // URL still wins, so existing links keep working.
+  const [activeTab, setActiveTab] = useState('summary');
   const [selectedTransformations, setSelectedTransformations] = useState({ fragments: false });
   const [imageViewMode, setImageViewMode] = useState('transformed'); // 'transformed', 'original', 'side-by-side'
   const [regenerating, setRegenerating] = useState(false);
@@ -228,7 +232,10 @@ export default function DatasetDetail() {
       const [datasetData, labelsData, reviewData, scaleData] = await Promise.all([
         fetch(`/api/datasets/dataset/${id}`).then((res) => res.json()),
         fetch(`/api/datasets/label/?datasets__id=${id}`).then((res) => res.json()),
-        fetch(`/api/datasets/dataset/${id}/review-queue`).then((res) => res.ok ? res.json() : null).catch(() => null),
+        // counts_only: this page reads the totals and the pipeline stats, never
+        // the per-image lists. Without it the response is ~4.5 MB of image JSON
+        // that the browser parses and discards.
+        fetch(`/api/datasets/dataset/${id}/review-queue?counts_only=1`).then((res) => res.ok ? res.json() : null).catch(() => null),
         fetch(`/api/datasets/dataset/${id}/scale-summary`).then((res) => res.ok ? res.json() : null).catch(() => null),
       ]);
 
@@ -1039,7 +1046,7 @@ export default function DatasetDetail() {
                               setActiveImage(prev => ({ ...prev, ...updated }));
                               // refetch the dataset-level review summary so the menu badge updates
                               try {
-                                const r = await fetch(`/api/datasets/dataset/${id}/review-queue`);
+                                const r = await fetch(`/api/datasets/dataset/${id}/review-queue?counts_only=1`);
                                 if (r.ok) setReviewSummary(await r.json());
                               } catch {}
                             }}
@@ -1442,8 +1449,8 @@ export default function DatasetDetail() {
         <div className="border-b border-gray-200 mb-6">
           <nav className="-mb-px flex gap-6" aria-label="Dataset sections">
             {[
-              { key: 'images', label: 'Images' },
               { key: 'summary', label: 'Summary', badge: scaleSummary.totals?.uncalibrated || 0 },
+              { key: 'images', label: 'Images' },
             ].map((t) => (
               <button
                 key={t.key}
@@ -1481,7 +1488,12 @@ export default function DatasetDetail() {
         />
       )}
 
-      <div className={activeTab === 'summary' ? 'hidden' : ''}>
+      {/* Hide the image list only when the summary is actually on screen.
+          Summary is the default tab, but it renders nothing until its fetch
+          lands and it does not exist at all for datasets without a scale
+          summary, so keying purely off activeTab would leave those pages
+          blank. */}
+      <div className={activeTab === 'summary' && scaleSummary ? 'hidden' : ''}>
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl mb-6 p-5">
         <div className="sm:flex sm:items-end sm:justify-between gap-3">
           <div className="sm:w-2/3">
@@ -2238,7 +2250,7 @@ export default function DatasetDetail() {
               setInspectorImage(prev => prev ? { ...prev, ...updated } : prev);
               setActiveImage(prev => prev && prev.id === imgId ? { ...prev, ...updated } : prev);
               try {
-                const r = await fetch(`/api/datasets/dataset/${id}/review-queue`);
+                const r = await fetch(`/api/datasets/dataset/${id}/review-queue?counts_only=1`);
                 if (r.ok) setReviewSummary(await r.json());
               } catch {}
             }

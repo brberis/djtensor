@@ -306,6 +306,14 @@ class DatasetViewSet(viewsets.ModelViewSet):
         from .serializers import ImageSerializer
         from .models import Image
         dataset = self.get_object()
+
+        # The dataset detail page wants the counts and the pipeline stats; it
+        # never reads `items`. Serialising every flagged image for it sent
+        # 4.5 MB of JSON that the browser then had to parse and throw away,
+        # which was most of that page's load time. `?counts_only=1` returns
+        # the same shape with empty item lists.
+        counts_only = request.query_params.get('counts_only') in ('1', 'true', 'yes')
+
         flags = get_review_flags(dataset.id)
         categories = []
         total = 0
@@ -320,7 +328,8 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 'label': REVIEW_FLAG_LABELS[key],
                 'description': REVIEW_FLAG_DESCRIPTIONS[key],
                 'count': len(imgs),
-                'items': ImageSerializer(imgs, many=True, context={'request': request}).data,
+                'items': ([] if counts_only
+                          else ImageSerializer(imgs, many=True, context={'request': request}).data),
             })
         # Plus a summary of already-resolved counts so the queue can show progress.
         resolved_counts = {}
