@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 import Layout from '../../../components/Layout';
 import ReviewInspector from '../../../components/ReviewInspector';
 import ConfirmDialog from '../../../components/ConfirmDialog';
@@ -25,6 +26,12 @@ import theme from '../../../theme';
 
 function normalizeMediaUrl(url) {
   if (!url) return '';
+  // Keep media same-origin. The API hands back an absolute URL on the public
+  // hostname, and letting the image optimiser use that would send every
+  // thumbnail request out over the internet and back. Trimming to the /media
+  // path routes it through the internal rewrite to nginx instead.
+  const media = url.indexOf('/media/');
+  if (media >= 0) return url.slice(media);
   if (url.startsWith('http')) return url;
   if (url.startsWith('/')) return url;
   return '/' + url;
@@ -68,12 +75,19 @@ export default function ReviewQueue() {
   const { flag: flagFilter, label: labelFilter, state: stateFilter } = router.query;
   const hasFilter = Boolean(flagFilter || labelFilter || stateFilter);
 
+  // Images measured during this visit. They are kept visible even once they
+  // stop matching the filter, because a reviewer working the "no calibration"
+  // queue would otherwise watch each tooth disappear the instant they measured
+  // it, with no chance to check the result. They drop out on the next refresh.
+  const [justMeasured, setJustMeasured] = useState(() => new Set());
+
   const matchesFilters = useCallback((img) => {
     if (labelFilter && String(img.label) !== String(labelFilter)) return false;
+    if (justMeasured.has(img.id)) return true;
     if (stateFilter === 'uncalibrated' && img.mm_per_pixel != null) return false;
     if (stateFilter === 'calibrated' && img.mm_per_pixel == null) return false;
     return true;
-  }, [labelFilter, stateFilter]);
+  }, [labelFilter, stateFilter, justMeasured]);
 
   // Categories after filtering, used for both display and the counts.
   const visibleCategories = useMemo(() => {
@@ -381,6 +395,23 @@ export default function ReviewQueue() {
             setInspectorImageId(flatImages[inspectorIndex + 1].id);
           }
         }}
+        onImageUpdated={(updated) => {
+          // Merge the new measurement into the queue in place, so the
+          // inspector redraws with the tooth outline and size without
+          // refetching the whole review queue.
+          setData((prev) => prev && ({
+            ...prev,
+            categories: (prev.categories || []).map((cat) => ({
+              ...cat,
+              items: (cat.items || []).map((it) => (it.id === updated.id ? { ...it, ...updated } : it)),
+            })),
+          }));
+          // Pin it so it survives the active filter. Measuring an image in the
+          // "no calibration" queue makes it stop matching that filter at once,
+          // which dropped it from the list and closed the inspector on top of
+          // the reviewer before they could look at the result.
+          setJustMeasured((prev) => new Set(prev).add(updated.id));
+        }}
         onAction={(imgId, action, label) => {
           // The Inspector's actions also go through the shared confirm flow.
           // When confirmed, advance to the next flagged image (or close the
@@ -450,12 +481,22 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
           className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
         />
         {/* Plain img is fine here; the URL already includes a cache-bust query param from the serializer. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={normalizeMediaUrl(img.image)}
-          alt={img.file_name || ''}
-          className="h-20 w-20 object-cover rounded-md ring-1 ring-gray-200 bg-gray-50"
-        />
+        {/* An 80px thumbnail was being drawn from the full original, which for
+            the newly imported photographs is 4948x3280 and several megabytes.
+            Twenty rows meant tens of megabytes of image data for postage
+            stamps. next/image resizes and caches on the server and defers
+            offscreen rows, so a row costs a few kilobytes instead. */}
+        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md ring-1 ring-gray-200 bg-gray-50">
+          <Image
+            src={normalizeMediaUrl(img.image)}
+            alt={img.file_name || ''}
+            fill
+            sizes="80px"
+            quality={55}
+            className="object-cover"
+            unoptimized={false}
+          />
+        </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">{img.image?.split('/').pop()?.split('?')[0]}</p>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -482,6 +523,14 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
           )}
           {img.scale_bar_detected === false && (
             <span className="mt-1 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">scale bar not detected</span>
+          )}
+          {/* Says at a glance that a person set this scale, not the detector.
+              Without it a hand-measured row looks identical to an automatic
+              one and there is no way to tell which numbers were checked. */}
+          {img.scale_bar_source === 'manual' && (
+            <span className="mt-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+              measured by hand
+            </span>
           )}
           {(() => {
             const folder = (img.label_name || '').trim();

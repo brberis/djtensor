@@ -21,24 +21,34 @@ import { ArrowLeftIcon, ArrowRightIcon, ExclamationTriangleIcon, XMarkIcon } fro
 
 function normalizeMediaUrl(url) {
   if (!url) return '';
+  // Same-origin: the API returns an absolute URL on the public hostname, so
+  // the browser would fetch every photograph out over the internet and back
+  // instead of straight from nginx. The inspector still loads the full
+  // resolution file, which the loupe needs.
+  const media = url.indexOf('/media/');
+  if (media >= 0) return url.slice(media);
   if (url.startsWith('http')) return url;
   if (url.startsWith('/')) return url;
   return '/' + url;
 }
 
-// Physical references a reviewer can measure against. Coin diameters are the
-// US Mint specifications. Card and ruler entries cover the cases where the
-// detector can see the scale but cannot read it.
+// Physical references a reviewer can measure against.
+//
+// Ordered by how often they actually come up. Nearly every photograph that
+// fails automatic measurement has a RULER or a scale card in frame; coins
+// appear in a couple of dozen web-sourced images. The list used to lead with
+// coins, which put the rare case in front of the common one.
 const SCALE_REFERENCES = [
+  { key: 'cm1', label: 'Ruler, 1 cm', mm: 10 },
+  { key: 'cm2', label: 'Ruler, 2 cm', mm: 20 },
+  { key: 'cm5', label: 'Ruler, 5 cm', mm: 50 },
+  { key: 'inch', label: 'Scale card, 1 inch band', mm: 25.4 },
+  { key: 'halfinch', label: 'Scale card, 0.5 inch row', mm: 12.7 },
+  { key: 'cm3', label: 'Scale card, 3 cm row', mm: 30 },
   { key: 'nickel', label: 'US nickel (diameter)', mm: 21.21 },
   { key: 'quarter', label: 'US quarter (diameter)', mm: 24.26 },
   { key: 'penny', label: 'US penny (diameter)', mm: 19.05 },
   { key: 'dime', label: 'US dime (diameter)', mm: 17.91 },
-  { key: 'inch', label: 'Scale card, 1 inch band', mm: 25.4 },
-  { key: 'halfinch', label: 'Scale card, 0.5 inch row', mm: 12.7 },
-  { key: 'cm3', label: 'Scale card, 3 cm row', mm: 30 },
-  { key: 'cm1', label: 'Ruler, 1 cm', mm: 10 },
-  { key: 'cm5', label: 'Ruler, 5 cm', mm: 50 },
   { key: 'custom', label: 'Custom distance…', mm: null },
 ];
 
@@ -50,6 +60,7 @@ export default function ReviewInspector({
   onPrev,
   onNext,
   onAction,
+  onImageUpdated,
   showNav = true,
   footerHint,
 }) {
@@ -69,7 +80,9 @@ export default function ReviewInspector({
   // pixels only when sent.
   const [measuring, setMeasuring] = useState(false);
   const [points, setPoints] = useState([]);
-  const [referenceKey, setReferenceKey] = useState('nickel');
+  // Defaults to a ruler, because that is what is in nearly every frame the
+  // detector could not read.
+  const [referenceKey, setReferenceKey] = useState('cm1');
   const [customMm, setCustomMm] = useState('');
   const [savingScale, setSavingScale] = useState(false);
   const [scaleError, setScaleError] = useState(null);
@@ -81,6 +94,7 @@ export default function ReviewInspector({
   const [snapMode, setSnapMode] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [snapInfo, setSnapInfo] = useState(null);
+  const [resettingScale, setResettingScale] = useState(false);
 
   // Cursor position while measuring, for the loupe. Picking the edge of a
   // coin or a ruler mark is a sub-pixel job at fit-to-screen size, so the
@@ -245,32 +259,76 @@ export default function ReviewInspector({
                       >
                         {measuring ? 'Cancel' : 'Set scale manually'}
                       </button>
+
+                      {/* Undo, offered ONLY for a scale a person set. Two
+                          clicks in the wrong place would otherwise be
+                          permanent, because the hand-set value replaces
+                          whatever the detector had found. */}
+                      {!measuring && img.scale_bar_source === 'manual' && (
+                        <button
+                          disabled={resettingScale}
+                          onClick={async () => {
+                            setResettingScale(true); setScaleError(null);
+                            try {
+                              const res = await fetch(`/api/datasets/image/${img.id}/reset-scale`, { method: 'POST' });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.message || 'Could not undo the manual scale');
+                              setScaleResult(null);
+                              setPoints([]);
+                              if (data.image && onImageUpdated) onImageUpdated(data.image);
+                            } catch (err) {
+                              setScaleError(err.message);
+                            } finally {
+                              setResettingScale(false);
+                            }
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${
+                            resettingScale
+                              ? 'bg-gray-100 text-gray-400 ring-gray-200'
+                              : 'bg-white text-amber-800 ring-amber-300 hover:bg-amber-50'
+                          }`}
+                          title="Discard the hand-set scale and go back to automatic detection"
+                        >
+                          {resettingScale ? 'Undoing…' : 'Undo manual scale'}
+                        </button>
+                      )}
+
+                      {!measuring && scaleError && (
+                        <span className="text-xs text-red-700">{scaleError}</span>
+                      )}
                     </div>
 
                     {measuring && (
                       <div className="mb-3 rounded-lg bg-fuchsia-50 px-4 py-3 ring-1 ring-fuchsia-200">
                         <p className="text-sm text-fuchsia-900">
                           {snapping && 'Measuring that circle…'}
-                          {!snapping && snapMode && 'Click once anywhere inside the coin.'}
-                          {!snapping && !snapMode && points.length === 0 && 'Click one end of something you know the size of: a coin, a scale bar, two ruler marks.'}
-                          {!snapping && !snapMode && points.length === 1 && 'Now click the other end.'}
-                          {!snapping && !snapMode && points.length === 2 && 'Say what you measured, then apply.'}
+                          {!snapping && snapMode && 'Click once inside the coin.'}
+                          {!snapping && !snapMode && points.length === 0 && 'Mark two points a known distance apart on the ruler, for example the 1 cm and 2 cm marks.'}
+                          {!snapping && !snapMode && points.length === 1 && 'Now mark the second point.'}
+                          {!snapping && !snapMode && points.length === 2 && 'Say what the distance between them is, then apply.'}
                         </p>
 
-                        {/* Clicking two edges of a coin by hand is fiddly and
-                            the error goes straight into mm/px. Let the machine
-                            measure the circle; the reviewer still names it. */}
+                        {/* The coin helper is deliberately quiet. Almost every
+                            frame that fails automatic measurement has a ruler
+                            or a scale card in it; coins turn up in a couple of
+                            dozen web-sourced photographs. Leading with the
+                            coin put the rare case in front of the common one. */}
                         {points.length < 2 && !snapping && (
-                          <button
-                            onClick={() => { setSnapMode((on) => !on); setScaleError(null); }}
-                            className={`mt-2 rounded-md px-2.5 py-1 text-xs font-medium ring-1 ${
-                              snapMode
-                                ? 'bg-fuchsia-600 text-white ring-fuchsia-600'
-                                : 'bg-white text-fuchsia-800 ring-fuchsia-300 hover:bg-fuchsia-50'
-                            }`}
-                          >
-                            {snapMode ? 'Cancel coin measuring' : 'Measure a coin for me'}
-                          </button>
+                          snapMode ? (
+                            <button
+                              onClick={() => { setSnapMode(false); setScaleError(null); }}
+                              className="mt-2 rounded-md px-2.5 py-1 text-xs font-medium bg-fuchsia-600 text-white ring-1 ring-fuchsia-600"
+                            >
+                              Cancel coin measuring
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => { setSnapMode(true); setScaleError(null); }}
+                              className="mt-1 text-xs text-fuchsia-700 underline hover:text-fuchsia-900"
+                            >
+                              This photo has a coin instead of a ruler
+                            </button>
+                          )
                         )}
 
                         {snapInfo && (
@@ -332,6 +390,17 @@ export default function ReviewInspector({
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data.message || 'Could not set the scale');
                                   setScaleResult(data);
+                                  // Leave measuring mode and hand the updated
+                                  // image back, so the photograph immediately
+                                  // shows the tooth outline with its size the
+                                  // same way an automatically measured one
+                                  // does. Staying in the marking UI made it
+                                  // look as though nothing had happened.
+                                  if (data.image && onImageUpdated) onImageUpdated(data.image);
+                                  setMeasuring(false);
+                                  setSnapMode(false);
+                                  setSnapInfo(null);
+                                  setPoints([]);
                                 } catch (err) {
                                   setScaleError(err.message);
                                 } finally {
@@ -359,23 +428,38 @@ export default function ReviewInspector({
                         {/* Show what the measurement implies before the
                             reviewer moves on. A wrong click is obvious in
                             millimetres and invisible in mm/px. */}
-                        {scaleResult && (
-                          <div className="mt-3 rounded-md bg-white px-3 py-2 ring-1 ring-fuchsia-200">
-                            <p className="text-sm text-gray-900">
-                              Saved. This image is now <b>{scaleResult.mm_per_pixel?.toFixed(5)} mm per pixel</b>
-                              {scaleResult.tooth_length_mm != null && (
-                                <> and the tooth measures <b>{scaleResult.tooth_length_mm} mm</b></>
-                              )}.
-                            </p>
-                            {!scaleResult.tooth_found && (
-                              <p className="mt-1 text-xs text-amber-700">
-                                The scale was saved, but no tooth outline was found in this image, so no tooth size could be computed.
-                              </p>
+                      </div>
+                    )}
+
+                    {/* Outcome of a hand-set scale, shown AFTER leaving the
+                        marking UI. The reviewer's answer is the tooth size on
+                        the photograph, not the mm/px, so the banner stays
+                        short and the measurement itself is drawn on the image
+                        exactly as it is for an automatically measured tooth. */}
+                    {!measuring && scaleResult && (
+                      <div className="mb-3 rounded-lg bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-sm text-emerald-900">
+                            Measured by hand:{' '}
+                            {scaleResult.tooth_length_mm != null ? (
+                              <>this tooth is <b>{scaleResult.tooth_length_mm} mm</b> across
+                                {' '}<span className="text-emerald-700">({scaleResult.mm_per_pixel?.toFixed(5)} mm per pixel)</span>
+                              </>
+                            ) : (
+                              <>scale saved at <b>{scaleResult.mm_per_pixel?.toFixed(5)} mm per pixel</b></>
                             )}
-                            <p className="mt-1 text-xs text-gray-500">
-                              If that size looks wrong, click the two ends again and re-apply.
-                            </p>
-                          </div>
+                          </p>
+                          <button
+                            onClick={() => { setMeasuring(true); setPoints([]); setScaleResult(null); setScaleError(null); }}
+                            className="rounded-md px-2.5 py-1 text-xs font-medium bg-white text-emerald-800 ring-1 ring-emerald-300 hover:bg-emerald-50"
+                          >
+                            Measure again
+                          </button>
+                        </div>
+                        {!scaleResult.tooth_found && (
+                          <p className="mt-1 text-xs text-amber-700">
+                            The scale was saved, but no tooth outline was found in this image, so no tooth size could be computed.
+                          </p>
                         )}
                       </div>
                     )}
@@ -438,7 +522,17 @@ export default function ReviewInspector({
                               setSnapInfo(data);
                               setSnapMode(false);
                             } catch (err) {
-                              setScaleError(err.message);
+                              // Do not strand the reviewer. If no circle was
+                              // found where they clicked, drop out of coin
+                              // mode and keep the click as an ordinary first
+                              // point, so marking two points by hand carries
+                              // straight on. Previously the click was simply
+                              // swallowed and nothing appeared on the image.
+                              setSnapMode(false);
+                              setPoints([{ px, py }]);
+                              setScaleError(
+                                `${err.message}. Coin measuring is off; mark the two points by hand instead.`,
+                              );
                             } finally {
                               setSnapping(false);
                             }

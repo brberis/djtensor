@@ -2238,6 +2238,12 @@ export default function DatasetDetail() {
         total={0}
         showNav={false}
         onClose={() => setInspectorImage(null)}
+        onImageUpdated={(updated) => {
+          // Keep the open inspector and the row behind it in step after a
+          // hand-set scale, so the tooth outline and size appear at once.
+          setInspectorImage((prev) => (prev ? { ...prev, ...updated } : prev));
+          setActiveImage((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+        }}
         onAction={async (imgId, action) => {
           try {
             const res = await fetch(`/api/datasets/image/${imgId}/review`, {
