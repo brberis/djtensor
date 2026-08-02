@@ -664,7 +664,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         """
         import math
         from .models import ImageReviewEvent
-        from .scale_calibration import detect_scale_bar
+        from .scale_calibration import detect_tooth_only
 
         image = self.get_object()
         if image.dataset and dataset_is_locked(image.dataset):
@@ -689,14 +689,33 @@ class ImageViewSet(viewsets.ModelViewSet):
         mm_per_pixel = reference_mm / distance_px
         reference_label = (request.data.get('reference_label') or 'manual measurement')[:120]
 
+        # Snapshot what is being replaced so undo is a restore rather than a
+        # recomputation. Re-running the detector to undo costs about twenty
+        # seconds and, on the frames where anyone actually reaches for the
+        # manual tool, usually concludes what it concluded the first time:
+        # nothing.
+        previous_state = {
+            'mm_per_pixel': float(image.mm_per_pixel) if image.mm_per_pixel else None,
+            'scale_bar_detected': bool(image.scale_bar_detected),
+            'scale_bar_source': image.scale_bar_source or '',
+            'tooth_bbox': list(image.tooth_bbox) if image.tooth_bbox else None,
+            'tooth_area_mm2': float(image.tooth_area_mm2) if image.tooth_area_mm2 else None,
+            'tooth_width_mm': float(image.tooth_width_mm) if image.tooth_width_mm else None,
+            'tooth_height_mm': float(image.tooth_height_mm) if image.tooth_height_mm else None,
+            'tooth_major_axis_mm': float(image.tooth_major_axis_mm) if image.tooth_major_axis_mm else None,
+            'tooth_minor_axis_mm': float(image.tooth_minor_axis_mm) if image.tooth_minor_axis_mm else None,
+        }
+
         # Reuse the existing segmentation to convert the new scale into the
         # tooth measurements, so a manual calibration produces exactly the same
         # fields as an automatic one and nothing downstream needs to special
         # case it.
         tooth = None
         try:
-            result = detect_scale_bar(image.image.path)
-            tooth = next((b for b in result.blobs if b.classification == 'tooth'), None)
+            # Tooth outline only. The full detector would spend around twenty
+            # seconds hunting for a scale bar we are in the middle of
+            # replacing by hand, which is dead time in front of the reviewer.
+            tooth = detect_tooth_only(image.image.path)
         except Exception:
             pass
 
@@ -734,6 +753,7 @@ class ImageViewSet(viewsets.ModelViewSet):
                 'reference_mm': reference_mm,
                 'reference_label': reference_label,
                 'mm_per_pixel': mm_per_pixel,
+                'previous_state': previous_state,
             },
         )
 
@@ -748,6 +768,112 @@ class ImageViewSet(viewsets.ModelViewSet):
             'distance_px': round(distance_px, 2),
             'tooth_length_mm': tooth_length_mm,
             'tooth_found': tooth is not None,
+        })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='reset-scale')
+    def reset_scale(self, request, pk=None):
+        """Undo a hand-set scale and go back to whatever the detector says.
+
+        Setting a scale by hand means clicking two points, and a reviewer who
+        clicks the wrong two has no way back otherwise: the manual value simply
+        replaces whatever was there. This re-runs the detector and takes its
+        answer, which is either the original automatic calibration or none at
+        all, and either is recoverable.
+
+        Refuses to touch anything that was not set by hand, so it can never
+        quietly discard an automatic calibration.
+        """
+        from .models import ImageReviewEvent
+        from .scale_calibration import detect_scale_bar
+
+        image = self.get_object()
+        if image.dataset and dataset_is_locked(image.dataset):
+            return Response({'error': dataset_lock_reason(image.dataset)},
+                            status=status.HTTP_409_CONFLICT)
+        if image.scale_bar_source != 'manual':
+            return Response(
+                {'error': 'this image was not calibrated by hand, so there is nothing to undo'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        previous_mm_per_pixel = float(image.mm_per_pixel) if image.mm_per_pixel else None
+
+        # Restore the snapshot the manual pass took, rather than recomputing.
+        # Re-running the detector here costs about twenty seconds and, on the
+        # frames a reviewer actually measures by hand, usually reaches the same
+        # conclusion it reached the first time: no calibration.
+        event = (ImageReviewEvent.objects
+                 .filter(image=image, action='manual_scale')
+                 .order_by('-id').first())
+        snapshot = (event.metadata or {}).get('previous_state') if event else None
+
+        if snapshot is not None:
+            image.mm_per_pixel = snapshot.get('mm_per_pixel')
+            image.scale_bar_detected = bool(snapshot.get('scale_bar_detected'))
+            image.scale_bar_source = snapshot.get('scale_bar_source') or ''
+            image.tooth_bbox = snapshot.get('tooth_bbox')
+            image.tooth_area_mm2 = snapshot.get('tooth_area_mm2')
+            image.tooth_width_mm = snapshot.get('tooth_width_mm')
+            image.tooth_height_mm = snapshot.get('tooth_height_mm')
+            image.tooth_major_axis_mm = snapshot.get('tooth_major_axis_mm')
+            image.tooth_minor_axis_mm = snapshot.get('tooth_minor_axis_mm')
+            restored_from = 'snapshot'
+        else:
+            # Older manual calibrations predate the snapshot, so fall back to
+            # asking the detector again.
+            result = None
+            try:
+                result = detect_scale_bar(image.image.path)
+            except Exception:
+                pass
+            tooth = (next((b for b in result.blobs if b.classification == 'tooth'), None)
+                     if result is not None else None)
+            image.mm_per_pixel = result.mm_per_pixel if result else None
+            image.scale_bar_detected = bool(result and result.mm_per_pixel)
+            image.scale_bar_source = (result.calibration_method
+                                      if result and result.mm_per_pixel else '')
+            if tooth is not None and image.mm_per_pixel:
+                mm = float(image.mm_per_pixel)
+                tx0, ty0, tx1, ty1 = tooth.bbox
+                image.tooth_bbox = list(tooth.bbox)
+                image.tooth_area_mm2 = float(tooth.area_px) * mm ** 2
+                image.tooth_width_mm = (tx1 - tx0 + 1) * mm
+                image.tooth_height_mm = (ty1 - ty0 + 1) * mm
+                major = float(tooth.major_axis_px or 0.0) * mm
+                minor = float(tooth.minor_axis_px or 0.0) * mm
+                image.tooth_major_axis_mm = major if major > 0 else None
+                image.tooth_minor_axis_mm = minor if minor > 0 else None
+            else:
+                image.tooth_area_mm2 = None
+                image.tooth_width_mm = None
+                image.tooth_height_mm = None
+                image.tooth_major_axis_mm = None
+                image.tooth_minor_axis_mm = None
+            restored_from = 'detector'
+        image.completeness_mm2 = None
+        image.save(update_fields=[
+            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'tooth_bbox',
+            'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+        ])
+
+        ImageReviewEvent.objects.create(
+            image=image,
+            user=request.user if request.user.is_authenticated else None,
+            action='reset_manual_scale',
+            previous_status=image.review_status,
+            new_status=image.review_status,
+            notes='Hand-set scale removed; reverted to automatic detection',
+            metadata={
+                'previous_mm_per_pixel': previous_mm_per_pixel,
+                'mm_per_pixel': image.mm_per_pixel,
+                'restored_from': restored_from,
+            },
+        )
+
+        return Response({
+            'image': ImageSerializer(image, context={'request': request}).data,
+            'mm_per_pixel': image.mm_per_pixel,
+            'recalibrated_automatically': bool(image.mm_per_pixel),
         })
 
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='find-circle')
@@ -767,7 +893,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         Body: x, y in ORIGINAL image pixels, anywhere inside the coin.
         Returns the diameter and the two endpoints to hand to manual-scale.
         """
-        from .scale_calibration import detect_scale_bar
+        from .scale_calibration import segment_blobs
 
         image = self.get_object()
         try:
@@ -778,7 +904,10 @@ class ImageViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            result = detect_scale_bar(image.image.path)
+            # Shapes only. Running the whole detector here spent about twenty
+            # seconds looking for a scale bar before answering a question about
+            # a circle, which read in the UI as a click that did nothing.
+            blobs = segment_blobs(image.image.path)
         except Exception:
             return Response({'error': 'could not read this image'},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -786,7 +915,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         # The click only has to land inside the blob; the reviewer is pointing
         # at a coin, not tracing it.
         hit = None
-        for blob in result.blobs:
+        for blob in blobs:
             bx0, by0, bx1, by1 = blob.bbox
             if bx0 <= px <= bx1 and by0 <= py <= by1:
                 if hit is None or blob.area_px < hit.area_px:

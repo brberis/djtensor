@@ -220,6 +220,61 @@ def detect_scale_bar(
         relaxed if relaxed.mm_per_pixel is not None else strict)
 
 
+def segment_blobs(
+    image_path: str,
+    min_blob_area_px: int = 5_000,
+    bar_fill_threshold: float = 0.78,
+    bar_aspect_threshold: float = 3.0,
+) -> List['BlobInfo']:
+    """Segment the frame into classified blobs and stop there.
+
+    Everything expensive in the detector happens AFTER this point: card
+    identification, OCR, sweeping for ruler ticks, and a second full pass when
+    the first finds nothing. Callers that only need to know what shapes are in
+    the picture should not pay for any of it.
+    """
+    img = Image.open(image_path)
+    mask, _source = _foreground_mask(img)
+    if mask is None:
+        return []
+    blobs = _label_and_describe_blobs(mask, min_blob_area_px)
+    _classify_blobs(blobs, bar_fill_threshold, bar_aspect_threshold)
+    return blobs
+
+
+def detect_tooth_only(
+    image_path: str,
+    min_blob_area_px: int = 5_000,
+    bar_fill_threshold: float = 0.78,
+    bar_aspect_threshold: float = 3.0,
+) -> Optional['BlobInfo']:
+    """Find just the tooth, without hunting for a scale bar.
+
+    A hand-set calibration already knows its mm/px; all it needs from the
+    image is the tooth outline to convert that into a size. Calling the full
+    detector for this is enormously wasteful: on CMM-V-5096-B it spends 21.9
+    seconds identifying cards, running OCR and sweeping for ruler ticks
+    (twice, since a failed strict pass retries relaxed) before giving up and
+    returning no calibration at all. The blobs it would have used take 0.4s.
+
+    That 21 second wait sat between a reviewer clicking Apply and seeing their
+    measurement, on exactly the frames where the automatic detector had
+    already failed, which is the only reason anyone reaches for the manual
+    tool in the first place.
+
+    Returns the tooth BlobInfo, or None when nothing could be segmented.
+    """
+    blobs = segment_blobs(image_path, min_blob_area_px,
+                          bar_fill_threshold, bar_aspect_threshold)
+    tooth = next((b for b in blobs if b.classification == 'tooth'), None)
+    if tooth is not None:
+        return tooth
+    # No blob was tagged as the tooth, so fall back to the largest thing that
+    # is not card-shaped rather than returning nothing.
+    remainder = [b for b in blobs if b.classification != 'scale_bar']
+    return max(remainder, key=lambda b: b.area_px) if remainder else None
+
+
 # A colour-mask calibration has to clear both of these to be believed.
 # Sized so the two known false-positive families cannot pass: the synthetic
 # training crops are 384x384, and the UI screenshots scored 0.38 to 0.58.
