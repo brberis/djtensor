@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
+from django.conf import settings
 from django.utils import timezone
 
 from .models import Image, ImageReviewEvent, Dataset, Label
@@ -42,6 +43,25 @@ REVIEW_FLAGS = (
     'no_museum_label',
     'pending_review',
 )
+
+# Flags derived from reading the catalog label rather than from measuring the
+# tooth.
+#
+# This study does not use the label at all: the species is settled by which
+# directory a photograph came from, and what is needed from each image is the
+# measurement. Raising these anyway buried the queue in work nobody wants
+# done. On the fragments they accounted for 1,021 of 1,093 entries, so the 72
+# images actually missing a measurement were lost among them, and 'species
+# mismatch' compares the folder against an OCR read that recovers a usable
+# catalog number on about one image in ten.
+#
+# Set PHASE2_REVIEW_METADATA_FLAGS = True to bring them back when the label
+# becomes part of the work.
+METADATA_FLAGS = frozenset({
+    'species_mismatch',
+    'low_ocr_confidence',
+    'no_museum_label',
+})
 
 REVIEW_FLAG_LABELS = {
     'species_mismatch': 'OCR / folder species mismatch',
@@ -178,6 +198,9 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
 
     flags: Dict[str, List[Image]] = {key: [] for key in REVIEW_FLAGS}
 
+    # Label-derived flags are off unless the study actually uses the label.
+    metadata_flags_on = bool(getattr(settings, 'PHASE2_REVIEW_METADATA_FLAGS', False))
+
     images = (
         Image.objects.filter(dataset=ds)
         .select_related('label')
@@ -189,7 +212,11 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
             continue
 
         # 1. Species mismatch. Case-insensitive comparison; trim spaces.
-        if img.museum_species and img.label and img.label.name:
+        #
+        # Checked before the scale-bar test, so while it was on it could hide a
+        # missing measurement behind a disagreement about a label this study
+        # does not use.
+        if metadata_flags_on and img.museum_species and img.label and img.label.name:
             if img.museum_species.strip().lower() != img.label.name.strip().lower():
                 flags['species_mismatch'].append(img)
                 continue
@@ -216,7 +243,7 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
 
         # 4. Low OCR confidence.
         md = img.museum_metadata or {}
-        if isinstance(md, dict):
+        if metadata_flags_on and isinstance(md, dict):
             conf = md.get('confidence')
             if conf is not None and conf < 0.5:
                 flags['low_ocr_confidence'].append(img)
@@ -227,7 +254,8 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
         # background that held it was removed), and PROCESSED images have
         # the label cropped out, so neither should flag here.
         if (
-            label_bearing
+            metadata_flags_on
+            and label_bearing
             and img.mm_per_pixel
             and not img.museum_specimen_id
             and img.source_kind not in ('masked', 'processed')
