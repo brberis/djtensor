@@ -24,6 +24,18 @@ import ConfirmDialog from '../../../components/ConfirmDialog';
 import { ArrowLeftIcon, ExclamationTriangleIcon, CheckIcon } from '@heroicons/react/24/outline';
 import theme from '../../../theme';
 
+// Stored paths are URL-encoded, so a specimen shot named "UF 231194E lingual"
+// renders as "UF%20231194E%20lingual" and cannot be found by searching the page
+// for the name anyone actually uses.
+function displayFileName(url) {
+  const raw = url?.split('/').pop()?.split('?')[0] || '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function normalizeMediaUrl(url) {
   if (!url) return '';
   // Keep media same-origin. The API hands back an absolute URL on the public
@@ -137,10 +149,41 @@ export default function ReviewQueue() {
     return out;
   }, [visibleCategories]);
 
-  const inspectorImage = useMemo(
-    () => flatImages.find((x) => x.id === inspectorImageId) || null,
-    [flatImages, inspectorImageId],
-  );
+  // ?image=<id> opens the inspector straight onto one specimen, so a specific
+  // tooth can be linked to. Without it the only way to point someone at an
+  // image was "filter by species, then scroll".
+  useEffect(() => {
+    const q = router.query.image;
+    if (q == null) return;
+    const asNumber = Number(q);
+    if (Number.isFinite(asNumber) && asNumber !== inspectorImageId) {
+      setInspectorImageId(asNumber);
+    }
+    // Deliberately keyed on the query alone: re-running when inspectorImageId
+    // changes would fight the user closing the inspector.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.image]);
+
+  const setInspectorAndUrl = useCallback((imageId) => {
+    setInspectorImageId(imageId);
+    const query = { ...router.query };
+    if (imageId == null) delete query.image;
+    else query.image = String(imageId);
+    router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
+  }, [router]);
+
+  const inspectorImage = useMemo(() => {
+    const inView = flatImages.find((x) => x.id === inspectorImageId);
+    if (inView) return inView;
+    // A ?image= link should open its specimen whatever the filters say, and an
+    // image measured mid-session should not vanish because it stopped matching
+    // them. Fall back to the unfiltered queue before giving up.
+    for (const cat of data?.categories || []) {
+      const hit = (cat.items || []).find((x) => x.id === inspectorImageId);
+      if (hit) return { ...hit, _category: cat.label };
+    }
+    return null;
+  }, [flatImages, inspectorImageId, data]);
 
   const inspectorIndex = useMemo(
     () => flatImages.findIndex((x) => x.id === inspectorImageId),
@@ -375,7 +418,7 @@ export default function ReviewQueue() {
                 expanded={expandedHistory[img.id]}
                 history={historyData[img.id]}
                 onToggleHistory={() => toggleHistory(img.id)}
-                onInspect={() => setInspectorImageId(img.id)}
+                onInspect={() => setInspectorAndUrl(img.id)}
               />
             ))}
           </ul>
@@ -386,13 +429,13 @@ export default function ReviewQueue() {
         img={inspectorImage}
         position={inspectorIndex >= 0 ? inspectorIndex + 1 : 0}
         total={flatImages.length}
-        onClose={() => setInspectorImageId(null)}
+        onClose={() => setInspectorAndUrl(null)}
         onPrev={() => {
-          if (inspectorIndex > 0) setInspectorImageId(flatImages[inspectorIndex - 1].id);
+          if (inspectorIndex > 0) setInspectorAndUrl(flatImages[inspectorIndex - 1].id);
         }}
         onNext={() => {
           if (inspectorIndex >= 0 && inspectorIndex < flatImages.length - 1) {
-            setInspectorImageId(flatImages[inspectorIndex + 1].id);
+            setInspectorAndUrl(flatImages[inspectorIndex + 1].id);
           }
         }}
         onImageUpdated={(updated) => {
@@ -439,10 +482,12 @@ export default function ReviewQueue() {
           } else if (p.kind === 'single') {
             await performAction(p.imageId, p.action, p.label);
             if (p.advanceInspector) {
+              // Through the URL-syncing setter too, so ?image= keeps pointing
+              // at whatever is actually on screen after advancing.
               if (inspectorIndex >= 0 && inspectorIndex < flatImages.length - 1) {
-                setInspectorImageId(flatImages[inspectorIndex + 1].id);
+                setInspectorAndUrl(flatImages[inspectorIndex + 1].id);
               } else {
-                setInspectorImageId(null);
+                setInspectorAndUrl(null);
               }
             }
           }
@@ -498,7 +543,7 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
           />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{img.image?.split('/').pop()?.split('?')[0]}</p>
+          <p className="text-sm font-medium text-gray-900 truncate">{displayFileName(img.image)}</p>
           <p className="text-xs text-gray-500 mt-0.5">
             <span className="text-gray-400">label:</span> <span className="font-medium">{img.label_name || img.label}</span>
             {img.museum_species && (

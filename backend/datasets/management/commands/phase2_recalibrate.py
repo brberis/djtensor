@@ -172,10 +172,12 @@ class Command(BaseCommand):
             img.tooth_area_mm2 = float(tooth.area_px) * mm_per_pixel ** 2
             img.tooth_width_mm = (x1 - x0 + 1) * mm_per_pixel
             img.tooth_height_mm = (y1 - y0 + 1) * mm_per_pixel
-            major = float(tooth.major_axis_px or 0.0) * mm_per_pixel
-            minor = float(tooth.minor_axis_px or 0.0) * mm_per_pixel
-            img.tooth_major_axis_mm = major if major > 0 else None
-            img.tooth_minor_axis_mm = minor if minor > 0 else None
+            # Anatomical length/width, not the size-sorted major/minor:
+            # on a broad tooth the longer axis is the WIDTH.
+            length = float(tooth.length_px or 0.0) * mm_per_pixel
+            width = float(tooth.width_px or 0.0) * mm_per_pixel
+            img.tooth_major_axis_mm = length if length > 0 else None
+            img.tooth_minor_axis_mm = width if width > 0 else None
 
         # completeness_mm2 is derived from the species reference and is now
         # stale; clear it so it is recomputed rather than silently kept.

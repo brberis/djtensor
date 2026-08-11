@@ -728,10 +728,12 @@ class ImageViewSet(viewsets.ModelViewSet):
             image.tooth_area_mm2 = float(tooth.area_px) * mm_per_pixel ** 2
             image.tooth_width_mm = (tx1 - tx0 + 1) * mm_per_pixel
             image.tooth_height_mm = (ty1 - ty0 + 1) * mm_per_pixel
-            major = float(tooth.major_axis_px or 0.0) * mm_per_pixel
-            minor = float(tooth.minor_axis_px or 0.0) * mm_per_pixel
-            image.tooth_major_axis_mm = major if major > 0 else None
-            image.tooth_minor_axis_mm = minor if minor > 0 else None
+            # Anatomical length/width, not the size-sorted major/minor:
+            # on a broad tooth the longer axis is the WIDTH.
+            length = float(tooth.length_px or 0.0) * mm_per_pixel
+            width = float(tooth.width_px or 0.0) * mm_per_pixel
+            image.tooth_major_axis_mm = length if length > 0 else None
+            image.tooth_minor_axis_mm = width if width > 0 else None
         # Completeness is relative to a species reference and is now stale.
         image.completeness_mm2 = None
         image.save(update_fields=[
@@ -838,10 +840,12 @@ class ImageViewSet(viewsets.ModelViewSet):
                 image.tooth_area_mm2 = float(tooth.area_px) * mm ** 2
                 image.tooth_width_mm = (tx1 - tx0 + 1) * mm
                 image.tooth_height_mm = (ty1 - ty0 + 1) * mm
-                major = float(tooth.major_axis_px or 0.0) * mm
-                minor = float(tooth.minor_axis_px or 0.0) * mm
-                image.tooth_major_axis_mm = major if major > 0 else None
-                image.tooth_minor_axis_mm = minor if minor > 0 else None
+                # Anatomical length/width, not the size-sorted major/minor:
+                # on a broad tooth the longer axis is the WIDTH.
+                length = float(tooth.length_px or 0.0) * mm
+                width = float(tooth.width_px or 0.0) * mm
+                image.tooth_major_axis_mm = length if length > 0 else None
+                image.tooth_minor_axis_mm = width if width > 0 else None
             else:
                 image.tooth_area_mm2 = None
                 image.tooth_width_mm = None

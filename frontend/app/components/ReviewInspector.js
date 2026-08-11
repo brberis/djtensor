@@ -19,6 +19,16 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { ArrowLeftIcon, ArrowRightIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
+// Stored paths are URL-encoded; show the name the specimen is actually known by.
+function displayFileName(url) {
+  const raw = url?.split('/').pop()?.split('?')[0] || '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function normalizeMediaUrl(url) {
   if (!url) return '';
   // Same-origin: the API returns an absolute URL on the public hostname, so
@@ -211,7 +221,7 @@ export default function ReviewInspector({
                     <ExclamationTriangleIcon className="h-5 w-5 text-amber-500 shrink-0" />
                     <div className="min-w-0">
                       <Dialog.Title className="text-base font-semibold text-gray-900 truncate">
-                        {img.image?.split('/').pop()?.split('?')[0] || `Image #${img.id}`}
+                        {displayFileName(img.image) || `Image #${img.id}`}
                       </Dialog.Title>
                       <p className="text-xs text-gray-500">{img._category || img.review_status || ''}</p>
                     </div>
