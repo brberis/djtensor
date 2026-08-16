@@ -2361,7 +2361,7 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
                 <th className="py-2 pr-4 font-medium text-right">Images</th>
                 <th className="py-2 pr-4 font-medium text-right">Calibrated</th>
                 <th className="py-2 pr-4 font-medium w-40">Coverage</th>
-                <th className="py-2 pr-4 font-medium text-right">Mean tooth</th>
+                <th className="py-2 pr-4 font-medium text-right">Median tooth</th>
                 <th className="py-2 font-medium text-right">Missing</th>
               </tr>
             </thead>
@@ -2388,7 +2388,7 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
                         <Bar value={s.calibrated} total={s.total} tone={s.calibrated_pct < 70 ? 'amber' : 'blue'} />
                       </td>
                       <td className="py-2.5 pr-4 text-right text-gray-700">
-                        {s.mean_tooth_mm != null ? `${s.mean_tooth_mm} mm` : '-'}
+                        {s.median_tooth_mm != null ? `${s.median_tooth_mm} mm` : '-'}
                       </td>
                       <td className="py-2.5 text-right text-amber-700">
                         <Drill count={s.uncalibrated}

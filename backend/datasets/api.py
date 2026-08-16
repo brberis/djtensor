@@ -12,7 +12,7 @@ import random
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Aggregate, FloatField, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -57,6 +57,23 @@ def dataset_lock_reason(dataset):
     if has_testing:
         return 'Dataset is locked because it belongs to a completed testing session.'
     return ''
+
+
+class Median(Aggregate):
+    """Median of a numeric column, via Postgres percentile_cont.
+
+    Django ships no Median. It matters here because tooth measurements are
+    heavily right-skewed within a species: Otodus megalodon complete-tooth
+    areas span 93x, and its mean sits 58% above its median, so a handful of
+    very large specimens drag a mean away from anything typical. The species
+    reference used for completeness is a median for the same reason, and a
+    summary that reported a mean beside it would be quoting two different
+    centres for the same population.
+    """
+    function = 'PERCENTILE_CONT'
+    name = 'median'
+    output_field = FloatField()
+    template = "%(function)s(0.5) WITHIN GROUP (ORDER BY %(expressions)s)"
 
 
 class ImagePagination(PageNumberPagination):
@@ -247,7 +264,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 calibrated=Count('id', filter=calibrated),
                 ocr=Count('id', filter=with_ocr),
                 completeness=Count('id', filter=with_completeness),
-                mean_len=Avg('tooth_major_axis_mm'),
+                median_len=Median('tooth_major_axis_mm'),
                 min_len=Min('tooth_major_axis_mm'),
                 max_len=Max('tooth_major_axis_mm'),
             )
@@ -263,7 +280,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 'calibrated_pct': round(r['calibrated'] / r['total'] * 100, 1) if r['total'] else 0,
                 'with_ocr': r['ocr'],
                 'with_completeness': r['completeness'],
-                'mean_tooth_mm': round(r['mean_len'], 1) if r['mean_len'] else None,
+                'median_tooth_mm': round(r['median_len'], 1) if r['median_len'] else None,
                 'min_tooth_mm': round(r['min_len'], 1) if r['min_len'] else None,
                 'max_tooth_mm': round(r['max_len'], 1) if r['max_len'] else None,
                 'filter': {'label': r['label_id']},
