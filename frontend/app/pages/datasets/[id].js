@@ -2544,6 +2544,45 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
                                 )}
                               </dd>
                             </div>
+                            {/* What each percentage was divided by, and from
+                                where. A dataset's own median sitting beside
+                                completeness computed against a DIFFERENT
+                                dataset's median is otherwise invisible. */}
+                            {s.completeness_reference && !s.completeness_reference.is_self && (
+                              <div>
+                                <dt className="text-gray-500">Measured against</dt>
+                                <dd className="text-gray-900">
+                                  {s.completeness_reference.area_mm2} mm&sup2;
+                                  <span className="block text-gray-500">
+                                    median complete tooth, {s.completeness_reference.dataset}
+                                  </span>
+                                  {s.median_area_mm2 != null && s.completeness_reference.area_mm2 > 0 && (() => {
+                                    const ratio = s.median_area_mm2 / s.completeness_reference.area_mm2;
+                                    // A fragment cannot exceed the whole tooth it
+                                    // broke from, so a ratio above 1 is not a
+                                    // measurement result: the two populations are
+                                    // not comparable and the percentages for this
+                                    // species mean nothing.
+                                    if (ratio <= 1.05) {
+                                      return (
+                                        <span className="block text-gray-500">
+                                          this set is {ratio.toFixed(2)}× the reference
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="mt-1 block rounded bg-amber-50 px-2 py-1 text-amber-900 ring-1 ring-amber-200">
+                                        <b>{ratio.toFixed(2)}× the reference.</b> These specimens
+                                        measure larger than the complete teeth they are scored
+                                        against, which cannot happen. The reference population
+                                        is unrepresentative, so completeness for this species is
+                                        not meaningful.
+                                      </span>
+                                    );
+                                  })()}
+                                </dd>
+                              </div>
+                            )}
                             <div>
                               <dt className="text-gray-500">Museum label read</dt>
                               <dd className="text-gray-900">{s.with_ocr} of {s.total}</dd>

@@ -297,11 +297,37 @@ class DatasetViewSet(viewsets.ModelViewSet):
             for label_id, vals in values_by_label.items() if vals
         }
 
+        # The reference each percentage was divided by, and where it came from.
+        #
+        # Without this the page shows a dataset's OWN median area beside
+        # completeness figures computed against a DIFFERENT dataset's median,
+        # with nothing saying so. On the Galeocerdo cuvier fragments those are
+        # 456 mm2 and 253 mm2 - the fragments measuring 1.8x the complete teeth
+        # they are scored against, which is impossible and means the reference
+        # population is wrong. That is worth seeing on the page rather than
+        # only when somebody thinks to compare the two datasets by hand.
+        from .models import SpeciesReferenceArea
+        reference_by_label = {}
+        for sra in (SpeciesReferenceArea.objects
+                    .filter(avg_area_mm2__isnull=False)
+                    .select_related('dataset')
+                    .order_by('-id')):
+            if sra.label_id in reference_by_label:
+                continue
+            reference_by_label[sra.label_id] = {
+                'area_mm2': round(float(sra.avg_area_mm2)),
+                'dataset': sra.dataset.name if sra.dataset_id else None,
+                'dataset_id': sra.dataset_id,
+                'sample_count': sra.sample_count_mm2,
+                'is_self': sra.dataset_id == dataset.id,
+            }
+
         for r in rows:
             by_species.append({
                 'label_id': r['label_id'],
                 'completeness_bins': bins_by_label.get(r['label_id']) or [0] * len(bin_edges),
                 'median_completeness_pct': median_completeness.get(r['label_id']),
+                'completeness_reference': reference_by_label.get(r['label_id']),
                 'label': r['label__name'],
                 'total': r['total'],
                 'calibrated': r['calibrated'],
