@@ -2646,8 +2646,21 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
     : cal < calibEligible ? 'partial'
     : 'done';
 
+  // Review is complete when nothing is UNRESOLVED, not when every image has
+  // been individually approved.
+  //
+  // The old rule required all 4,326 images to be opened one by one. At the
+  // pace a reviewer actually sustains that is about 150 hours, so the step sat
+  // amber permanently and stopped carrying any information: it looked the same
+  // whether the queue was full of real problems or completely clear.
+  //
+  // The agreed workflow is full coverage where a human is REQUIRED - images the
+  // detector could not measure - and spot-checking everywhere else. Opening the
+  // remaining thousands would surface the same issues the first hundred did.
+  // So the gate tracks the problem buckets, and the untouched count is reported
+  // beside it as information rather than as a blocker.
   const stepReview = total === 0 ? 'todo'
-    : (flaggedCount > 0 || unreviewedCount > 0) ? 'attention'
+    : problemCount > 0 ? 'attention'
     : 'done';
 
   const stepEmit = derivedCount > 0 ? 'done' : 'todo';
@@ -2697,7 +2710,15 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
         <StepLine />
         <Step icon={stepIcon(stepCal)}    dot={stepDot(stepCal)}    label="Calibrate"  value={calibEligible === 0 ? 'n/a' : `${cal}/${calibEligible}`} active={nextStep === 'cal'} />
         <StepLine />
-        <Step icon={stepIcon(stepReview)} dot={stepDot(stepReview)} label="Review"     value={`${reviewedCount} ✓ / ${unreviewedCount} pending / ${excludedCount} ✕`} active={nextStep === 'review'} />
+        <Step
+          icon={stepIcon(stepReview)}
+          dot={stepDot(stepReview)}
+          label="Review"
+          value={problemCount > 0
+            ? `${problemCount} to resolve`
+            : `no problems · ${reviewedCount} checked`}
+          active={nextStep === 'review'}
+        />
         <StepLine />
         <Step icon={stepIcon(stepEmit)}   dot={stepDot(stepEmit)}   label="Emit"       value={derivedCount > 0 ? `${derivedCount} derived` : 'not yet'} active={nextStep === 'emit'} />
       </div>
@@ -2734,12 +2755,11 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
         {nextStep === 'review' && (
           <>
             <span className="text-sm text-gray-700">
-              Next: <strong>Review images</strong>.
-              {problemCount > 0 && <> {problemCount} flagged for human attention.</>}
-              {pendingReviewCount > 0 && <> {pendingReviewCount} pending review.</>}
+              Next: <strong>Resolve {problemCount} image{problemCount !== 1 ? 's' : ''}</strong> the
+              system could not finish on its own.
             </span>
             <button onClick={onOpenReview} className="ml-auto rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-500">
-              Open Review Queue ({flaggedCount} to review)
+              Open Review Queue ({problemCount})
             </button>
           </>
         )}
@@ -2747,6 +2767,10 @@ function PipelinePanel({ dataset, stats, reviewCounts, flaggedCount, problemCoun
           <>
             <span className="text-sm text-gray-700">
               Next: <strong>Emit Processed datasets</strong> for model training.
+              {' '}<span className="text-gray-500">
+                No unresolved problems. {reviewedCount} image{reviewedCount !== 1 ? 's' : ''} individually
+                checked; the rest passed the automatic checks and were not opened one by one.
+              </span>
               <button
                 type="button"
                 onClick={() => setShowModesHelp(true)}
