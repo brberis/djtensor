@@ -2290,13 +2290,36 @@ function CompletenessDistribution({ species }) {
   );
   if (!withBins.length) return null;
 
+  // A dataset scored against ITSELF is the reference population, so these are
+  // whole teeth being compared with the typical whole tooth of their species.
+  // Calling that "how complete the fragments are" is simply wrong, and the
+  // reading is different enough to deserve its own words: nothing here is
+  // incomplete, so the spread is size variation between individuals, which is
+  // exactly the noise floor for interpreting a fragment's percentage.
+  const isReference = withBins.some((s) => s.completeness_reference?.is_self);
+
   return (
     <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">
-      <h2 className="text-base font-semibold text-gray-900">How complete the fragments are</h2>
+      <h2 className="text-base font-semibold text-gray-900">
+        {isReference ? 'How much whole teeth vary in size' : 'How complete the fragments are'}
+      </h2>
       <p className="mt-1 text-sm text-gray-500">
-        Each specimen measured against the median complete tooth of its species, grouped into
-        the same 20% bands used for the qualitative binning. Bars show the share of that
-        species, so the shapes stay comparable even though the species differ in size.
+        {isReference ? (
+          <>
+            Every specimen here is a WHOLE tooth, each compared with the typical whole tooth of
+            its species. Nothing is incomplete, so a value below 100% means a smaller than
+            average individual, not a missing piece. Half of any population sits above its own
+            median, which is why the top band is always the largest and the median always reads
+            100%. The useful part is the lower tail: it is the natural size variation of the
+            species, and it sets the accuracy limit for every fragment percentage.
+          </>
+        ) : (
+          <>
+            Each specimen measured against the median complete tooth of its species, grouped into
+            the same 20% bands used for the qualitative binning. Bars show the share of that
+            species, so the shapes stay comparable even though the species differ in size.
+          </>
+        )}
       </p>
 
       {/* Legend: identity is never carried by colour alone. */}
@@ -2374,10 +2397,23 @@ function CompletenessDistribution({ species }) {
       </div>
 
       <p className="mt-5 text-xs text-gray-500">
-        A specimen is compared with the median complete tooth of its species, not with the
-        individual tooth it broke from, which is unknowable from a photograph. Read a value as
-        a population estimate: within a species complete teeth vary widely in size, so a single
-        percentage carries real uncertainty even when the measurement itself is exact.
+        {isReference ? (
+          <>
+            Read this as the error floor of the method rather than a result. Across all six
+            species 21% of whole teeth measure under 60% of their species median, 9% under 40%
+            and 2% under 20%; for Otodus megalodon, whose teeth vary most, it is 27%, 15% and 8%.
+            So a fragment reported at 35% could be a genuinely small complete tooth, and for
+            megalodon that happens about one time in eight. It is a limit of comparing against a
+            species average, not a measurement error.
+          </>
+        ) : (
+          <>
+            A specimen is compared with the median complete tooth of its species, not with the
+            individual tooth it broke from, which is unknowable from a photograph. Read a value as
+            a population estimate: within a species complete teeth vary widely in size, so a single
+            percentage carries real uncertainty even when the measurement itself is exact.
+          </>
+        )}
       </p>
     </div>
   );
