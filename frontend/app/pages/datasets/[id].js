@@ -2270,6 +2270,119 @@ export default function DatasetDetail() {
 // Summary tab. Answers one question: how much of this dataset can actually be
 // measured in millimetres, and where are the losses. Every number is a button
 // so the team can go straight from "525 have no scale bar" to looking at them.
+
+// Completeness distribution, one small chart per species.
+//
+// Small multiples rather than one grouped chart: the question is the SHAPE of
+// each species' distribution (does it cover the whole range, or pile up at
+// nearly-complete?), and six overlaid series would hide exactly that.
+//
+// The bands are an ORDERED scale, so the fill is a single-hue ordinal ramp
+// rather than six unrelated colours. Steps validated against the chart surface
+// in both themes; the lightest still clears 2:1 so an empty-looking band is not
+// mistaken for no bar at all.
+const COMPLETENESS_BANDS = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'];
+const BAND_FILL_LIGHT = ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
+
+function CompletenessDistribution({ species }) {
+  const withBins = (species || []).filter(
+    (s) => Array.isArray(s.completeness_bins) && s.completeness_bins.some((n) => n > 0),
+  );
+  if (!withBins.length) return null;
+
+  return (
+    <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">
+      <h2 className="text-base font-semibold text-gray-900">How complete the fragments are</h2>
+      <p className="mt-1 text-sm text-gray-500">
+        Each specimen measured against the median complete tooth of its species, grouped into
+        the same 20% bands used for the qualitative binning. Bars show the share of that
+        species, so the shapes stay comparable even though the species differ in size.
+      </p>
+
+      {/* Legend: identity is never carried by colour alone. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {COMPLETENESS_BANDS.map((band, i) => (
+          <span key={band} className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+            <span
+              aria-hidden="true"
+              className="inline-block h-2.5 w-2.5 rounded-sm"
+              style={{ background: BAND_FILL_LIGHT[i] }}
+            />
+            {band}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+        {withBins.map((s) => {
+          const bins = s.completeness_bins;
+          const n = bins.reduce((a, b) => a + b, 0);
+          const shares = bins.map((c) => (n ? (c / n) * 100 : 0));
+          // A shared 0-60% ceiling across every facet. Scaling each chart to its
+          // own maximum would make a species with everything in one band look
+          // identical to one spread evenly, which is the whole question.
+          const CEILING = 60;
+          return (
+            <figure key={s.label_id} className="min-w-0">
+              <figcaption className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium text-gray-900 truncate">{s.label}</span>
+                <span className="text-xs text-gray-500 shrink-0">{n} measured</span>
+              </figcaption>
+
+              <div className="mt-2 flex items-end gap-[2px]" style={{ height: 96 }}>
+                {bins.map((count, i) => {
+                  const pct = shares[i];
+                  const h = Math.max(pct > 0 ? 2 : 0, (pct / CEILING) * 96);
+                  return (
+                    <div
+                      key={COMPLETENESS_BANDS[i]}
+                      className="relative flex-1 flex flex-col justify-end"
+                      title={`${s.label} · ${COMPLETENESS_BANDS[i]} complete · ${count} specimens (${pct.toFixed(0)}%)`}
+                    >
+                      <span className="block text-[10px] text-gray-500 text-center leading-none mb-1">
+                        {count || ''}
+                      </span>
+                      <div
+                        style={{
+                          height: `${Math.min(h, 96)}px`,
+                          background: BAND_FILL_LIGHT[i],
+                          borderTopLeftRadius: 4,
+                          borderTopRightRadius: 4,
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Hairline baseline, then the band labels under their bars. */}
+              <div className="border-t border-gray-200" />
+              <div className="flex gap-[2px] mt-1">
+                {COMPLETENESS_BANDS.map((band) => (
+                  <span key={band} className="flex-1 text-[9px] text-gray-400 text-center leading-tight">
+                    {band.replace('%', '')}
+                  </span>
+                ))}
+              </div>
+
+              <p className="mt-1.5 text-xs text-gray-500">
+                median <span className="text-gray-900 font-medium">{s.median_completeness_pct != null ? `${s.median_completeness_pct}%` : '-'}</span>
+              </p>
+            </figure>
+          );
+        })}
+      </div>
+
+      <p className="mt-5 text-xs text-gray-500">
+        A specimen is compared with the median complete tooth of its species, not with the
+        individual tooth it broke from, which is unknowable from a photograph. Read a value as
+        a population estimate: within a species complete teeth vary widely in size, so a single
+        percentage carries real uncertainty even when the measurement itself is exact.
+      </p>
+    </div>
+  );
+}
+
 function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
   const router = useRouter();
   const [openSpecies, setOpenSpecies] = useState(null);
@@ -2408,6 +2521,18 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
                                 {s.min_tooth_mm != null ? `${s.min_tooth_mm} to ${s.max_tooth_mm} mm` : 'not measured'}
                               </dd>
                             </div>
+                            {/* The median beside the extremes. Min and max are
+                                single specimens and say nothing about where the
+                                bulk of a species sits; the median does. */}
+                            <div>
+                              <dt className="text-gray-500">Median tooth</dt>
+                              <dd className="text-gray-900">
+                                {s.median_tooth_mm != null ? `${s.median_tooth_mm} mm` : 'not measured'}
+                                {s.median_tooth_mm != null && (
+                                  <span className="block text-gray-500">half are smaller, half larger</span>
+                                )}
+                              </dd>
+                            </div>
                             <div>
                               <dt className="text-gray-500">Museum label read</dt>
                               <dd className="text-gray-900">{s.with_ocr} of {s.total}</dd>
@@ -2431,6 +2556,8 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
           </table>
         </div>
       </div>
+
+      <CompletenessDistribution species={species} />
 
       {/* Why images are not usable */}
       <div className="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-5">

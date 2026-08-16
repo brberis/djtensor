@@ -270,9 +270,37 @@ class DatasetViewSet(viewsets.ModelViewSet):
             )
             .order_by('label__name')
         )
+        # Completeness distribution per species, in the same 20% bands Alexa
+        # bins by qualitatively, so the two can be read side by side. Counts
+        # come from one query rather than a per-species loop.
+        bin_edges = ((0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.01))
+        bins_by_label = {}
+        values_by_label = {}
+        for label_id, compl in (images
+                                .filter(completeness_mm2__isnull=False)
+                                .values_list('label_id', 'completeness_mm2')):
+            slot = bins_by_label.setdefault(label_id, [0] * len(bin_edges))
+            value = float(compl)
+            values_by_label.setdefault(label_id, []).append(value)
+            for i, (lo, hi) in enumerate(bin_edges):
+                if lo <= value < hi:
+                    slot[i] += 1
+                    break
+
+        # Median completeness per species. Median for the same reason the
+        # reference is one: the distributions are skewed, so a mean would name
+        # a value that describes few of the specimens.
+        import statistics as _stats
+        median_completeness = {
+            label_id: round(_stats.median(vals) * 100, 1)
+            for label_id, vals in values_by_label.items() if vals
+        }
+
         for r in rows:
             by_species.append({
                 'label_id': r['label_id'],
+                'completeness_bins': bins_by_label.get(r['label_id']) or [0] * len(bin_edges),
+                'median_completeness_pct': median_completeness.get(r['label_id']),
                 'label': r['label__name'],
                 'total': r['total'],
                 'calibrated': r['calibrated'],
