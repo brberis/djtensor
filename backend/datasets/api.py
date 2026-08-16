@@ -10,6 +10,7 @@
 import logging
 import random
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Aggregate, FloatField, Q
@@ -423,9 +424,20 @@ class DatasetViewSet(viewsets.ModelViewSet):
         total_images = Image.objects.filter(dataset=dataset).count()
         # OCR-eligible: source_kind == 'raw' OR NULL (unknown source defaults
         # to "we'll try"). Masked and processed are explicitly excluded.
+        # OCR eligibility follows the same switch as the label review flags.
+        #
+        # This study takes species from the directory a photograph came from and
+        # needs the MEASUREMENT out of each image; the catalog label is not used.
+        # Reporting OCR as an unfinished step made it the pipeline's "next"
+        # action, pushing a reviewer toward re-running a pass that has already
+        # run and that nobody consumes, while the genuinely next step sat greyed
+        # out at the end of the row. When metadata is off, the step reports as
+        # not applicable, exactly as it does for a dataset with no eligible
+        # images.
+        metadata_in_scope = bool(getattr(settings, 'PHASE2_REVIEW_METADATA_FLAGS', False))
         ocr_eligible = Image.objects.filter(dataset=dataset).filter(
             Q(source_kind='raw') | Q(source_kind__isnull=True)
-        )
+        ) if metadata_in_scope else Image.objects.none()
         # Calibration-eligible: anything that hasn't been explicitly tagged
         # as 'processed' (since processed has the scale bar removed).
         calib_eligible = Image.objects.filter(dataset=dataset).exclude(source_kind='processed')
