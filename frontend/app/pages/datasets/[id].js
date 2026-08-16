@@ -2529,7 +2529,18 @@ function ScaleSummaryPanel({ summary, onOpenReview, datasetId }) {
                               <dd className="text-gray-900">
                                 {s.median_tooth_mm != null ? `${s.median_tooth_mm} mm` : 'not measured'}
                                 {s.median_tooth_mm != null && (
-                                  <span className="block text-gray-500">half are smaller, half larger</span>
+                                  <span className="block text-gray-500">crown length, half are smaller</span>
+                                )}
+                              </dd>
+                            </div>
+                            {/* Area is the quantity completeness divides by, so
+                                it is shown rather than left implicit. */}
+                            <div>
+                              <dt className="text-gray-500">Median area</dt>
+                              <dd className="text-gray-900">
+                                {s.median_area_mm2 != null ? `${s.median_area_mm2} mm\u00b2` : 'not measured'}
+                                {s.median_area_mm2 != null && (
+                                  <span className="block text-gray-500">outline only, drives completeness</span>
                                 )}
                               </dd>
                             </div>

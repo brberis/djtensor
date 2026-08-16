@@ -265,6 +265,7 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 ocr=Count('id', filter=with_ocr),
                 completeness=Count('id', filter=with_completeness),
                 median_len=Median('tooth_major_axis_mm'),
+                median_area=Median('tooth_area_mm2'),
                 min_len=Min('tooth_major_axis_mm'),
                 max_len=Max('tooth_major_axis_mm'),
             )
@@ -309,6 +310,12 @@ class DatasetViewSet(viewsets.ModelViewSet):
                 'with_ocr': r['ocr'],
                 'with_completeness': r['completeness'],
                 'median_tooth_mm': round(r['median_len'], 1) if r['median_len'] else None,
+                # Area is what completeness divides by, so it belongs on the
+                # page beside the length rather than being implied. Length
+                # stays the headline: published size ranges for these species
+                # are crown heights, so it is the figure anyone can sanity
+                # check, while an area in mm2 checks against nothing.
+                'median_area_mm2': round(r['median_area']) if r['median_area'] else None,
                 'min_tooth_mm': round(r['min_len'], 1) if r['min_len'] else None,
                 'max_tooth_mm': round(r['max_len'], 1) if r['max_len'] else None,
                 'filter': {'label': r['label_id']},
