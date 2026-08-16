@@ -204,6 +204,34 @@ def compute_completeness_mm2_for_dataset(
         or (None, None) on failure. Persists the calibration to the row."""
         if require_existing_calibration and img.mm_per_pixel is not None and img.tooth_area_mm2 is not None:
             return img.mm_per_pixel, img.tooth_area_mm2
+
+        # Never re-derive a scale a person set by hand.
+        #
+        # This function persists whatever the detector returns, including
+        # mm_per_pixel and scale_bar_source. A hand-set scale exists precisely
+        # BECAUSE the detector could not read the frame, so re-running it here
+        # would overwrite a reviewer's measurement with a worse one or with
+        # nothing at all. There are 235 such rows, 232 of them Alexa's.
+        #
+        # The tooth area is still needed for completeness, so it is recomputed
+        # from the segmentation using the reviewer's own mm/px.
+        if img.scale_bar_source == 'manual' and img.mm_per_pixel is not None:
+            if img.tooth_area_mm2 is not None:
+                return img.mm_per_pixel, img.tooth_area_mm2
+            try:
+                from .scale_calibration import detect_tooth_only
+                tooth = detect_tooth_only(img.image.path)
+            except Exception as exc:
+                logger.warning(f"tooth segmentation failed for manual image {img.id}: {exc}")
+                return img.mm_per_pixel, None
+            if tooth is None:
+                return img.mm_per_pixel, None
+            mm = float(img.mm_per_pixel)
+            area = float(tooth.area_px) * mm ** 2
+            img.tooth_area_mm2 = area
+            img.save(update_fields=['tooth_area_mm2'])
+            return img.mm_per_pixel, area
+
         try:
             result = detect_scale_bar(
                 img.image.path,
@@ -222,9 +250,11 @@ def compute_completeness_mm2_for_dataset(
         tx0, ty0, tx1, ty1 = tooth.bbox
         tooth_width_mm = (tx1 - tx0 + 1) * result.mm_per_pixel
         tooth_height_mm = (ty1 - ty0 + 1) * result.mm_per_pixel
-        # Orientation-independent intrinsic dimensions.
-        tooth_major_mm = float(tooth.major_axis_px or 0.0) * result.mm_per_pixel
-        tooth_minor_mm = float(tooth.minor_axis_px or 0.0) * result.mm_per_pixel
+        # Anatomical length and width. The ellipse fit sorts its axes by SIZE,
+        # so the longer one is not the length on a tooth broader than it is
+        # tall; see _anatomical_length_width_px.
+        tooth_major_mm = float(tooth.length_px or 0.0) * result.mm_per_pixel
+        tooth_minor_mm = float(tooth.width_px or 0.0) * result.mm_per_pixel
         img.mm_per_pixel = result.mm_per_pixel
         img.scale_bar_detected = result.bar_bbox is not None
         img.scale_bar_source = 'heuristic_whitelist'
@@ -287,7 +317,22 @@ def compute_completeness_mm2_for_dataset(
     reference_mm2 = {}  # label_id -> avg_area_mm2
     import numpy as _np
     for label_id, areas in label_areas.items():
-        avg_mm2 = float(_np.mean(areas))
+        # MEDIAN, not mean.
+        #
+        # Complete-tooth areas are heavily right-skewed within a species. For
+        # Otodus megalodon they span 93x (100 to 9,317 mm2) and the mean sits
+        # 58% above the median, so a handful of very large teeth drag the
+        # reference upward and every fragment scored against it reads too
+        # incomplete: a piece that is genuinely half of a typical tooth would
+        # report about 30%. The median is the same idea, unmoved by the tail,
+        # and indistinguishable from the mean on the well-behaved species
+        # (C. leucas spans 5.3x with mean and median within 1%).
+        #
+        # This does not make completeness a per-specimen truth. A fragment came
+        # from ONE tooth, not the average one, and with that much spread its
+        # true completeness is not recoverable from area alone. The number is a
+        # population estimate and should be read as one.
+        avg_mm2 = float(_np.median(areas))
         # Only set the mm fields, but if this is a fresh row, we have to
         # also satisfy the NOT NULL constraints on the legacy px fields.
         # Use get_or_create so an existing px reference is never overwritten.
