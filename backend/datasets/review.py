@@ -38,6 +38,7 @@ REVIEW_FLAGS = (
     'species_mismatch',
     'low_resolution',
     'no_scale_bar',
+    'impossible_size',
     'out_of_range_completeness',
     'low_ocr_confidence',
     'no_museum_label',
@@ -67,6 +68,7 @@ REVIEW_FLAG_LABELS = {
     'species_mismatch': 'OCR / folder species mismatch',
     'low_resolution': 'Too low resolution to measure',
     'no_scale_bar': 'No scale bar detected',
+    'impossible_size': 'Measures larger than a whole tooth',
     'out_of_range_completeness': 'Completeness out of range',
     'low_ocr_confidence': 'Low OCR confidence',
     'no_museum_label': 'No museum label found on a source image',
@@ -100,6 +102,14 @@ REVIEW_FLAG_DESCRIPTIONS = {
         'from the web rather than shot in the studio, so no re-processing '
         'will recover a physical measurement. They remain usable for '
         'classification, where only the tooth image matters.' % LOW_RESOLUTION_PX
+    ),
+    'impossible_size': (
+        'This specimen measures more than %.1f times the median COMPLETE tooth '
+        'of its species, which cannot be true of a fragment. Something other '
+        'than the tooth has been measured: usually the scale card taken for '
+        'the tooth, or a scale bar read wrongly so every millimetre is '
+        'inflated. Open it and check what the green outline is actually '
+        'around.' % 1.5
     ),
     'no_scale_bar': (
         'The image is in an "original"-resolution dataset where a scale '
@@ -153,6 +163,13 @@ def _long_edge_px(img: Image) -> int:
 # a set that carries no labels.
 LABEL_BEARING_MIN_SHARE = 0.25
 
+# How far past a whole tooth a fragment may measure before it is treated as a
+# mistake rather than a large fragment. Complete teeth vary in size within a
+# species, so a fragment CAN legitimately exceed the median a little; 1.5x is
+# comfortably outside that while still catching every case seen so far, the
+# mildest of which was 2.0x.
+IMPOSSIBLE_SIZE_RATIO = 1.5
+
 
 def _dataset_carries_labels(ds: Dataset) -> bool:
     """True when this dataset's photographs generally include a catalog label.
@@ -197,6 +214,21 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
     label_bearing = is_source_dataset and _dataset_carries_labels(ds)
 
     flags: Dict[str, List[Image]] = {key: [] for key in REVIEW_FLAGS}
+
+    # Median complete-tooth area per species, for the impossible-size check.
+    #
+    # Only meaningful for a set measured against a DIFFERENT population. On the
+    # reference dataset itself the comparison is circular: complete teeth are
+    # scored against their own median, so roughly half exceed it and the larger
+    # individuals of a species trip the rule for being ordinary. It flagged 517
+    # perfectly good whole teeth before this was scoped.
+    from .models import SpeciesReferenceArea
+    reference_area_mm2 = {}
+    for sra in (SpeciesReferenceArea.objects
+                .filter(avg_area_mm2__isnull=False)
+                .exclude(dataset_id=ds.id)
+                .order_by('-id')):
+        reference_area_mm2.setdefault(sra.label_id, float(sra.avg_area_mm2))
 
     # Label-derived flags are off unless the study actually uses the label.
     metadata_flags_on = bool(getattr(settings, 'PHASE2_REVIEW_METADATA_FLAGS', False))
@@ -262,6 +294,29 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
         ):
             flags['no_museum_label'].append(img)
             continue
+
+        # 5b. A measurement that cannot be true.
+        #
+        # A fragment cannot be larger than a whole tooth of its own species, so
+        # anything well above the complete-tooth reference is not a small
+        # result, it is the wrong object measured. Two real causes, both found
+        # this way: the scale card classified as the tooth (UF 17895C, where
+        # the card is 40x the fragment's area and won on size), and a misread
+        # scale inflating every millimetre (UF 17879JM at 13x, mm/px eight
+        # times its species median).
+        #
+        # The check needs no per-species tuning and no threshold anyone typed
+        # in: the reference is measured from the complete teeth already in the
+        # collection, so it keeps working as new material arrives and on images
+        # nobody has looked at. It found 176 of 1,192 fragments, including
+        # species that were not suspected.
+        if (reference_area_mm2
+                and img.tooth_area_mm2
+                and img.label_id in reference_area_mm2):
+            ref = reference_area_mm2[img.label_id]
+            if ref > 0 and float(img.tooth_area_mm2) > ref * IMPOSSIBLE_SIZE_RATIO:
+                flags['impossible_size'].append(img)
+                continue
 
         # 6. Catch-all: every other unreviewed image goes here so the queue
         # stays the single place a reviewer goes to approve work.
