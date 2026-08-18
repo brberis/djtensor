@@ -593,6 +593,28 @@ def _detect_scale_bar_with_floor(
         result.calibration_method = 'card_rows'
         result.confidence = _card_confidence(cross_check, result.block_ratio)
         result.notes.append('card found in a blob the classifier had not marked as a scale bar')
+
+        # Re-tag the blob the card was found in.
+        #
+        # This path deliberately looks for a card inside a blob the classifier
+        # called something else, and that something else is usually 'tooth' -
+        # the card body reads as irregular because its printed black bands are
+        # holes in the mask. Setting bar_bbox without correcting the
+        # classification left the SAME object reported as both the specimen and
+        # the ruler used to measure it, so downstream the card was measured as
+        # the tooth: 211 fragments, 18% of the set, most of them still carrying
+        # a correct mm/px so nothing looked wrong. Galeocerdo cuvier read 1.8x
+        # its complete teeth for this reason alone.
+        for b in blobs:
+            if list(b.bbox) != list(region):
+                continue
+            if b.classification != 'scale_bar':
+                b.classification = 'scale_bar'
+                remaining = [o for o in blobs
+                             if o.classification not in ('scale_bar', 'label')]
+                if remaining:
+                    max(remaining, key=lambda o: o.area_px).classification = 'tooth'
+            break
         return result
 
     # ---- Neither method could read a scale: report no calibration ----------
