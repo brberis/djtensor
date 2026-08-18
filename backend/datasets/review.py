@@ -38,6 +38,7 @@ REVIEW_FLAGS = (
     'species_mismatch',
     'low_resolution',
     'no_scale_bar',
+    'tooth_is_scale_bar',
     'impossible_size',
     'out_of_range_completeness',
     'low_ocr_confidence',
@@ -68,6 +69,7 @@ REVIEW_FLAG_LABELS = {
     'species_mismatch': 'OCR / folder species mismatch',
     'low_resolution': 'Too low resolution to measure',
     'no_scale_bar': 'No scale bar detected',
+    'tooth_is_scale_bar': 'The scale card was measured as the tooth',
     'impossible_size': 'Measures larger than a whole tooth',
     'out_of_range_completeness': 'Completeness out of range',
     'low_ocr_confidence': 'Low OCR confidence',
@@ -102,6 +104,15 @@ REVIEW_FLAG_DESCRIPTIONS = {
         'from the web rather than shot in the studio, so no re-processing '
         'will recover a physical measurement. They remain usable for '
         'classification, where only the tooth image matters.' % LOW_RESOLUTION_PX
+    ),
+    'tooth_is_scale_bar': (
+        'The outline reported as the tooth is the same object as the scale '
+        'card, so what has been measured is the card, not the specimen. The '
+        'scale itself is usually still correct, which is why the size can look '
+        'unremarkable: on UF 237905 the card measures 561 mm2 against a '
+        'Galeocerdo cuvier maximum of 553, so it reports 100% complete and '
+        'nothing else gives it away. Set the scale by hand, or exclude the '
+        'image.'
     ),
     'impossible_size': (
         'This specimen measures larger than the BIGGEST complete tooth of its '
@@ -308,6 +319,24 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
             and img.source_kind not in ('masked', 'processed')
         ):
             flags['no_museum_label'].append(img)
+            continue
+
+        # 5a. The card measured as the tooth.
+        #
+        # One object cannot be both the specimen and the ruler used to measure
+        # it. When the two outlines coincide, the blob picked as the tooth is
+        # the scale card: on the fragments this is 211 images, 18% of the set,
+        # and it is the single largest defect found.
+        #
+        # It hides well. The scale is usually still correct - only 13% of these
+        # have an mm/px far from their species median - so the measurement
+        # looks plausible and simply describes the wrong object. Their areas sit
+        # at 1.03x the species median against 0.65x for the rest, and 53% report
+        # exactly 100% complete against 24%. Size alone would not separate them,
+        # which is why UF 17895C passed every other check.
+        if (img.tooth_bbox and img.scale_bar_bbox
+                and list(img.tooth_bbox) == list(img.scale_bar_bbox)):
+            flags['tooth_is_scale_bar'].append(img)
             continue
 
         # 5b. A measurement that cannot be true.
