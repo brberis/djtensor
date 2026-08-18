@@ -104,12 +104,12 @@ REVIEW_FLAG_DESCRIPTIONS = {
         'classification, where only the tooth image matters.' % LOW_RESOLUTION_PX
     ),
     'impossible_size': (
-        'This specimen measures more than %.1f times the median COMPLETE tooth '
-        'of its species, which cannot be true of a fragment. Something other '
-        'than the tooth has been measured: usually the scale card taken for '
-        'the tooth, or a scale bar read wrongly so every millimetre is '
-        'inflated. Open it and check what the green outline is actually '
-        'around.' % 1.5
+        'This specimen measures larger than the BIGGEST complete tooth of its '
+        'species in the reference collection, which a fragment cannot be. '
+        'Something other than the tooth has been measured: the scale card '
+        'taken for the tooth, or a scale bar misread so every millimetre is '
+        'inflated. Open it and check what the green outline is around, and '
+        'whether the reported size is credible for the specimen.'
     ),
     'no_scale_bar': (
         'The image is in an "original"-resolution dataset where a scale '
@@ -163,12 +163,21 @@ def _long_edge_px(img: Image) -> int:
 # a set that carries no labels.
 LABEL_BEARING_MIN_SHARE = 0.25
 
-# How far past a whole tooth a fragment may measure before it is treated as a
-# mistake rather than a large fragment. Complete teeth vary in size within a
-# species, so a fragment CAN legitimately exceed the median a little; 1.5x is
-# comfortably outside that while still catching every case seen so far, the
-# mildest of which was 2.0x.
-IMPOSSIBLE_SIZE_RATIO = 1.5
+# The line past which a measurement cannot be a fragment.
+#
+# Compared against the LARGEST complete tooth of that species, not the median.
+# Complete teeth vary far more than a median suggests: Otodus megalodon spans
+# 17x from median to maximum, Hemipristis serra 7x, Carcharodon carcharias 5x.
+# An earlier version used 1.5x the median and flagged 176 specimens, but a
+# 63.3 mm great white fragment reading 3.3x the median turned out to be a
+# perfectly good measurement - 51 of 522 complete teeth of that species exceed
+# 50 mm. Comparing against the middle of a distribution to detect an outlier
+# rejects ordinary large specimens.
+#
+# Above the species maximum there is no such excuse, which leaves 7 specimens.
+# A small margin allows for the reference set not containing the true largest
+# individual.
+IMPOSSIBLE_SIZE_MARGIN = 1.05
 
 
 def _dataset_carries_labels(ds: Dataset) -> bool:
@@ -223,12 +232,18 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
     # individuals of a species trip the rule for being ordinary. It flagged 517
     # perfectly good whole teeth before this was scoped.
     from .models import SpeciesReferenceArea
+    from django.db.models import Max as _Max
     reference_area_mm2 = {}
-    for sra in (SpeciesReferenceArea.objects
-                .filter(avg_area_mm2__isnull=False)
-                .exclude(dataset_id=ds.id)
-                .order_by('-id')):
-        reference_area_mm2.setdefault(sra.label_id, float(sra.avg_area_mm2))
+    ref_dataset_ids = set(SpeciesReferenceArea.objects
+                          .filter(avg_area_mm2__isnull=False)
+                          .exclude(dataset_id=ds.id)
+                          .values_list('dataset_id', flat=True))
+    if ref_dataset_ids:
+        for row in (Image.objects
+                    .filter(dataset_id__in=ref_dataset_ids, tooth_area_mm2__isnull=False)
+                    .values('label_id')
+                    .annotate(biggest=_Max('tooth_area_mm2'))):
+            reference_area_mm2[row['label_id']] = float(row['biggest'])
 
     # Label-derived flags are off unless the study actually uses the label.
     metadata_flags_on = bool(getattr(settings, 'PHASE2_REVIEW_METADATA_FLAGS', False))
@@ -314,7 +329,7 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
                 and img.tooth_area_mm2
                 and img.label_id in reference_area_mm2):
             ref = reference_area_mm2[img.label_id]
-            if ref > 0 and float(img.tooth_area_mm2) > ref * IMPOSSIBLE_SIZE_RATIO:
+            if ref > 0 and float(img.tooth_area_mm2) > ref * IMPOSSIBLE_SIZE_MARGIN:
                 flags['impossible_size'].append(img)
                 continue
 
