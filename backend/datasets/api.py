@@ -15,6 +15,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Aggregate, FloatField, Q
 from django_filters.rest_framework import DjangoFilterBackend
+from decimal import Decimal
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -658,6 +660,33 @@ class LabelViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+# Every field a hand edit can move. Undo restores exactly this set, so a
+# snapshot and a restore can never drift apart.
+_SCALE_STATE_FIELDS = (
+    'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'scale_bar_bbox',
+    'tooth_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+    'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+)
+
+# The three ways a reviewer changes a measurement by hand. Undo walks back
+# through all of them: picking the scale bar is as undoable as clicking two
+# points, and until now only the two-click tool left anything to undo.
+_HAND_EDIT_ACTIONS = ('manual_scale', 'set_scale_bar', 'set_tooth')
+
+
+def _scale_state(image):
+    """JSON-safe snapshot of everything a hand edit can change."""
+    state = {}
+    for field in _SCALE_STATE_FIELDS:
+        value = getattr(image, field, None)
+        if isinstance(value, Decimal):
+            value = float(value)
+        elif isinstance(value, (list, tuple)):
+            value = list(value)
+        state[field] = value
+    return state
+
+
 class ImageViewSet(viewsets.ModelViewSet):
     queryset = Image.objects.all()
     serializer_class = ImageSerializer
@@ -784,17 +813,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         # seconds and, on the frames where anyone actually reaches for the
         # manual tool, usually concludes what it concluded the first time:
         # nothing.
-        previous_state = {
-            'mm_per_pixel': float(image.mm_per_pixel) if image.mm_per_pixel else None,
-            'scale_bar_detected': bool(image.scale_bar_detected),
-            'scale_bar_source': image.scale_bar_source or '',
-            'tooth_bbox': list(image.tooth_bbox) if image.tooth_bbox else None,
-            'tooth_area_mm2': float(image.tooth_area_mm2) if image.tooth_area_mm2 else None,
-            'tooth_width_mm': float(image.tooth_width_mm) if image.tooth_width_mm else None,
-            'tooth_height_mm': float(image.tooth_height_mm) if image.tooth_height_mm else None,
-            'tooth_major_axis_mm': float(image.tooth_major_axis_mm) if image.tooth_major_axis_mm else None,
-            'tooth_minor_axis_mm': float(image.tooth_minor_axis_mm) if image.tooth_minor_axis_mm else None,
-        }
+        previous_state = _scale_state(image)
 
         # Reuse the existing segmentation to convert the new scale into the
         # tooth measurements, so a manual calibration produces exactly the same
@@ -826,11 +845,7 @@ class ImageViewSet(viewsets.ModelViewSet):
             image.tooth_minor_axis_mm = width if width > 0 else None
         # Completeness is relative to a species reference and is now stale.
         image.completeness_mm2 = None
-        image.save(update_fields=[
-            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'tooth_bbox',
-            'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
-            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
-        ])
+        image.save(update_fields=list(_SCALE_STATE_FIELDS))
 
         ImageReviewEvent.objects.create(
             image=image,
@@ -882,32 +897,39 @@ class ImageViewSet(viewsets.ModelViewSet):
         if image.dataset and dataset_is_locked(image.dataset):
             return Response({'error': dataset_lock_reason(image.dataset)},
                             status=status.HTTP_409_CONFLICT)
-        if image.scale_bar_source != 'manual':
-            return Response(
-                {'error': 'this image was not calibrated by hand, so there is nothing to undo'},
-                status=status.HTTP_400_BAD_REQUEST)
-
         previous_mm_per_pixel = float(image.mm_per_pixel) if image.mm_per_pixel else None
 
         # Restore the snapshot the manual pass took, rather than recomputing.
         # Re-running the detector here costs about twenty seconds and, on the
         # frames a reviewer actually measures by hand, usually reaches the same
         # conclusion it reached the first time: no calibration.
+        # Undo the most recent hand edit of ANY kind, not just the two-click
+        # tool. Picking the scale bar and picking the tooth are hand edits too,
+        # and looking only for 'manual_scale' meant undoing one of those
+        # reached past it for an older, unrelated snapshot - or found none and
+        # fell through to the detector.
+        undone = {eid for eid in (
+            (e.metadata or {}).get('undid_event_id')
+            for e in ImageReviewEvent.objects.filter(
+                image=image, action='reset_manual_scale')) if eid}
         event = (ImageReviewEvent.objects
-                 .filter(image=image, action='manual_scale')
+                 .filter(image=image, action__in=_HAND_EDIT_ACTIONS)
+                 .exclude(id__in=undone)
                  .order_by('-id').first())
         snapshot = (event.metadata or {}).get('previous_state') if event else None
+        if event is None and image.scale_bar_source != 'manual':
+            return Response(
+                {'error': 'this image was not calibrated by hand, so there is nothing to undo'},
+                status=status.HTTP_400_BAD_REQUEST)
 
         if snapshot is not None:
-            image.mm_per_pixel = snapshot.get('mm_per_pixel')
-            image.scale_bar_detected = bool(snapshot.get('scale_bar_detected'))
-            image.scale_bar_source = snapshot.get('scale_bar_source') or ''
-            image.tooth_bbox = snapshot.get('tooth_bbox')
-            image.tooth_area_mm2 = snapshot.get('tooth_area_mm2')
-            image.tooth_width_mm = snapshot.get('tooth_width_mm')
-            image.tooth_height_mm = snapshot.get('tooth_height_mm')
-            image.tooth_major_axis_mm = snapshot.get('tooth_major_axis_mm')
-            image.tooth_minor_axis_mm = snapshot.get('tooth_minor_axis_mm')
+            # Only fields the snapshot actually carries. Snapshots predating
+            # _scale_state lack scale_bar_bbox, and writing None over a good
+            # box would leave the bar and the millimetres describing different
+            # states of the image.
+            for field in _SCALE_STATE_FIELDS:
+                if field in snapshot:
+                    setattr(image, field, snapshot[field])
             restored_from = 'snapshot'
         else:
             # Older manual calibrations predate the snapshot, so fall back to
@@ -936,7 +958,23 @@ class ImageViewSet(viewsets.ModelViewSet):
                 width = float(tooth.width_px or 0.0) * mm
                 image.tooth_major_axis_mm = length if length > 0 else None
                 image.tooth_minor_axis_mm = width if width > 0 else None
+            elif image.mm_per_pixel and previous_mm_per_pixel:
+                # Never discard a measurement the detector merely failed to
+                # find again. On the frames anyone corrects by hand the
+                # detector often cannot pick the tooth out at all - usually
+                # the very reason it was corrected - and on UF 17879AA that
+                # turned an undo into the loss of a good 12.2 mm length.
+                # Sizes are linear in mm/px, so rescale what is on record.
+                ratio = float(image.mm_per_pixel) / previous_mm_per_pixel
+                for field in ('tooth_width_mm', 'tooth_height_mm',
+                              'tooth_major_axis_mm', 'tooth_minor_axis_mm'):
+                    value = getattr(image, field)
+                    if value:
+                        setattr(image, field, float(value) * ratio)
+                if image.tooth_area_mm2:
+                    image.tooth_area_mm2 = float(image.tooth_area_mm2) * ratio ** 2
             else:
+                # No scale at all: a size in millimetres cannot be stated.
                 image.tooth_area_mm2 = None
                 image.tooth_width_mm = None
                 image.tooth_height_mm = None
@@ -944,11 +982,7 @@ class ImageViewSet(viewsets.ModelViewSet):
                 image.tooth_minor_axis_mm = None
             restored_from = 'detector'
         image.completeness_mm2 = None
-        image.save(update_fields=[
-            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'tooth_bbox',
-            'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
-            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
-        ])
+        image.save(update_fields=list(_SCALE_STATE_FIELDS))
 
         ImageReviewEvent.objects.create(
             image=image,
@@ -961,6 +995,8 @@ class ImageViewSet(viewsets.ModelViewSet):
                 'previous_mm_per_pixel': previous_mm_per_pixel,
                 'mm_per_pixel': image.mm_per_pixel,
                 'restored_from': restored_from,
+                'undid_event_id': event.id if event else None,
+                'undid_action': event.action if event else None,
             },
         )
 
@@ -1060,6 +1096,7 @@ class ImageViewSet(viewsets.ModelViewSet):
                                       "ruler instead."},
                             status=status.HTTP_400_BAD_REQUEST)
         previous = float(image.mm_per_pixel) if image.mm_per_pixel else None
+        previous_state = _scale_state(image)
 
         image.mm_per_pixel = mm_per_pixel
         image.scale_bar_detected = True
@@ -1092,7 +1129,8 @@ class ImageViewSet(viewsets.ModelViewSet):
             new_status=image.review_status,
             notes='Scale chosen by hand (%s)' % scale_description,
             metadata={'x': px, 'y': py, 'bbox': list(hit.bbox), 'card': scale_description,
-                      'mm_per_pixel': mm_per_pixel, 'previous_mm_per_pixel': previous},
+                      'mm_per_pixel': mm_per_pixel, 'previous_mm_per_pixel': previous,
+                      'previous_state': previous_state},
         )
         return Response({
             'image': ImageSerializer(image, context={'request': request}).data,
@@ -1162,6 +1200,7 @@ class ImageViewSet(viewsets.ModelViewSet):
             'tooth_area_mm2': float(image.tooth_area_mm2) if image.tooth_area_mm2 else None,
         }
         tx0, ty0, tx1, ty1 = hit.bbox
+        previous_state = _scale_state(image)
         image.tooth_bbox = list(hit.bbox)
         image.tooth_area_mm2 = float(hit.area_px) * mm ** 2
         image.tooth_width_mm = (tx1 - tx0 + 1) * mm
@@ -1183,7 +1222,7 @@ class ImageViewSet(viewsets.ModelViewSet):
             previous_status=image.review_status,
             new_status=image.review_status,
             notes='Tooth outline chosen by hand',
-            metadata={'x': px, 'y': py, 'bbox': list(hit.bbox),
+            metadata={'previous_state': previous_state, 'x': px, 'y': py, 'bbox': list(hit.bbox),
                       'area_mm2': image.tooth_area_mm2, 'previous': previous},
         )
         return Response({
