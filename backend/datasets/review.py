@@ -39,6 +39,7 @@ REVIEW_FLAGS = (
     'low_resolution',
     'no_scale_bar',
     'tooth_is_scale_bar',
+    'scale_from_wrong_object',
     'impossible_size',
     'out_of_range_completeness',
     'low_ocr_confidence',
@@ -70,6 +71,7 @@ REVIEW_FLAG_LABELS = {
     'low_resolution': 'Too low resolution to measure',
     'no_scale_bar': 'No scale bar detected',
     'tooth_is_scale_bar': 'The scale card was measured as the tooth',
+    'scale_from_wrong_object': 'The scale was read off the tooth, not the ruler',
     'impossible_size': 'Measures larger than a whole tooth',
     'out_of_range_completeness': 'Completeness out of range',
     'low_ocr_confidence': 'Low OCR confidence',
@@ -113,6 +115,14 @@ REVIEW_FLAG_DESCRIPTIONS = {
         'Galeocerdo cuvier maximum of 553, so it reports 100% complete and '
         'nothing else gives it away. Set the scale by hand, or exclude the '
         'image.'
+    ),
+    'scale_from_wrong_object': (
+        'The tooth outline and the scale bar are the same object AND the '
+        'resulting scale is far from what every other photograph of this '
+        'species gives, so the ruler was read off the specimen itself. The '
+        'outline is usually right; it is the millimetres that are wrong, and '
+        'they are wrong by whatever factor the misreading introduced. Set the '
+        'scale by hand from the real card.'
     ),
     'impossible_size': (
         'This specimen measures larger than the BIGGEST complete tooth of its '
@@ -235,6 +245,16 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
 
     flags: Dict[str, List[Image]] = {key: [] for key in REVIEW_FLAGS}
 
+    # Typical scale per species in THIS dataset. Photographs of one species
+    # from one rig share an mm/px within a few percent, so a value far outside
+    # that says the ruler was measured off something other than the card.
+    import statistics as _st
+    _scales = {}
+    for lid, mmpx in (Image.objects.filter(dataset=ds, mm_per_pixel__isnull=False)
+                      .values_list('label_id', 'mm_per_pixel')):
+        _scales.setdefault(lid, []).append(float(mmpx))
+    species_scale_norm = {k: _st.median(v) for k, v in _scales.items() if v}
+
     # Median complete-tooth area per species, for the impossible-size check.
     #
     # Only meaningful for a set measured against a DIFFERENT population. On the
@@ -336,7 +356,23 @@ def get_review_flags(dataset_id: int) -> Dict[str, List[Image]]:
         # which is why UF 17895C passed every other check.
         if (img.tooth_bbox and img.scale_bar_bbox
                 and list(img.tooth_bbox) == list(img.scale_bar_bbox)):
-            flags['tooth_is_scale_bar'].append(img)
+            # Same defect, two very different consequences, so they are
+            # reported separately: a reviewer fixes them differently and one of
+            # them leaves the measurement usable.
+            #
+            #   scale far from the species norm -> the ruler was read off the
+            #   TOOTH. The outline is right, the millimetres are not.
+            #   UF 17879JM reads 8.3x its species median, UF 17879JI 5.5x.
+            #
+            #   scale normal -> the CARD was measured as the tooth. The
+            #   millimetres are right and describe the wrong object.
+            #   UF 17895L outlines 2691x1251 of scale card at 0.6x.
+            scale = float(img.mm_per_pixel) if img.mm_per_pixel else None
+            norm = species_scale_norm.get(img.label_id)
+            if scale and norm and (scale > norm * 1.5 or scale < norm / 1.5):
+                flags['scale_from_wrong_object'].append(img)
+            else:
+                flags['tooth_is_scale_bar'].append(img)
             continue
 
         # 5b. A measurement that cannot be true.
