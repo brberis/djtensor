@@ -826,6 +826,94 @@ def _measure_card_rows_on_axis(
     return top_px, bottom_px
 
 
+def _measure_single_band_row(
+    gray: np.ndarray,
+    bbox: Tuple[int, int, int, int],
+) -> Optional[dict]:
+    """Read mm/px from ONE band row, identified by how many bands it holds.
+
+    _measure_card_rows needs both rows so it can check their 2.54 ratio, and
+    on some photographs the second row is simply unreadable: on UF 17879AA the
+    "1 inch" caption is printed level with the imperial band, so every scan
+    line across that band also crosses the lettering and fails the uniformity
+    test. The metric row reads cleanly at 411 px, and the card is rejected for
+    want of a partner.
+
+    A lone row can still be pinned down, because the band COUNT differs
+    between every card row except one: 1 band is the large card's inch, 3 is
+    its centimetre row, 2 is the compact card's imperial row and 10 is the
+    small card's millimetre row. Only a count of 5 is shared, and that is
+    refused. The count comes from the scan line's own edges, so it is measured
+    rather than assumed.
+
+    Deliberately NOT used by detect_scale_bar. Without the ratio check this is
+    a weaker reading than the two-row path, and it is offered only where a
+    reviewer has already pointed at the object and can see the size it
+    produces.
+    """
+    x0, y0, x1, y1 = bbox
+    card_len = float(max(x1 - x0 + 1, y1 - y0 + 1))
+    min_band_px = card_len / 40.0
+
+    by_count: dict = {}
+    for card in KNOWN_CARDS:
+        for blocks, mm in ((card.top_blocks, card.top_block_mm),
+                           (card.bottom_blocks, card.bottom_block_mm)):
+            by_count.setdefault(blocks, set()).add(mm)
+    unambiguous = {n: mms.pop() for n, mms in by_count.items() if len(mms) == 1}
+
+    # 'x' first: a wrong axis reads band THICKNESS rather than band length and
+    # would be wrong by whatever the card's aspect happens to be.
+    for axis in ('x', 'y'):
+        lines = _scanline_blocks(gray, bbox, axis)
+        if len(lines) < 12:
+            continue
+        widths = np.sort(np.array([w for _, w, _ in lines], dtype=float))
+        clusters: List[List[float]] = []
+        for w in widths:
+            if clusters and w <= clusters[-1][0] * 1.35:
+                clusters[-1].append(w)
+            else:
+                clusters.append([w])
+        ranked = sorted((c for c in clusters
+                         if len(c) >= 6 and float(np.median(c)) >= min_band_px),
+                        key=len, reverse=True)
+        if not ranked:
+            continue
+        lo, hi = min(ranked[0]), max(ranked[0])
+        support = [(i, w, e) for i, w, e in lines if lo <= w <= hi]
+        if not support:
+            continue
+
+        # Spacings alternate print and paper, and on these cards the gaps are
+        # bands too: the "3 cm" row is dark, white, dark, all 1 cm. So the
+        # segment count, not the count of dark runs, is what the card names.
+        counts = [e - 1 for _, _, e in support]
+        blocks = int(np.bincount(counts).argmax())
+        if sum(1 for c in counts if c == blocks) < 0.5 * len(counts):
+            continue
+        mm_per_block = unambiguous.get(blocks)
+        if mm_per_block is None:
+            continue
+
+        block_px = float(np.median([w for _, w, _ in support]))
+        # A band row is wider than it is thick. Scanning parallel to the bands
+        # measures the rows themselves - two bands and the caption gap between
+        # them read as three equal "blocks" on this very card - and that
+        # imposter fails here while a real row passes easily.
+        thickness = max(i for i, _, _ in support) - min(i for i, _, _ in support) + 1
+        if block_px * blocks < thickness:
+            continue
+
+        return {
+            'mm_per_pixel': mm_per_block / block_px,
+            'blocks': blocks,
+            'block_px': block_px,
+            'mm_per_block': mm_per_block,
+        }
+    return None
+
+
 def _tick_runs_at_depth(strip: np.ndarray, depth: int):
     """Tick start positions along a single scan line at one depth into a ruler.
 

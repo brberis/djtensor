@@ -990,6 +990,7 @@ class ImageViewSet(viewsets.ModelViewSet):
         from .models import ImageReviewEvent
         from .scale_calibration import (segment_blobs, _measure_card_rows,
                                         _identify_card, _measure_graduated_ruler,
+                                        _measure_single_band_row,
                                         _open_grayscale_with_bg_white)
         from PIL import Image as PILImage
 
@@ -1039,10 +1040,18 @@ class ImageViewSet(viewsets.ModelViewSet):
             scale_description = card.caption
         else:
             found = _measure_graduated_ruler(gray, hit.bbox)
-            if found:
+            if found and found.get('mm_per_pixel'):
                 mm_per_pixel = found['mm_per_pixel']
                 scale_description = ('graduated ruler, %.1f px per mm'
-                            % (1.0 / found['mm_per_pixel']) if found['mm_per_pixel'] else 'graduated ruler')
+                                     % (1.0 / found['mm_per_pixel']))
+        if not mm_per_pixel:
+            # Last, the one-row read. Weaker than the two-row card, so it runs
+            # only after both stronger paths have declined.
+            row = _measure_single_band_row(gray, hit.bbox)
+            if row:
+                mm_per_pixel = row['mm_per_pixel']
+                scale_description = ('%g mm band, %d across the row, %.0f px each'
+                                     % (row['mm_per_block'], row['blocks'], row['block_px']))
 
         if not mm_per_pixel:
             return Response({'error': "that shape does not read as a scale: neither printed "
