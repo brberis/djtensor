@@ -970,6 +970,129 @@ class ImageViewSet(viewsets.ModelViewSet):
             'recalibrated_automatically': bool(image.mm_per_pixel),
         })
 
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='set-scale-bar')
+    def set_scale_bar(self, request, pk=None):
+        """Read the scale off the card the reviewer pointed at.
+
+        The counterpart to set-tooth. When the detector puts the scale bar on
+        the specimen - UF 17879AA has the bar and the tooth as the same blob,
+        giving a scale 15% off - a reviewer could correct the millimetres only
+        by clicking two points by hand, and nothing let them say which object
+        the ruler actually is.
+
+        Pointing at the card is both easier and more accurate than clicking its
+        ends, because the card's printed bands are then measured the same way
+        the detector measures them, rather than depending on how precisely a
+        hand landed on two edges.
+
+        Body: x, y in ORIGINAL image pixels, anywhere on the scale card.
+        """
+        from .models import ImageReviewEvent
+        from .scale_calibration import (segment_blobs, _measure_card_rows,
+                                        _identify_card, _measure_graduated_ruler,
+                                        _open_grayscale_with_bg_white)
+        from PIL import Image as PILImage
+
+        image = self.get_object()
+        if image.dataset and dataset_is_locked(image.dataset):
+            return Response({'error': dataset_lock_reason(image.dataset)},
+                            status=status.HTTP_409_CONFLICT)
+        try:
+            px = float(request.data['x'])
+            py = float(request.data['y'])
+        except (KeyError, TypeError, ValueError):
+            return Response({'error': 'x and y are required numbers'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            blobs = segment_blobs(image.image.path)
+            gray = _open_grayscale_with_bg_white(PILImage.open(image.image.path))
+        except Exception:
+            return Response({'error': 'could not read this image'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        hit = None
+        for blob in blobs:
+            bx0, by0, bx1, by1 = blob.bbox
+            if bx0 <= px <= bx1 and by0 <= py <= by1:
+                if hit is None or blob.area_px < hit.area_px:
+                    hit = blob
+        if hit is None:
+            return Response({'error': 'nothing was segmented at that point. Click on the '
+                                      'scale card itself.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        bx0, by0, bx1, by1 = hit.bbox
+        long_axis = 'x' if (bx1 - bx0) >= (by1 - by0) else 'y'
+
+        # Two kinds of scale appear in this collection and a reviewer should not
+        # have to know which they are pointing at: the FLMNH banded cards, and
+        # graduated rulers with millimetre ticks. Try the card first, then the
+        # ruler, and only refuse when neither reads.
+        mm_per_pixel = None
+        scale_description = None
+        rows = _measure_card_rows(gray, hit.bbox, long_axis)
+        card = _identify_card(image.image.path, hit.bbox, rows) if rows else None
+        if rows and card is not None:
+            top_px, bottom_px = rows
+            mm_per_pixel = (card.top_block_mm / top_px + card.bottom_block_mm / bottom_px) / 2.0
+            scale_description = card.caption
+        else:
+            found = _measure_graduated_ruler(gray, hit.bbox)
+            if found:
+                mm_per_pixel = found['mm_per_pixel']
+                scale_description = ('graduated ruler, %.1f px per mm'
+                            % (1.0 / found['mm_per_pixel']) if found['mm_per_pixel'] else 'graduated ruler')
+
+        if not mm_per_pixel:
+            return Response({'error': "that shape does not read as a scale: neither printed "
+                                      "band rows nor millimetre ticks could be measured in it. "
+                                      "Use 'Set scale manually' and mark two points on the "
+                                      "ruler instead."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        previous = float(image.mm_per_pixel) if image.mm_per_pixel else None
+
+        image.mm_per_pixel = mm_per_pixel
+        image.scale_bar_detected = True
+        image.scale_bar_source = 'manual'
+        image.scale_bar_bbox = list(hit.bbox)
+        # Sizes derive from the scale, so rescale whatever tooth is recorded.
+        if image.tooth_bbox:
+            tx0, ty0, tx1, ty1 = image.tooth_bbox
+            tooth = next((b for b in blobs if list(b.bbox) == list(image.tooth_bbox)), None)
+            if tooth is not None:
+                image.tooth_area_mm2 = float(tooth.area_px) * mm_per_pixel ** 2
+                length = float(tooth.length_px or 0.0) * mm_per_pixel
+                width = float(tooth.width_px or 0.0) * mm_per_pixel
+                image.tooth_major_axis_mm = length if length > 0 else None
+                image.tooth_minor_axis_mm = width if width > 0 else None
+            image.tooth_width_mm = (tx1 - tx0 + 1) * mm_per_pixel
+            image.tooth_height_mm = (ty1 - ty0 + 1) * mm_per_pixel
+        image.completeness_mm2 = None
+        image.save(update_fields=[
+            'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'scale_bar_bbox',
+            'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+        ])
+
+        ImageReviewEvent.objects.create(
+            image=image,
+            user=request.user if request.user.is_authenticated else None,
+            action='set_scale_bar',
+            previous_status=image.review_status,
+            new_status=image.review_status,
+            notes='Scale chosen by hand (%s)' % scale_description,
+            metadata={'x': px, 'y': py, 'bbox': list(hit.bbox), 'card': scale_description,
+                      'mm_per_pixel': mm_per_pixel, 'previous_mm_per_pixel': previous},
+        )
+        return Response({
+            'image': ImageSerializer(image, context={'request': request}).data,
+            'mm_per_pixel': mm_per_pixel,
+            'card': scale_description,
+            'tooth_length_mm': round(max(image.tooth_major_axis_mm or 0,
+                                         image.tooth_minor_axis_mm or 0), 1) or None,
+        })
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='set-tooth')
     def set_tooth(self, request, pk=None):
         """Take the shape the reviewer pointed at as the tooth.
