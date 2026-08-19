@@ -970,6 +970,96 @@ class ImageViewSet(viewsets.ModelViewSet):
             'recalibrated_automatically': bool(image.mm_per_pixel),
         })
 
+    @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='set-tooth')
+    def set_tooth(self, request, pk=None):
+        """Take the shape the reviewer pointed at as the tooth.
+
+        Setting the scale by hand fixes the millimetres but not WHICH object
+        was measured, and both go wrong. On UF/TRO 14348 the outline sits on
+        the scale card, so a corrected scale simply reported the card
+        accurately: 21.0 x 46.7 mm of cardboard. Until now there was no way to
+        say "the tooth is over there".
+
+        Body: x, y in ORIGINAL image pixels, anywhere inside the tooth.
+
+        The scale is left alone. This changes the object being measured, not
+        the measurement of it, so a hand-set mm/px survives.
+        """
+        from .models import ImageReviewEvent
+        from .scale_calibration import segment_blobs
+
+        image = self.get_object()
+        if image.dataset and dataset_is_locked(image.dataset):
+            return Response({'error': dataset_lock_reason(image.dataset)},
+                            status=status.HTTP_409_CONFLICT)
+        if not image.mm_per_pixel:
+            return Response({'error': 'this image has no scale yet, so a tooth outline '
+                                      'cannot be turned into a size. Set the scale first.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            px = float(request.data['x'])
+            py = float(request.data['y'])
+        except (KeyError, TypeError, ValueError):
+            return Response({'error': 'x and y are required numbers'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            blobs = segment_blobs(image.image.path)
+        except Exception:
+            return Response({'error': 'could not read this image'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Smallest shape containing the click: the reviewer is pointing at a
+        # tooth, not tracing it, and a click inside a small blob also falls
+        # inside anything larger that encloses it.
+        hit = None
+        for blob in blobs:
+            bx0, by0, bx1, by1 = blob.bbox
+            if bx0 <= px <= bx1 and by0 <= py <= by1:
+                if hit is None or blob.area_px < hit.area_px:
+                    hit = blob
+        if hit is None:
+            return Response({'error': 'nothing was segmented at that point. Click on the '
+                                      'tooth itself, on a part that stands out from the '
+                                      'background.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        mm = float(image.mm_per_pixel)
+        previous = {
+            'tooth_bbox': list(image.tooth_bbox) if image.tooth_bbox else None,
+            'tooth_area_mm2': float(image.tooth_area_mm2) if image.tooth_area_mm2 else None,
+        }
+        tx0, ty0, tx1, ty1 = hit.bbox
+        image.tooth_bbox = list(hit.bbox)
+        image.tooth_area_mm2 = float(hit.area_px) * mm ** 2
+        image.tooth_width_mm = (tx1 - tx0 + 1) * mm
+        image.tooth_height_mm = (ty1 - ty0 + 1) * mm
+        length = float(hit.length_px or 0.0) * mm
+        width = float(hit.width_px or 0.0) * mm
+        image.tooth_major_axis_mm = length if length > 0 else None
+        image.tooth_minor_axis_mm = width if width > 0 else None
+        image.completeness_mm2 = None
+        image.save(update_fields=[
+            'tooth_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
+            'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+        ])
+
+        ImageReviewEvent.objects.create(
+            image=image,
+            user=request.user if request.user.is_authenticated else None,
+            action='set_tooth',
+            previous_status=image.review_status,
+            new_status=image.review_status,
+            notes='Tooth outline chosen by hand',
+            metadata={'x': px, 'y': py, 'bbox': list(hit.bbox),
+                      'area_mm2': image.tooth_area_mm2, 'previous': previous},
+        )
+        return Response({
+            'image': ImageSerializer(image, context={'request': request}).data,
+            'tooth_length_mm': round(max(length, width), 1) if (length or width) else None,
+            'tooth_area_mm2': round(image.tooth_area_mm2, 1),
+        })
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='find-circle')
     def find_circle(self, request, pk=None):
         """Measure a round reference the reviewer pointed at, without naming it.

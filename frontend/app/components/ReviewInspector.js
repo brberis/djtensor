@@ -106,6 +106,13 @@ export default function ReviewInspector({
   const [snapInfo, setSnapInfo] = useState(null);
   const [resettingScale, setResettingScale] = useState(false);
 
+  // Picking the tooth. Setting the scale fixes the millimetres but not WHICH
+  // object was measured, and both go wrong: an outline left on the scale card
+  // simply reports the card accurately once the scale is corrected.
+  const [pickingTooth, setPickingTooth] = useState(false);
+  const [pickingBusy, setPickingBusy] = useState(false);
+  const [toothResult, setToothResult] = useState(null);
+
   // Cursor position while measuring, for the loupe. Picking the edge of a
   // coin or a ruler mark is a sub-pixel job at fit-to-screen size, so the
   // reviewer gets a magnified view of whatever is under the pointer.
@@ -124,6 +131,8 @@ export default function ReviewInspector({
     setSnapMode(false);
     setSnapInfo(null);
     setMeasureCursor(null);
+    setPickingTooth(false);
+    setToothResult(null);
   }, [img?.id]);
 
   useEffect(() => {
@@ -303,6 +312,23 @@ export default function ReviewInspector({
                         </button>
                       )}
 
+                      {/* Only offered once a scale exists: an outline with no
+                          mm/px cannot be turned into a size. */}
+                      {!measuring && img.mm_per_pixel != null && (
+                        <button
+                          disabled={pickingBusy}
+                          onClick={() => { setPickingTooth((on) => !on); setScaleError(null); setToothResult(null); }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${
+                            pickingTooth
+                              ? 'bg-green-600 text-white ring-green-600'
+                              : 'bg-white text-green-800 ring-green-300 hover:bg-green-50'
+                          }`}
+                          title="Click the specimen to use it as the tooth outline"
+                        >
+                          {pickingBusy ? 'Reading…' : pickingTooth ? 'Cancel picking' : 'Pick the tooth'}
+                        </button>
+                      )}
+
                       {!measuring && scaleError && (
                         <span className="text-xs text-red-700">{scaleError}</span>
                       )}
@@ -441,6 +467,26 @@ export default function ReviewInspector({
                       </div>
                     )}
 
+                    {pickingTooth && (
+                      <div className="mb-3 rounded-lg bg-green-50 px-4 py-3 ring-1 ring-green-200">
+                        <p className="text-sm text-green-900">
+                          {pickingBusy ? 'Reading that shape…' : 'Click anywhere on the tooth itself.'}
+                        </p>
+                        <p className="mt-1 text-xs text-green-800">
+                          This changes which object is measured. The scale is left as it is.
+                        </p>
+                      </div>
+                    )}
+
+                    {!pickingTooth && toothResult && (
+                      <div className="mb-3 rounded-lg bg-green-50 px-4 py-3 ring-1 ring-green-200">
+                        <p className="text-sm text-green-900">
+                          Tooth outline set by hand: <b>{toothResult.tooth_length_mm} mm</b> across,
+                          area <b>{toothResult.tooth_area_mm2} mm&sup2;</b>.
+                        </p>
+                      </div>
+                    )}
+
                     {/* Outcome of a hand-set scale, shown AFTER leaving the
                         marking UI. The reviewer's answer is the tooth size on
                         the photograph, not the mm/px, so the banner stays
@@ -490,7 +536,7 @@ export default function ReviewInspector({
                         // then multiplied by the image width, so a correctly
                         // clicked coin yielded too large a distance and a
                         // wrong mm/px.
-                        className={`relative inline-block max-w-full ${measuring ? 'cursor-crosshair' : ''}`}
+                        className={`relative inline-block max-w-full ${(measuring || pickingTooth) ? 'cursor-crosshair' : ''}`}
                         onMouseMove={(e) => {
                           if (!measuring) { if (measureCursor) setMeasureCursor(null); return; }
                           const el = imageContainerRef.current;
@@ -503,7 +549,8 @@ export default function ReviewInspector({
                         }}
                         onMouseLeave={() => setMeasureCursor(null)}
                         onClick={async (e) => {
-                          if (!measuring || snapping) return;
+                          if (snapping || pickingBusy) return;
+                          if (!measuring && !pickingTooth) return;
                           const el = imageContainerRef.current;
                           if (!el) return;
                           const r = el.getBoundingClientRect();
@@ -511,6 +558,29 @@ export default function ReviewInspector({
                           const py = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
                           setScaleResult(null);
                           setScaleError(null);
+
+                          // Choosing the tooth: hand the point over and take
+                          // whatever shape sits under it.
+                          if (pickingTooth) {
+                            setPickingBusy(true);
+                            try {
+                              const res = await fetch(`/api/datasets/image/${img.id}/set-tooth`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ x: px * w, y: py * h }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.message || 'Could not set the tooth outline');
+                              setToothResult(data);
+                              setPickingTooth(false);
+                              if (data.image && onImageUpdated) onImageUpdated(data.image);
+                            } catch (err) {
+                              setScaleError(err.message);
+                            } finally {
+                              setPickingBusy(false);
+                            }
+                            return;
+                          }
 
                           // Coin mode: hand the point to the backend and let
                           // it measure the circle, then drop the two ends in
