@@ -17,6 +17,8 @@ from django.db.models import Aggregate, FloatField, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from decimal import Decimal
 
+from .tooth_mask import refresh_tooth_mask
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -665,7 +667,8 @@ class LabelViewSet(viewsets.ModelViewSet):
 _SCALE_STATE_FIELDS = (
     'mm_per_pixel', 'scale_bar_detected', 'scale_bar_source', 'scale_bar_bbox',
     'tooth_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
-    'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+    'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'tooth_mask_url',
+    'completeness_mm2',
 )
 
 # The three ways a reviewer changes a measurement by hand. Undo walks back
@@ -845,6 +848,8 @@ class ImageViewSet(viewsets.ModelViewSet):
             image.tooth_minor_axis_mm = width if width > 0 else None
         # Completeness is relative to a species reference and is now stale.
         image.completeness_mm2 = None
+        # The tooth blob is re-derived above, so redraw the overlay.
+        refresh_tooth_mask(image)
         image.save(update_fields=list(_SCALE_STATE_FIELDS))
 
         ImageReviewEvent.objects.create(
@@ -1210,9 +1215,13 @@ class ImageViewSet(viewsets.ModelViewSet):
         image.tooth_major_axis_mm = length if length > 0 else None
         image.tooth_minor_axis_mm = width if width > 0 else None
         image.completeness_mm2 = None
+        # The outline moved, so the green overlay must be redrawn or it
+        # would keep showing the shape that was measured before.
+        refresh_tooth_mask(image, hit.bbox)
         image.save(update_fields=[
             'tooth_bbox', 'tooth_area_mm2', 'tooth_width_mm', 'tooth_height_mm',
             'tooth_major_axis_mm', 'tooth_minor_axis_mm', 'completeness_mm2',
+            'tooth_mask_url',
         ])
 
         ImageReviewEvent.objects.create(

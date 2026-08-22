@@ -31,6 +31,7 @@ from typing import List, Optional
 from django.core.management.base import BaseCommand, CommandError
 
 from datasets.models import Image
+from datasets.tooth_mask import refresh_tooth_mask
 from datasets.scale_calibration import detect_scale_bar
 
 
@@ -178,6 +179,9 @@ class Command(BaseCommand):
             width = float(tooth.width_px or 0.0) * mm_per_pixel
             img.tooth_major_axis_mm = length if length > 0 else None
             img.tooth_minor_axis_mm = width if width > 0 else None
+            refresh_tooth_mask(img, tooth.bbox)
+        else:
+            img.tooth_mask_url = None
 
         # completeness_mm2 is derived from the species reference and is now
         # stale; clear it so it is recomputed rather than silently kept.
@@ -187,4 +191,5 @@ class Command(BaseCommand):
             'scale_bar_bbox', 'scale_bar_ticks', 'tooth_bbox', 'tooth_area_mm2',
             'tooth_width_mm', 'tooth_height_mm', 'tooth_major_axis_mm',
             'tooth_minor_axis_mm', 'completeness_mm2',
+            'tooth_mask_url',
         ])
