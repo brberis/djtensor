@@ -48,6 +48,9 @@ function normalizeMediaUrl(url) {
 // fails automatic measurement has a RULER or a scale card in frame; coins
 // appear in a couple of dozen web-sourced images. The list used to lead with
 // coins, which put the rare case in front of the common one.
+// Calibration methods whose number actually comes from reading tick marks.
+const TICK_BASED_SOURCES = new Set(['ruler_ticks']);
+
 const SCALE_REFERENCES = [
   { key: 'cm1', label: 'Ruler, 1 cm', mm: 10 },
   { key: 'cm2', label: 'Ruler, 2 cm', mm: 20 },
@@ -183,8 +186,17 @@ export default function ReviewInspector({
     };
   })();
 
+  // Ticks belong to ruler calibration only. A card is measured by the width of
+  // its printed bands, and the tick positions left on those rows are stale
+  // output from the ruler path: on G_cuvier UF233649 they drew as horizontal
+  // lines across a card whose bands run the other way, so the picture
+  // contradicted a calibration that is in fact correct to 2%. An overlay that
+  // disagrees with a right answer is worse than no overlay, because checking by
+  // eye is how these images get verified.
+  const ticksAreMeaningful = TICK_BASED_SOURCES.has(img.scale_bar_source);
+
   const tickLines = (() => {
-    if (!showTicks) return [];
+    if (!showTicks || !ticksAreMeaningful) return [];
     const ticks = img.scale_bar_ticks;
     if (!ticks || !ticks.positions || !img.scale_bar_bbox) return [];
     const [bx0, by0, bx1, by1] = img.scale_bar_bbox;
@@ -269,7 +281,7 @@ export default function ReviewInspector({
                       <OverlayToggle on={showTooth}    setOn={setShowTooth}    color="green"  label="Tooth"      disabled={!img.tooth_bbox} />
                       <OverlayToggle on={showScaleBar} setOn={setShowScaleBar} color="amber"  label="Scale bar"  disabled={!img.scale_bar_bbox} />
                       <OverlayToggle on={showLabel}    setOn={setShowLabel}    color="sky"    label="Label"      disabled={!img.museum_metadata?.label_bbox} />
-                      <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!img.scale_bar_ticks?.positions?.length} />
+                      <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!ticksAreMeaningful || !img.scale_bar_ticks?.positions?.length} />
                       <button
                         onClick={() => {
                           setMeasuring((on) => !on);
