@@ -1145,6 +1145,35 @@ class ImageViewSet(viewsets.ModelViewSet):
                                          image.tooth_minor_axis_mm or 0), 1) or None,
         })
 
+    @action(detail=True, methods=['get'], url_path='scale-bands')
+    def scale_bands(self, request, pk=None):
+        """Where the card reading actually measured its bands.
+
+        The inspector used to draw tick marks on these images, which were left
+        over from the ruler path and never took part in a card calibration. They
+        are gone now, but removing a wrong picture is only half the job: reading
+        the overlay is how the real faults in this pipeline have been found, so
+        the card images need an overlay that is true rather than none at all.
+        """
+        from .scale_calibration import describe_card_bands, _open_grayscale_with_bg_white
+        from PIL import Image as PILImage
+
+        image = self.get_object()
+        if not image.scale_bar_bbox or image.scale_bar_source not in ('card_rows', 'manual'):
+            return Response({'rows': []})
+        try:
+            gray = _open_grayscale_with_bg_white(PILImage.open(image.image.path))
+            found = describe_card_bands(gray, tuple(image.scale_bar_bbox))
+        except Exception:
+            return Response({'rows': []})
+        if not found:
+            return Response({'rows': []})
+
+        mm = float(image.mm_per_pixel) if image.mm_per_pixel else None
+        for row in found['rows']:
+            row['mm'] = round(row['block_px'] * mm, 2) if mm else None
+        return Response(found)
+
     @action(detail=True, methods=['post'], permission_classes=[IsSyntheticToolsEnabled], url_path='set-tooth')
     def set_tooth(self, request, pk=None):
         """Take the shape the reviewer pointed at as the tooth.

@@ -50,6 +50,8 @@ function normalizeMediaUrl(url) {
 // coins, which put the rare case in front of the common one.
 // Calibration methods whose number actually comes from reading tick marks.
 const TICK_BASED_SOURCES = new Set(['ruler_ticks']);
+// Calibrations measured from a card's printed bands rather than tick marks.
+const CARD_SOURCES = new Set(['card_rows', 'manual']);
 
 const SCALE_REFERENCES = [
   { key: 'cm1', label: 'Ruler, 1 cm', mm: 10 },
@@ -81,6 +83,7 @@ export default function ReviewInspector({
   const [showScaleBar, setShowScaleBar] = useState(true);
   const [showLabel, setShowLabel] = useState(true);
   const [showTicks, setShowTicks] = useState(true);
+  const [bands, setBands] = useState(null);
   const [showOcrText, setShowOcrText] = useState(false);
   const [hoverTooth, setHoverTooth] = useState(false);
   const [cursorPct, setCursorPct] = useState(null);
@@ -156,6 +159,20 @@ export default function ReviewInspector({
     return () => { clearTimeout(t); window.removeEventListener('resize', measure); };
   }, [img?.id]);
 
+  // What the CARD reading actually measured. Ticks belong to rulers; on a card
+  // the number comes from the width of the printed bands, and without drawing
+  // those the reviewer has nothing to check the calibration against.
+  useEffect(() => {
+    let cancelled = false;
+    setBands(null);
+    if (!img?.id || !CARD_SOURCES.has(img.scale_bar_source)) return undefined;
+    fetch(`/api/datasets/image/${img.id}/scale-bands`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setBands(d && d.rows && d.rows.length ? d : null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [img?.id, img?.scale_bar_source, img?.mm_per_pixel]);
+
   if (!img) return null;
 
   const w = img.image_width || 1;
@@ -194,6 +211,36 @@ export default function ReviewInspector({
   // disagrees with a right answer is worse than no overlay, because checking by
   // eye is how these images get verified.
   const ticksAreMeaningful = TICK_BASED_SOURCES.has(img.scale_bar_source);
+
+  const bandBoxes = (() => {
+    if (!showTicks || !bands) return [];
+    return bands.rows.map((r, i) => {
+      const horizontal = r.orientation === 'horizontal';
+      return {
+        key: i,
+        label: r.mm != null ? `${r.mm} mm` : `${Math.round(r.block_px)} px`,
+        style: horizontal
+          ? { left: (r.along_start / w) * 100 + '%',
+              width: ((r.along_end - r.along_start) / w) * 100 + '%',
+              top: (r.span_start / h) * 100 + '%',
+              height: ((r.span_end - r.span_start) / h) * 100 + '%' }
+          : { top: (r.along_start / h) * 100 + '%',
+              height: ((r.along_end - r.along_start) / h) * 100 + '%',
+              left: (r.span_start / w) * 100 + '%',
+              width: ((r.span_end - r.span_start) / w) * 100 + '%' },
+        // the measured band itself, drawn from the row's leading edge
+        bandStyle: horizontal
+          ? { left: (r.along_start / w) * 100 + '%',
+              width: (r.block_px / w) * 100 + '%',
+              top: (r.span_start / h) * 100 + '%',
+              height: ((r.span_end - r.span_start) / h) * 100 + '%' }
+          : { top: (r.along_start / h) * 100 + '%',
+              height: (r.block_px / h) * 100 + '%',
+              left: (r.span_start / w) * 100 + '%',
+              width: ((r.span_end - r.span_start) / w) * 100 + '%' },
+      };
+    });
+  })();
 
   const tickLines = (() => {
     if (!showTicks || !ticksAreMeaningful) return [];
@@ -281,7 +328,7 @@ export default function ReviewInspector({
                       <OverlayToggle on={showTooth}    setOn={setShowTooth}    color="green"  label="Tooth"      disabled={!img.tooth_bbox} />
                       <OverlayToggle on={showScaleBar} setOn={setShowScaleBar} color="amber"  label="Scale bar"  disabled={!img.scale_bar_bbox} />
                       <OverlayToggle on={showLabel}    setOn={setShowLabel}    color="sky"    label="Label"      disabled={!img.museum_metadata?.label_bbox} />
-                      <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label="Ticks"      disabled={!ticksAreMeaningful || !img.scale_bar_ticks?.positions?.length} />
+                      <OverlayToggle on={showTicks}    setOn={setShowTicks}    color="red"    label={bands ? 'Bands' : 'Ticks'}      disabled={!bands && (!ticksAreMeaningful || !img.scale_bar_ticks?.positions?.length)} />
                       <button
                         onClick={() => {
                           setMeasuring((on) => !on);
@@ -714,6 +761,16 @@ export default function ReviewInspector({
                             <span className="absolute -top-5 left-0 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">scale bar</span>
                           </div>
                         )}
+                        {bandBoxes.map((b) => (
+                          <div key={`bandrow-${b.key}`} className="pointer-events-none">
+                            <div className="absolute border border-red-500/70" style={b.style} />
+                            <div className="absolute bg-red-500/35 border-x-2 border-red-500" style={b.bandStyle} />
+                            <span
+                              className="absolute px-1 text-[10px] font-semibold text-white bg-red-500 rounded"
+                              style={{ left: b.bandStyle.left, top: b.bandStyle.top, transform: 'translateY(-110%)' }}
+                            >{b.label}</span>
+                          </div>
+                        ))}
                         {tickLines.map((t) => (
                           <div
                             key={`tick-${t.key}`}

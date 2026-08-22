@@ -914,6 +914,87 @@ def _measure_single_band_row(
     return None
 
 
+def describe_card_bands(
+    gray: np.ndarray,
+    bbox: Tuple[int, int, int, int],
+    min_support: int = 6,
+) -> Optional[dict]:
+    """Locate the two band rows a card reading used, for the review overlay.
+
+    _measure_card_rows returns only the two band WIDTHS, which is all the
+    calibration needs but leaves a reviewer nothing to look at. Suppressing the
+    old, meaningless tick overlay removed the misleading picture and put nothing
+    in its place, and on 81% of the images the card path is what measured the
+    tooth, so that is exactly where seeing the measurement matters most.
+
+    Returns the row bands in ORIGINAL image coordinates plus the edge positions
+    of one representative scan line through each, so the drawn segments can be
+    compared against the printed bands by eye. Mirrors the clustering in
+    _measure_card_rows_on_axis so what is shown is what was measured, not a
+    second opinion.
+    """
+    x0, y0, x1, y1 = bbox
+    card_len = float(max(x1 - x0 + 1, y1 - y0 + 1))
+    min_band_px = card_len / 40.0
+
+    for axis in ('x', 'y'):
+        lines = _scanline_blocks(gray, bbox, axis)
+        if len(lines) < 2 * min_support:
+            continue
+        widths = np.sort(np.array([w for _, w, _ in lines], dtype=float))
+        clusters: List[List[float]] = []
+        for w in widths:
+            if clusters and w <= clusters[-1][0] * 1.35:
+                clusters[-1].append(w)
+            else:
+                clusters.append([w])
+        ranked = sorted(
+            (c for c in clusters
+             if len(c) >= min_support and float(np.median(c)) >= min_band_px),
+            key=len, reverse=True,
+        )
+        if len(ranked) < 2:
+            continue
+        a, b = float(np.median(ranked[0])), float(np.median(ranked[1]))
+        top_px, bottom_px = max(a, b), min(a, b)
+        if bottom_px <= 0:
+            continue
+        ratio = top_px / bottom_px
+        if abs(ratio - _EXPECTED_BLOCK_RATIO) > _BLOCK_RATIO_TOLERANCE * _EXPECTED_BLOCK_RATIO:
+            continue
+
+        rows = []
+        for cluster in ranked[:2]:
+            lo, hi = min(cluster), max(cluster)
+            support = [(i, w) for i, w, _ in lines if lo <= w <= hi]
+            if not support:
+                continue
+            idxs = [i for i, _ in support]
+            rows.append({
+                'block_px': float(np.median([w for _, w in support])),
+                'from': int(min(idxs)),
+                'to': int(max(idxs)),
+                'scan_lines': len(idxs),
+            })
+        if len(rows) < 2:
+            continue
+        rows.sort(key=lambda r: r['block_px'], reverse=True)
+
+        # Scan lines run ALONG `axis`; a row therefore spans the other one.
+        for r in rows:
+            if axis == 'x':
+                r['orientation'] = 'horizontal'
+                r['span_start'], r['span_end'] = y0 + r['from'], y0 + r['to']
+                r['along_start'], r['along_end'] = x0, x1
+            else:
+                r['orientation'] = 'vertical'
+                r['span_start'], r['span_end'] = x0 + r['from'], x0 + r['to']
+                r['along_start'], r['along_end'] = y0, y1
+            del r['from'], r['to']
+        return {'axis': axis, 'ratio': ratio, 'rows': rows}
+    return None
+
+
 def _tick_runs_at_depth(strip: np.ndarray, depth: int):
     """Tick start positions along a single scan line at one depth into a ruler.
 
