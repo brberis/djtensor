@@ -23,7 +23,7 @@ from PIL import Image
 from .align import keep_largest_island, normalize, sample_contour
 from .estimate import estimate_brokenness_from_arrays, get_aspect_ratio, get_quantile_index
 
-TRACE_VERSION = 1
+TRACE_VERSION = 2  # 2: fragments arrive on a square canvas (prepare.py)
 
 # Geometry of _run(): a 256 working square padded by 128 on every side.
 SIZE = 256
@@ -143,9 +143,16 @@ def trace_shape_brokenness(tooth_mask, templates, quantile_edges, context=None):
     q = int(get_quantile_index(aspect, edges))
     template_full = templates[q]
 
-    # The resize. Katie's code squares both images to 256, whatever shape
-    # they started as, so this is where proportions and size both change.
+    # The resize. Katie's code brings both pictures to 256 x 256. Prepared as
+    # square pictures, the fragment keeps its proportions here; what it loses
+    # is its size, which from now on is set by how much of its picture it
+    # fills rather than by millimetres.
     native_h, native_w = tooth_mask.shape
+    # The fragment's own extent, which is what a reader means by its size;
+    # native_w/h are the picture it sits in, square once prepared.
+    island_ys, island_xs = np.nonzero(keep_largest_island(tooth_mask))
+    frag_w = int(island_xs.max() - island_xs.min() + 1)
+    frag_h = int(island_ys.max() - island_ys.min() + 1)
     fragment_256 = normalize(keep_largest_island(tooth_mask), target_size=SIZE, interpolation=cv2.INTER_NEAREST)
     template_256 = normalize(template_full.astype(np.uint8), target_size=SIZE, interpolation=cv2.INTER_NEAREST)
 
@@ -221,8 +228,9 @@ def trace_shape_brokenness(tooth_mask, templates, quantile_edges, context=None):
             ],
         },
         'fragment': {
-            'native_w': int(native_w), 'native_h': int(native_h),
-            'native_mm': [round(native_w * mm, 1), round(native_h * mm, 1)] if mm else None,
+            'native_w': frag_w, 'native_h': frag_h,
+            'canvas_px': [int(native_w), int(native_h)],
+            'native_mm': [round(frag_w * mm, 1), round(frag_h * mm, 1)] if mm else None,
             'pixels': int(np.sum(keep_largest_island(tooth_mask))),
             'outline_256': fragment_outline,
             'fit_scale': [round(native_w * fit / SIZE, 5), round(native_h * fit / SIZE, 5)],

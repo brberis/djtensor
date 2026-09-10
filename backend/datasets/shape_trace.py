@@ -50,6 +50,7 @@ def get_shape_trace(image, reference=None):
     score, which it never should.
     """
     from .brokenness import load_mask
+    from .brokenness.prepare import square_canvas
     from .brokenness.trace import TRACE_VERSION, trace_shape_brokenness
     from .tasks import brokenness_input_path
 
@@ -99,8 +100,10 @@ def get_shape_trace(image, reference=None):
     if trace is None:
         templates = {q: (cv2.imread(t, cv2.IMREAD_GRAYSCALE) > 127).astype('uint8')
                      for q, t in template_paths.items()}
+        # Same preparation as the pipeline, so the replay scores what it scores.
+        fragment, _ = square_canvas(load_mask(input_path))
         trace = trace_shape_brokenness(
-            load_mask(input_path), templates, edges,
+            fragment, templates, edges,
             context={'mm_per_pixel': image.mm_per_pixel, 'area_ratio': area_ratio},
         )
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)

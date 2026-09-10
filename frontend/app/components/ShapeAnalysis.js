@@ -201,10 +201,15 @@ function caption(trace, f) {
         + `of a typical complete ${species} tooth (median of ${fmt(ctx.area_reference?.teeth)} teeth). `
         + 'This frame is not part of Katie\'s method: it shows what the next step discards.'
         + (trace.fragment.true_scale > 1.25 ? ' Drawn smaller than true size to fit.' : '');
-    case 'resize':
+    case 'resize': {
+      const ratio = `${fmt(trace.resize.fragment_px / trace.resize.template_px, 2)}× the template's area`;
+      if (Math.abs(trace.resize.scale_x - trace.resize.scale_y) < 1e-9) {
+        return `Resize. The fragment is scaled evenly (×${fmt(trace.resize.scale_x, 3)}) until its longer side fills `
+          + `the 256 × 256 square. Its shape is kept, but its real size is lost here: it is now ${ratio}.`;
+      }
       return `Resize. The fragment is stretched to fill a 256 × 256 square (×${fmt(trace.resize.scale_x, 3)} wide, `
-        + `×${fmt(trace.resize.scale_y, 3)} tall). Its real size is lost here: it is now `
-        + `${fmt(trace.resize.fragment_px / trace.resize.template_px, 2)}× the template's area.`;
+        + `×${fmt(trace.resize.scale_y, 3)} tall). Its real size is lost here: it is now ${ratio}.`;
+    }
     case 'centre':
       return `Centre. The fragment is moved so the centre of its outline sits on the template's centre, `
         + `a shift of (${fmt(trace.centroid.shift[0], 1)}, ${fmt(trace.centroid.shift[1], 1)}) px. No rotation or scaling.`;
@@ -249,9 +254,14 @@ function Readout({ trace, f }) {
       add('Fragment extent', trace.fragment.native_mm ? `${fmt(trace.fragment.native_mm[0], 1)} × ${fmt(trace.fragment.native_mm[1], 1)} mm` : '-');
       break;
     case 'resize':
-      add('Scale, wide', `× ${fmt(trace.resize.scale_x, 4)}`);
-      add('Scale, tall', `× ${fmt(trace.resize.scale_y, 4)}`);
-      add('Proportions changed by', `${fmt(Math.abs(trace.resize.scale_x / trace.resize.scale_y - 1) * 100, 0)}%`);
+      if (Math.abs(trace.resize.scale_x - trace.resize.scale_y) < 1e-9) {
+        add('Scale', `× ${fmt(trace.resize.scale_x, 4)}`);
+        add('Proportions', 'kept');
+      } else {
+        add('Scale, wide', `× ${fmt(trace.resize.scale_x, 4)}`);
+        add('Scale, tall', `× ${fmt(trace.resize.scale_y, 4)}`);
+        add('Proportions changed by', `${fmt(Math.abs(trace.resize.scale_x / trace.resize.scale_y - 1) * 100, 0)}%`);
+      }
       add('Fragment ÷ template area', `${fmt(trace.resize.fragment_px / trace.resize.template_px, 2)}×`, true);
       break;
     case 'centre':

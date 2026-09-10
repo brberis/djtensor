@@ -500,6 +500,7 @@ def compute_brokenness_for_dataset(dataset_id, reference_dataset_id=None):
         estimate_brokenness_from_arrays,
         normalize,
     )
+    from .brokenness.prepare import square_canvas
     import cv2 as _cv2
 
     dataset = Dataset.objects.get(pk=dataset_id)
@@ -576,6 +577,10 @@ def compute_brokenness_for_dataset(dataset_id, reference_dataset_id=None):
             # across the entire canvas. Keeping mask and alpha in lock-step
             # also removes the interpolation halo around the tooth edge.
             tooth_rgba[:, :, 3] = (tooth_mask > 0).astype('uint8') * 255
+            # Katie's code squares whatever picture it is given. Give it the
+            # square picture it expects rather than our tight crop, which it
+            # would stretch. Our code, not hers: see brokenness/prepare.py.
+            tooth_mask, tooth_rgba = square_canvas(tooth_mask, tooth_rgba)
             aspect = get_aspect_ratio(tooth_mask)
             quantile_edges = _np.array(all_quantile_edges[species_name])
             q_idx = get_quantile_index(aspect, quantile_edges)
