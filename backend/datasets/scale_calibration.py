@@ -969,11 +969,26 @@ def describe_card_bands(
             support = [(i, w) for i, w, _ in lines if lo <= w <= hi]
             if not support:
                 continue
-            idxs = [i for i, _ in support]
+            # Draw the row where its scan lines are densest, not from the first
+            # to the last that matched. The width is right either way, but on
+            # UF TRO14373 a few stray lines near the caption also measured one
+            # centimetre band, and min..max stretched the drawn 3 cm row over
+            # the whole card. The band width itself still comes from every
+            # supporting line, exactly as the calibration took it.
+            idxs = sorted(i for i, _ in support)
+            gap = max(4, int(0.01 * card_len))
+            runs, start, prev = [], idxs[0], idxs[0]
+            for i in idxs[1:]:
+                if i - prev > gap:
+                    runs.append((start, prev))
+                    start = i
+                prev = i
+            runs.append((start, prev))
+            lo_i, hi_i = max(runs, key=lambda r: sum(1 for i in idxs if r[0] <= i <= r[1]))
             rows.append({
                 'block_px': float(np.median([w for _, w in support])),
-                'from': int(min(idxs)),
-                'to': int(max(idxs)),
+                'from': int(lo_i),
+                'to': int(hi_i),
                 'scan_lines': len(idxs),
             })
         if len(rows) < 2:
