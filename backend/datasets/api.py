@@ -1145,6 +1145,29 @@ class ImageViewSet(viewsets.ModelViewSet):
                                          image.tooth_minor_axis_mm or 0), 1) or None,
         })
 
+    @action(detail=True, methods=['get'], url_path='shape-trace')
+    def shape_trace(self, request, pk=None):
+        """Katie's shape score for this image, replayed step by step.
+
+        Feeds the inspector's shape-analysis animation. The replay uses the
+        same input rule, templates and thresholds as compute_brokenness, and
+        checks itself against Katie's function before returning, so every
+        frame the inspector draws is a state her code was actually in. See
+        datasets/shape_trace.py.
+        """
+        from .brokenness.trace import TraceMismatch
+        from .shape_trace import ShapeTraceUnavailable, get_shape_trace
+
+        image = self.get_object()
+        try:
+            return Response(get_shape_trace(image, request.query_params.get('reference')))
+        except ShapeTraceUnavailable as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except TraceMismatch as exc:
+            logger.error('shape trace for image %s did not reproduce the score: %s', image.id, exc)
+            return Response({'error': 'The replay did not reproduce the score, so it is not shown.'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=True, methods=['get'], url_path='scale-bands')
     def scale_bands(self, request, pk=None):
         """Where the card reading actually measured its bands.

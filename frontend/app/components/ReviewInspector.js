@@ -16,6 +16,7 @@
  */
 
 import { Fragment, useEffect, useRef, useState } from 'react';
+import ShapeAnalysis from './ShapeAnalysis';
 import { Dialog, Transition } from '@headlessui/react';
 import { ArrowLeftIcon, ArrowRightIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -79,6 +80,9 @@ export default function ReviewInspector({
   showNav = true,
   footerHint,
 }) {
+  // Kept when moving between images, so a reviewer can step tooth to tooth
+  // through the shape analysis without switching back each time.
+  const [view, setView] = useState('photo');
   const [showTooth, setShowTooth] = useState(true);
   const [showScaleBar, setShowScaleBar] = useState(true);
   const [showLabel, setShowLabel] = useState(true);
@@ -174,6 +178,8 @@ export default function ReviewInspector({
   }, [img?.id, img?.scale_bar_source, img?.mm_per_pixel]);
 
   if (!img) return null;
+
+  const canAnalyseShape = !!(img.tooth_mask_url || img.brokenness_meta);
 
   const w = img.image_width || 1;
   const h = img.image_height || 1;
@@ -323,6 +329,28 @@ export default function ReviewInspector({
                 <div className="flex flex-col md:flex-row min-h-[600px]">
                   {/* Image with overlays */}
                   <div className="flex-1 bg-gray-50 p-4 flex flex-col">
+                    {canAnalyseShape && (
+                      <div className="mb-3 inline-flex self-start rounded-lg bg-gray-200/70 p-0.5 text-xs font-medium" role="tablist" aria-label="Inspector view">
+                        {[['photo', 'Photo'], ['shape', 'Shape analysis']].map(([key, label]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            role="tab"
+                            aria-selected={view === key}
+                            onClick={() => setView(key)}
+                            className={`rounded-md px-3 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                              view === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {view === 'shape' && canAnalyseShape ? (
+                      <ShapeAnalysis imageId={img.id} />
+                    ) : (
+                    <>
                     <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
                       <span className="text-gray-500 font-medium">Overlays:</span>
                       <OverlayToggle on={showTooth}    setOn={setShowTooth}    color="green"  label="Tooth"      disabled={!img.tooth_bbox} />
@@ -1005,6 +1033,8 @@ export default function ReviewInspector({
                         )}
                       </div>
                     </div>
+                    </>
+                    )}
                   </div>
 
                   {/* Side panel */}
@@ -1035,6 +1065,18 @@ export default function ReviewInspector({
                         <Field label="Area" value={img.tooth_area_mm2 != null ? `${img.tooth_area_mm2.toFixed(1)} mm²` : '-'} />
                         {img.completeness_mm2 != null && (
                           <Field label="Completeness (mm²)" value={`${Math.round(img.completeness_mm2 * 100)} %`} />
+                        )}
+                      </FieldGroup>
+                    )}
+
+                    {img.brokenness_meta?.shape_pct_broken != null && (
+                      <FieldGroup title="Shape completeness (Katie)">
+                        <Field label="Template class" value={img.brokenness_meta.quantile != null ? `q${img.brokenness_meta.quantile}` : '-'} />
+                        <Field label="Fragment height ÷ width" value={img.brokenness_meta.aspect_ratio != null ? img.brokenness_meta.aspect_ratio.toFixed(2) : '-'} />
+                        <Field label="Best overlap (IoU)" value={img.brokenness_meta.iou_score != null ? img.brokenness_meta.iou_score.toFixed(3) : '-'} />
+                        <Field label="Shape completeness" value={`${(100 - img.brokenness_meta.shape_pct_broken).toFixed(1)} %`} />
+                        {img.brokenness_meta.alexa_pct != null && (
+                          <Field label="Alexa's estimate" value={`${img.brokenness_meta.alexa_pct} %`} />
                         )}
                       </FieldGroup>
                     )}

@@ -422,6 +422,48 @@ def build_brokenness_reference_for_dataset(reference_dataset_id, n_quantiles=4, 
     return {'reference_dataset_id': reference_dataset_id, 'species_count': len(edges), 'outdir': out_dir}
 
 
+def brokenness_input_path(img):
+    """The file Kathie's shape score should read for this image.
+
+    Shared by compute_brokenness_for_dataset and the inspector's shape trace,
+    so the animation always replays the same input the stored score used.
+
+    For RAW images, segment_tooth on the full frame returns a huge mask
+    (tooth + scale bar + label merged into one foreground blob). We have a
+    tight tooth-only mask saved during the mm2 calibration pass at
+    Image.tooth_mask_url -- use that for RAW inputs.
+
+    For PROCESSED Mode A images, the file is RGB-only (no alpha), so
+    load_mask falls back to segment_tooth on the PROCESSED PNG. That works
+    OK for Mode A outputs derived from MASKED sources (clean tooth-vs-black
+    boundary), but produces an over-segmented mask on Mode A outputs derived
+    from RAW sources (tooth edges blend into surrounding context). If the
+    file is RAW_<x>.png, look for the sibling MASKED_<x>.png in the same
+    dataset and use that one instead -- same physical tooth, cleaner boundary.
+
+    For MASKED source images, the source PNG itself is correct (alpha is
+    meaningful).
+    """
+    from .models import Image
+    input_path = img.image.path
+    if img.source_kind == 'raw' and img.tooth_mask_url:
+        rel = img.tooth_mask_url.replace(settings.MEDIA_URL.rstrip('/') + '/', '', 1)
+        candidate = os.path.join(settings.MEDIA_ROOT, rel)
+        if os.path.exists(candidate):
+            input_path = candidate
+    elif img.source_kind == 'processed':
+        fname = os.path.basename(img.image.name)
+        if fname.startswith('RAW_'):
+            sibling_name = 'MASKED_' + fname[len('RAW_'):]
+            sibling = Image.objects.filter(
+                dataset_id=img.dataset_id,
+                image__endswith='/' + sibling_name,
+            ).first()
+            if sibling and os.path.exists(sibling.image.path):
+                input_path = sibling.image.path
+    return input_path
+
+
 @shared_task
 def compute_brokenness_for_dataset(dataset_id, reference_dataset_id=None):
     """
@@ -525,42 +567,7 @@ def compute_brokenness_for_dataset(dataset_id, reference_dataset_id=None):
             continue
 
         try:
-            # Pick the right file to feed into Kathie's algorithm.
-            #
-            # For RAW images, segment_tooth on the full frame returns a
-            # huge mask (tooth + scale bar + label merged into one
-            # foreground blob). We have a tight tooth-only mask saved
-            # during the mm² calibration pass at Image.tooth_mask_url --
-            # use that for RAW inputs.
-            #
-            # For PROCESSED Mode A images, the file is RGB-only (no
-            # alpha), so load_mask falls back to segment_tooth on the
-            # PROCESSED PNG. That works OK for Mode A outputs derived
-            # from MASKED sources (clean tooth-vs-black boundary), but
-            # produces an over-segmented mask on Mode A outputs derived
-            # from RAW sources (tooth edges blend into surrounding
-            # context). If the file is RAW_<x>.png, look for the
-            # sibling MASKED_<x>.png in the same dataset and use that
-            # one instead -- same physical tooth, cleaner boundary.
-            #
-            # For MASKED source images, the source PNG itself is
-            # correct (alpha is meaningful).
-            input_path = img.image.path
-            if img.source_kind == 'raw' and img.tooth_mask_url:
-                rel = img.tooth_mask_url.replace(settings.MEDIA_URL.rstrip('/') + '/', '', 1)
-                candidate = os.path.join(settings.MEDIA_ROOT, rel)
-                if os.path.exists(candidate):
-                    input_path = candidate
-            elif img.source_kind == 'processed':
-                fname = os.path.basename(img.image.name)
-                if fname.startswith('RAW_'):
-                    sibling_name = 'MASKED_' + fname[len('RAW_'):]
-                    sibling = Image.objects.filter(
-                        dataset_id=img.dataset_id,
-                        image__endswith='/' + sibling_name,
-                    ).first()
-                    if sibling and os.path.exists(sibling.image.path):
-                        input_path = sibling.image.path
+            input_path = brokenness_input_path(img)
             tooth_mask = load_mask(input_path)
             tooth_rgba = _np.array(PILImage.open(input_path).convert('RGBA'))
             # Force the RGBA alpha to match the segmented mask. Source PNGs

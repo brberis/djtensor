@@ -696,6 +696,15 @@ export default function DatasetDetail() {
     );
   }
 
+  // Stepping through teeth from the inspector: the same order as the grid,
+  // species by species, over the images loaded so far.
+  const inspectorList = labels.flatMap((label) => images[label.id] || []);
+  const inspectorIndex = inspectorImage ? inspectorList.findIndex((item) => item.id === inspectorImage.id) : -1;
+  const stepInspector = (offset) => {
+    const next = inspectorList[inspectorIndex + offset];
+    if (next) { setInspectorImage(next); setActiveImage(next); }
+  };
+
   return (
     <Layout>
       {showBulkUpload && (
@@ -2234,9 +2243,11 @@ export default function DatasetDetail() {
 
       <ReviewInspector
         img={inspectorImage}
-        position={0}
-        total={0}
-        showNav={false}
+        position={inspectorIndex + 1}
+        total={inspectorList.length}
+        showNav={inspectorIndex >= 0 && inspectorList.length > 1}
+        onPrev={() => stepInspector(-1)}
+        onNext={() => stepInspector(1)}
         onClose={() => setInspectorImage(null)}
         onImageUpdated={(updated) => {
           // Keep the open inspector and the row behind it in step after a
