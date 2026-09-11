@@ -1542,12 +1542,12 @@ export default function DatasetDetail() {
                         onClick={() => { setActiveImage(image); setImageViewMode('transformed'); }}
                       >
                         <ArchivedImage
-                          src={normalizeMediaUrl(image.image)}
+                          src={normalizeMediaUrl(image.tooth_thumbnail_url || image.image)}
                           alt={label?.name || 'search result'}
                           width={96}
                           height={96}
                           quality={60}
-                          className="h-24 w-24 object-cover rounded-lg ring-1 ring-gray-200 hover:ring-blue-400"
+                          className={`h-24 w-24 rounded-lg ring-1 ring-gray-200 hover:ring-blue-400 ${image.tooth_thumbnail_url ? 'bg-white object-contain' : 'object-cover'}`}
                         />
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent rounded-b-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <p className="text-[10px] text-white truncate">{image.file_name || image.image.split('/').pop()}</p>
@@ -1684,13 +1684,16 @@ export default function DatasetDetail() {
                           className="block"
                           title="View image details"
                         >
+                          {/* The measured tooth cut out onto white when we have one: a
+                              few KB instead of the multi-megabyte photograph, and the
+                              tooth instead of the ruler and label. */}
                           <ArchivedImage
-                            src={normalizeMediaUrl(image.image)}
+                            src={normalizeMediaUrl(image.tooth_thumbnail_url || image.image)}
                             alt={label.name}
                             width={96}
                             height={96}
                             quality={60}
-                            className={`h-24 w-24 object-cover rounded-lg ring-1 ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
+                            className={`h-24 w-24 rounded-lg ring-1 ${image.tooth_thumbnail_url ? 'bg-white object-contain' : 'object-cover'} ${selected.includes(image.id) ? 'ring-blue-600 ring-2' : 'ring-gray-200'} hover:ring-blue-400`}
                           />
                         </button>
                         {(image.completeness != null || image.completeness_mm2 != null) && (

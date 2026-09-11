@@ -68,6 +68,7 @@ class ImageSerializer(serializers.ModelSerializer):
     source_image_data = serializers.SerializerMethodField()
     label_name = serializers.CharField(source='label.name', read_only=True, default=None)
     brokenness_overlay_url = serializers.SerializerMethodField()
+    tooth_thumbnail_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Image
@@ -130,6 +131,11 @@ class ImageSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return url
+
+    def get_tooth_thumbnail_url(self, obj):
+        """The measured tooth cut out onto white, for grids; None if absent."""
+        from .tooth_mask import tooth_thumbnail_url
+        return tooth_thumbnail_url(obj)
 
     def get_brokenness_overlay_url(self, obj):
         """Append the file mtime as a cache-busting query string so that
