@@ -83,6 +83,11 @@ const normalizeMediaUrl = (value) => {
   return "/media/" + value;
 };
 
+// Outside the inspector an image is shown as the measured tooth cut out onto
+// white; only the inspector shows the whole photograph with its scale bar.
+// Images without a tooth outline fall back to the photograph.
+const toothView = (img) => img?.tooth_view_url || img?.image;
+
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return 'Unknown';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -847,7 +852,7 @@ export default function DatasetDetail() {
                             <div className="rounded-lg bg-white ring-1 ring-gray-200 p-2">
                               <p className="text-[10px] font-medium text-gray-400 mb-1">Original</p>
                               <ArchivedImage
-                                src={normalizeMediaUrl(activeImage.source_image_data.image)}
+                                src={normalizeMediaUrl(toothView(activeImage.source_image_data))}
                                 alt="Original tooth"
                                 width={200}
                                 height={200}
@@ -857,7 +862,7 @@ export default function DatasetDetail() {
                             <div className="rounded-lg bg-white ring-1 ring-gray-200 p-2">
                               <p className="text-[10px] font-medium text-gray-400 mb-1">Transformed</p>
                               <ArchivedImage
-                                src={normalizeMediaUrl(activeImage.image)}
+                                src={normalizeMediaUrl(toothView(activeImage))}
                                 alt={activeImage.file_name || "dataset image"}
                                 width={200}
                                 height={200}
@@ -869,17 +874,26 @@ export default function DatasetDetail() {
                           <div className={activeImage.source_image_data ? 'pt-8' : ''}>
                             <div className="relative">
                               <ArchivedImage
-                                src={normalizeMediaUrl(
+                                src={normalizeMediaUrl(toothView(
                                   imageViewMode === 'original' && activeImage.source_image_data
-                                    ? activeImage.source_image_data.image
-                                    : activeImage.image
-                                )}
+                                    ? activeImage.source_image_data
+                                    : activeImage
+                                ))}
                                 alt={activeImage.file_name || "dataset image"}
                                 width={420}
                                 height={420}
                                 className="mx-auto max-h-[420px] rounded-lg object-contain transition-opacity duration-300"
                               />
                             </div>
+                            {(imageViewMode === 'original' && activeImage.source_image_data
+                              ? activeImage.source_image_data.tooth_view_url
+                              : activeImage.tooth_view_url) && (
+                              <p className="mt-2 text-center text-xs text-gray-400">
+                                {canSeeSyntheticTools
+                                  ? 'Tooth only. Inspect shows the whole photograph and scale bar.'
+                                  : 'Tooth only, cut out of the photograph.'}
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>

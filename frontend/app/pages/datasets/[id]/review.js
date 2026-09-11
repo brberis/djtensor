@@ -531,14 +531,16 @@ function ReviewRow({ img, acting, selected, onToggleSelect, onAction, expanded, 
             Twenty rows meant tens of megabytes of image data for postage
             stamps. next/image resizes and caches on the server and defers
             offscreen rows, so a row costs a few kilobytes instead. */}
-        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md ring-1 ring-gray-200 bg-gray-50">
+        {/* The measured tooth on white when there is one; the inspector
+            behind "Inspect" is where the whole photograph is shown. */}
+        <div className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-md ring-1 ring-gray-200 ${img.tooth_thumbnail_url ? 'bg-white' : 'bg-gray-50'}`}>
           <Image
-            src={normalizeMediaUrl(img.image)}
+            src={normalizeMediaUrl(img.tooth_thumbnail_url || img.image)}
             alt={img.file_name || ''}
             fill
             sizes="80px"
             quality={55}
-            className="object-cover"
+            className={img.tooth_thumbnail_url ? 'object-contain' : 'object-cover'}
             unoptimized={false}
           />
         </div>

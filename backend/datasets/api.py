@@ -986,6 +986,10 @@ class ImageViewSet(viewsets.ModelViewSet):
                 image.tooth_major_axis_mm = None
                 image.tooth_minor_axis_mm = None
             restored_from = 'detector'
+        # The outline file is named per image, so a hand-picked tooth
+        # overwrote it in place; restoring the URL alone would keep showing
+        # the edited tooth. Redraw it, and the cut-outs, from the restored box.
+        refresh_tooth_mask(image)
         image.completeness_mm2 = None
         image.save(update_fields=list(_SCALE_STATE_FIELDS))
 

@@ -69,6 +69,7 @@ class ImageSerializer(serializers.ModelSerializer):
     label_name = serializers.CharField(source='label.name', read_only=True, default=None)
     brokenness_overlay_url = serializers.SerializerMethodField()
     tooth_thumbnail_url = serializers.SerializerMethodField()
+    tooth_view_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Image
@@ -105,10 +106,12 @@ class ImageSerializer(serializers.ModelSerializer):
     def get_source_image_data(self, obj):
         if not obj.source_image_id:
             return None
+        from .tooth_mask import tooth_view_url
         src = obj.source_image
         return {
             'id': src.id,
             'image': self._build_image_url(src),
+            'tooth_view_url': tooth_view_url(src),
             'tooth_area': src.tooth_area,
             'completeness': src.completeness,
             'tooth_area_mm2': src.tooth_area_mm2,
@@ -136,6 +139,11 @@ class ImageSerializer(serializers.ModelSerializer):
         """The measured tooth cut out onto white, for grids; None if absent."""
         from .tooth_mask import tooth_thumbnail_url
         return tooth_thumbnail_url(obj)
+
+    def get_tooth_view_url(self, obj):
+        """The same cut-out at details-window size; None if absent."""
+        from .tooth_mask import tooth_view_url
+        return tooth_view_url(obj)
 
     def get_brokenness_overlay_url(self, obj):
         """Append the file mtime as a cache-busting query string so that

@@ -5,9 +5,10 @@ were drifting apart: the original calibration task wrote a mask, while
 phase2_recalibrate - the command that actually built Datasets 168 and 169 -
 never did, so 4,326 images lost the overlay while four test images kept it.
 
-It also writes the tooth-only thumbnail the dataset grid shows: the same
-outline cut out of the photograph onto white, at web size. Generated here so
-it can never show a different tooth from the one measured.
+It also writes the tooth-only pictures shown everywhere except the
+inspector: the same outline cut out of the photograph onto white, in two web
+sizes, one for grid tiles and one for the image details window. Generated
+here so they can never show a different tooth from the one measured.
 """
 
 import logging
@@ -20,14 +21,18 @@ logger = logging.getLogger(__name__)
 # Tailwind green-500 at ~70% alpha, matching the inspector's tooth colour.
 MASK_RGBA = (34, 197, 94, 180)
 
-# Grid thumbnail: square, white, the tooth centred with a little air around
-# it. 384 px covers the 96 px tiles at retina density with room to spare, and
-# lands around 15-30 KB against the several megabytes of the raw photograph
-# the grid used to download for every tile.
+# Tooth cut-outs: square, white, the tooth centred with a little air around
+# it. The thumbnail (384 px) covers the 96 px grid tiles at retina density and
+# averages about 15 KB against the several megabytes of the raw photograph.
+# The view (1024 px) is for the image details window, which draws it up to
+# 420 px wide, 840 on a retina screen.
 THUMB_SIZE = 384
+VIEW_SIZE = 1024
 THUMB_MARGIN = 0.08
-THUMB_SUFFIX = '_tooth_thumb.jpg'
 MASK_SUFFIX = '_tooth_mask.png'
+THUMB_SUFFIX = '_tooth_thumb.jpg'
+VIEW_SUFFIX = '_tooth_view.jpg'
+CUTOUTS = ((THUMB_SUFFIX, THUMB_SIZE), (VIEW_SUFFIX, VIEW_SIZE))
 
 
 def _mask_path_for(image) -> str:
@@ -88,20 +93,21 @@ def render_tooth_mask(image_path, tooth_bbox, output_path) -> bool:
         return False
 
 
-def thumbnail_path_for_mask(mask_path: str) -> str:
-    """The thumbnail lives beside its mask, so a row that shares another
-    row's mask (a study copy) shares its thumbnail too."""
-    return mask_path[:-len(MASK_SUFFIX)] + THUMB_SUFFIX if mask_path.endswith(MASK_SUFFIX) else None
+def cutout_path_for_mask(mask_path, suffix):
+    """Cut-outs live beside their mask, so a row that shares another row's
+    mask (a study copy) shares its cut-outs too."""
+    return mask_path[:-len(MASK_SUFFIX)] + suffix if mask_path.endswith(MASK_SUFFIX) else None
 
 
-def render_tooth_thumbnail(image_path, tooth_bbox, mask_path, output_path) -> bool:
-    """Cut the measured tooth out of the photograph onto white, at web size.
+def render_tooth_cutouts(image_path, tooth_bbox, mask_path, outputs) -> bool:
+    """Cut the measured tooth out of the photograph onto white.
 
-    Uses the saved mask rather than segmenting again, so the thumbnail shows
-    exactly the pixels that were measured. Holes inside the outline are
-    filled for display only: a tooth has none, and on dark roots the
-    segmentation leaves speckles (see docs/known-issues) that would otherwise
-    show as white flecks.
+    `outputs` is a list of (path, size) pairs, all drawn from one decode of
+    the photograph. Uses the saved mask rather than segmenting again, so the
+    cut-out shows exactly the pixels that were measured. Holes inside the
+    outline are filled for display only: a tooth has none, and on dark roots
+    the segmentation leaves speckles (see docs/known-issues) that would
+    otherwise show as white flecks.
     """
     try:
         import numpy as np
@@ -125,8 +131,8 @@ def render_tooth_thumbnail(image_path, tooth_bbox, mask_path, output_path) -> bo
             longer = max(x1 - x0 + 1, y1 - y0 + 1)
             # Let libjpeg decode at 1/2, 1/4 or 1/8 when the tooth is large:
             # far quicker than a full 16-megapixel decode, and still more
-            # pixels than the thumbnail needs.
-            want = THUMB_SIZE * 1.5
+            # pixels than the largest cut-out needs.
+            want = max(size for _path, size in outputs) * 1.5
             if longer > want:
                 factor = longer / want
                 photo.draft('RGB', (int(full_w / factor), int(full_h / factor)))
@@ -144,34 +150,54 @@ def render_tooth_thumbnail(image_path, tooth_bbox, mask_path, output_path) -> bo
         side = int(round(max(crop.size) * (1 + 2 * THUMB_MARGIN)))
         canvas = PILImage.new('RGB', (side, side), (255, 255, 255))
         canvas.paste(cut, ((side - crop.size[0]) // 2, (side - crop.size[1]) // 2))
-        canvas = canvas.resize((THUMB_SIZE, THUMB_SIZE), PILImage.LANCZOS)
 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        canvas.save(output_path, 'JPEG', quality=85, optimize=True, progressive=True)
+        for path, size in outputs:
+            # Never more pixels than the photograph has: a small tooth is
+            # saved at its own size rather than blown up.
+            out = min(size, side)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            canvas.resize((out, out), PILImage.LANCZOS).save(
+                path, 'JPEG', quality=85, optimize=True, progressive=True)
         return True
     except Exception as exc:
-        logger.warning('tooth thumbnail failed for %s: %s', image_path, exc)
+        logger.warning('tooth cut-out failed for %s: %s', image_path, exc)
         return False
 
 
-def tooth_thumbnail_url(image):
-    """URL of the grid thumbnail with an mtime cache-buster, or None.
+def _cutout_url(image, suffix):
+    """URL of one cut-out with an mtime cache-buster, or None.
 
     The cache-buster matters: Cloudflare holds media for hours, and a
-    thumbnail regenerated after a hand edit must not keep showing the old
-    tooth.
+    cut-out regenerated after a hand edit must not keep showing the old
+    tooth. A cut-out older than its mask means the outline was redrawn
+    without it, so it is not offered: the photograph is better than a tooth
+    that is no longer the measured one.
     """
     if not image.tooth_mask_url:
         return None
     mask_rel = image.tooth_mask_url.replace(settings.MEDIA_URL.rstrip('/') + '/', '', 1)
-    thumb = thumbnail_path_for_mask(os.path.join(settings.MEDIA_ROOT, mask_rel))
-    if not thumb or not os.path.exists(thumb):
+    mask = os.path.join(settings.MEDIA_ROOT, mask_rel)
+    path = cutout_path_for_mask(mask, suffix)
+    if not path or not os.path.exists(path):
         return None
-    return '%s?v=%d' % (_media_url_for(thumb), int(os.path.getmtime(thumb)))
+    stamp = os.path.getmtime(path)
+    if os.path.exists(mask) and stamp < os.path.getmtime(mask):
+        return None
+    return '%s?v=%d' % (_media_url_for(path), int(stamp))
+
+
+def tooth_thumbnail_url(image):
+    """The grid-tile cut-out, or None."""
+    return _cutout_url(image, THUMB_SUFFIX)
+
+
+def tooth_view_url(image):
+    """The details-window cut-out, or None."""
+    return _cutout_url(image, VIEW_SUFFIX)
 
 
 def refresh_tooth_mask(image, tooth_bbox=None, save=False):
-    """Regenerate the overlay for one image and set tooth_mask_url.
+    """Regenerate the overlay and cut-outs for one image; set tooth_mask_url.
 
     Call this wherever the tooth outline changes. Returns the URL, or None
     when no mask could be drawn - a stale mask is worse than none, because it
@@ -179,15 +205,16 @@ def refresh_tooth_mask(image, tooth_bbox=None, save=False):
     """
     bbox = tooth_bbox if tooth_bbox is not None else image.tooth_bbox
     path = _mask_path_for(image)
-    thumb = thumbnail_path_for_mask(path)
+    cutouts = [(cutout_path_for_mask(path, suffix), size) for suffix, size in CUTOUTS]
     if bbox and render_tooth_mask(image.image.path, bbox, path):
         image.tooth_mask_url = _media_url_for(path)
-        render_tooth_thumbnail(image.image.path, bbox, path, thumb)
+        render_tooth_cutouts(image.image.path, bbox, path, cutouts)
     else:
         image.tooth_mask_url = None
-        # Same rule as the mask: no thumbnail rather than an out-of-date one.
-        if thumb and os.path.exists(thumb):
-            os.remove(thumb)
+        # Same rule as the mask: no cut-out rather than an out-of-date one.
+        for cutout, _size in cutouts:
+            if os.path.exists(cutout):
+                os.remove(cutout)
     if save:
         image.save(update_fields=['tooth_mask_url'])
     return image.tooth_mask_url
